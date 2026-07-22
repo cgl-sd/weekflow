@@ -319,7 +319,10 @@ extension WeekflowStore {
         // async writers skip their disk write (P0-3 fix, NSLock-based, no deadlock).
         persistenceCoordinator.cancelPending(for: "goals")
         persistenceCoordinator.cancelPending(for: "focusRecords")
-        persistenceCoordinator.cancelPending(for: "metadata")
+        persistenceCoordinator.cancelPending(for: "channels")
+        persistenceCoordinator.cancelPending(for: "calendarEvents")
+        persistenceCoordinator.cancelPending(for: "dailyPlanning")
+        persistenceCoordinator.cancelPending(for: "dailySummaries")
         persistenceCoordinator.cancelPending(for: "timer")
         persistenceCoordinator.beginSyncWrite()
         // Persist all domains synchronously (termination must block).

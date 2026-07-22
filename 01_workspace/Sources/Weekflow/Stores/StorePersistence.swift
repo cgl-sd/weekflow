@@ -142,10 +142,11 @@ extension WeekflowStore {
             return
         }
         // P1-4 fix: non-blocking write via coordinator.
+        // Self-check fix: dedicated domain prevents coalescing data loss.
         let snapshot = channels
         let rollbackSnapshot = persistedChannels
         persistenceCoordinator.enqueue(
-            domain: "metadata",
+            domain: "channels",
             label: "频道",
             operation: { [weak self] in
                 try await self?.storage.saveChannelsAsync(snapshot)
@@ -166,10 +167,11 @@ extension WeekflowStore {
             return
         }
         // P1-4 fix: non-blocking write via coordinator.
+        // Self-check fix: dedicated domain prevents coalescing data loss.
         let snapshot = calendarEvents
         let rollbackSnapshot = persistedCalendarEvents
         persistenceCoordinator.enqueue(
-            domain: "metadata",
+            domain: "calendarEvents",
             label: "日历事件",
             operation: { [weak self] in
                 try await self?.storage.saveCalendarEventsAsync(snapshot)
@@ -190,10 +192,11 @@ extension WeekflowStore {
             return
         }
         // P1-4 fix: non-blocking write via coordinator.
+        // Self-check fix: dedicated domain prevents coalescing data loss.
         let snapshot = dailyPlanningStates
         let rollbackSnapshot = persistedDailyPlanningStates
         persistenceCoordinator.enqueue(
-            domain: "metadata",
+            domain: "dailyPlanning",
             label: "每日计划",
             operation: { [weak self] in
                 try await self?.storage.saveDailyPlanningStatesAsync(snapshot)
@@ -224,29 +227,10 @@ extension WeekflowStore {
             )
             return
         }
-        // P1-4 fix: non-blocking write via coordinator.
-        let statesSnapshot = dailyPlanningStates
-        let eventsSnapshot = calendarEvents
-        let rollbackStates = persistedDailyPlanningStates
-        let rollbackEvents = persistedCalendarEvents
-        persistenceCoordinator.enqueue(
-            domain: "metadata",
-            label: "每日计划与日历事件",
-            operation: { [weak self] in
-                try await self?.storage.saveDailyPlanAndCalendarEventsAsync(
-                    states: statesSnapshot,
-                    events: eventsSnapshot
-                )
-            },
-            commit: { [weak self] in
-                self?.persistedDailyPlanningStates = statesSnapshot
-                self?.persistedCalendarEvents = eventsSnapshot
-            },
-            rollback: { [weak self] in
-                self?.dailyPlanningStates = rollbackStates
-                self?.calendarEvents = rollbackEvents
-            }
-        )
+        // Self-check fix: delegate to individual domain writers so each entity
+        // type has its own coalescing slot and never overwrites the other.
+        persistDailyPlanningStates()
+        persistCalendarEvents()
     }
 
     func persistFocusRecords() {
@@ -275,10 +259,11 @@ extension WeekflowStore {
             return
         }
         // P1-4 fix: non-blocking write via coordinator.
+        // Self-check fix: dedicated domain prevents coalescing data loss.
         let snapshot = dailySummaries
         let rollbackSnapshot = persistedDailySummaries
         persistenceCoordinator.enqueue(
-            domain: "metadata",
+            domain: "dailySummaries",
             label: "每日总结",
             operation: { [weak self] in
                 try await self?.storage.saveDailySummariesAsync(snapshot)
@@ -343,27 +328,38 @@ extension WeekflowStore {
         // P1-4 fix: non-blocking write via coordinator.
         // Cancel pending goal writes to avoid conflicts with this combined write.
         persistenceCoordinator.cancelPending(for: "goals")
-        let changes = PersistenceGoalChangeSet.difference(
-            before: persistedGoals,
-            after: goals
-        )
-        let session = activeTaskTimer
-        let goalsSnapshot = goals
-        let rollbackGoals = persistedGoals
+        // Self-check fix: diff computed OFF MainActor (consistent with P1-5).
         persistenceCoordinator.enqueue(
             domain: "goals",
             label: "任务与活动计时",
             operation: { [weak self] in
-                try await self?.storage.saveGoalChangesAndActiveTimerAsync(
+                guard let self else { return }
+                let (currentGoals, baselineGoals, session) = await MainActor.run {
+                    (self.goals, self.persistedGoals, self.activeTaskTimer)
+                }
+                let changes = PersistenceGoalChangeSet.difference(
+                    before: baselineGoals,
+                    after: currentGoals
+                )
+                try await self.storage.saveGoalChangesAndActiveTimerAsync(
                     changes: changes,
                     session: session
                 )
+                await MainActor.run {
+                    self._pendingGoalSnapshot = currentGoals
+                }
             },
             commit: { [weak self] in
-                self?.persistedGoals = goalsSnapshot
+                guard let self else { return }
+                if let snapshot = self._pendingGoalSnapshot {
+                    self.persistedGoals = snapshot
+                    self._pendingGoalSnapshot = nil
+                } else {
+                    self.persistedGoals = self.goals
+                }
             },
             rollback: { [weak self] in
-                self?.goals = rollbackGoals
+                self?.goals = self?.persistedGoals ?? []
                 self?.invalidateGoalIndex()
                 self?.taskTimerService.restore(session: rollbackSession)
             }
