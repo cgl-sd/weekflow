@@ -224,31 +224,40 @@ struct DeleteAllCapsuleButton: View {
         WeekflowButton {
             if isConfirming {
                 action()
-                withAnimation(.easeInOut(duration: 0.15)) { isConfirming = false }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirming = false }
             } else {
-                withAnimation(.easeInOut(duration: 0.15)) { isConfirming = true }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirming = true }
             }
         } label: {
-            Text(isConfirming ? "确认删除" : "全部删除")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isConfirming ? WeekflowPalette.danger : WeekflowPalette.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
+            ZStack {
+                Text("全部删除")
+                    .opacity(isConfirming ? 0 : 1)
+                    .scaleEffect(isConfirming ? 0.85 : 1)
+                    .offset(x: isConfirming ? -8 : 0)
+                Text("确认删除")
+                    .opacity(isConfirming ? 1 : 0)
+                    .scaleEffect(isConfirming ? 1 : 0.85)
+                    .offset(x: isConfirming ? 0 : 8)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(isConfirming ? WeekflowPalette.danger : WeekflowPalette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                isConfirming
+                    ? WeekflowPalette.danger.opacity(0.12)
+                    : (isHovered ? WeekflowPalette.surfaceHover : WeekflowPalette.surfaceHover.opacity(0.5)),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().stroke(
                     isConfirming
-                        ? WeekflowPalette.danger.opacity(0.12)
-                        : (isHovered ? WeekflowPalette.surfaceHover : WeekflowPalette.surfaceHover.opacity(0.5)),
-                    in: Capsule()
+                        ? WeekflowPalette.danger.opacity(0.4)
+                        : (isHovered ? WeekflowPalette.border : .clear),
+                    lineWidth: 1
                 )
-                .overlay(
-                    Capsule().stroke(
-                        isConfirming
-                            ? WeekflowPalette.danger.opacity(0.4)
-                            : (isHovered ? WeekflowPalette.border : .clear),
-                        lineWidth: 1
-                    )
-                )
-                .contentShape(Capsule())
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
@@ -267,11 +276,11 @@ struct DeleteAllCapsuleButton: View {
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: isConfirming)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isConfirming)
     }
 
     private func cancelConfirmation() {
         guard isConfirming else { return }
-        withAnimation(.easeInOut(duration: 0.15)) { isConfirming = false }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirming = false }
     }
 }
