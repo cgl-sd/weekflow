@@ -21,6 +21,9 @@ final class WeekflowStore {
     /// Daily planning business logic service (P2-2 Store split). Handles
     /// cutoff/start time management and task scheduling rules.
     private let planningService: PlanningService
+    /// P2-1: Feature-boundary coordinator for goal lifecycle operations.
+    /// Owns archive/trash/restore/purge domain rules and navigation side-effects.
+    private let goalLifecycle: GoalLifecycleCoordinator
     var goals: [WeeklyGoal]
     var selectedGoalID: WeeklyGoal.ID?
     var channels: [TaskChannel]
@@ -91,6 +94,7 @@ final class WeekflowStore {
         self.taskService = TaskService(businessCalendar: businessCalendar)
         self.archiveService = ArchiveService(businessCalendar: businessCalendar)
         self.planningService = PlanningService(businessCalendar: businessCalendar)
+        self.goalLifecycle = GoalLifecycleCoordinator(archiveService: ArchiveService(businessCalendar: businessCalendar))
         activeDay = businessCalendar.date(for: businessCalendar.day(containing: .now))
         self.persistenceEnabled = false
         if let developmentFixture {
@@ -194,6 +198,9 @@ final class WeekflowStore {
             needsPersist = migrateLegacyChannelPresentationIfNeeded() || needsPersist
             needsPersist = migrateLegacyDailyPlanningCutoffIfNeeded() || needsPersist
             needsPersist = migrateLegacyDailySummaryIfNeeded() || needsPersist
+            // P1-1: Eagerly normalize all persisted payloads to current format
+            // so the database never contains mixed old/new encoding formats.
+            normalizePersistedPayloadsIfNeeded()
             performDailyMaintenance()
             // Single consolidated startup persist – avoids multiple independent
             // save calls that could partially commit (P1-3 requirement).
@@ -542,59 +549,57 @@ final class WeekflowStore {
     }
 
     func archiveGoal(id: UUID) {
-        guard var goal = goals.first(where: { $0.id == id }) else { return }
-        goal.archivedAt = .now
-        goal.deletedAt = nil
-        replace(goal)
-        selectedGoalID = activeGoals.first?.id
-        persist()
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        let outcome = goalLifecycle.archive(goal)
+        applyLifecycleOutcome(outcome, goalID: id)
     }
 
     func discardGoalDraft(id: UUID) {
-        guard goals.contains(where: { $0.id == id }) else { return }
-        goals.removeAll { $0.id == id }
-        if selectedGoalID == id {
-            selectedGoalID = activeGoals.first?.id
-        }
-        if let highlightedTask,
-           highlightedTask.goalID == id {
-            self.highlightedTask = nil
-        }
-        persist()
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        let outcome = goalLifecycle.discardDraft(goal)
+        applyLifecycleOutcome(outcome, goalID: id)
     }
 
     func restoreGoal(id: UUID) {
-        guard var goal = goals.first(where: { $0.id == id }) else { return }
-        goal.archivedAt = nil
-        replace(goal)
-        selectedGoalID = goal.id
-        persist()
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        let outcome = goalLifecycle.restore(goal)
+        applyLifecycleOutcome(outcome, goalID: id)
+        selectedGoalID = id
     }
 
     func deleteGoal(id: UUID) {
-        guard var goal = goals.first(where: { $0.id == id }) else { return }
-        goal.deletedAt = .now
-        goal.archivedAt = nil
-        replace(goal)
-        if selectedGoalID == id { selectedGoalID = activeGoals.first?.id }
-        if highlightedTask?.goalID == id { highlightedTask = nil }
-        persist()
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        let outcome = goalLifecycle.trash(goal)
+        applyLifecycleOutcome(outcome, goalID: id)
     }
 
     func restoreDeletedGoal(id: UUID) {
-        guard var goal = goals.first(where: { $0.id == id }) else { return }
-        goal.deletedAt = nil
-        goal.archivedAt = nil
-        replace(goal)
-        selectedGoalID = goal.id
-        persist()
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        let outcome = goalLifecycle.restoreFromTrash(goal)
+        applyLifecycleOutcome(outcome, goalID: id)
+        selectedGoalID = id
     }
 
     func permanentlyDeleteGoal(id: UUID) {
-        guard goals.contains(where: { $0.id == id && $0.isDeleted }) else { return }
-        goals.removeAll { $0.id == id }
-        if selectedGoalID == id { selectedGoalID = activeGoals.first?.id }
-        if highlightedTask?.goalID == id { highlightedTask = nil }
+        guard let goal = goals.first(where: { $0.id == id }) else { return }
+        guard let outcome = goalLifecycle.purge(goal) else { return }
+        applyLifecycleOutcome(outcome, goalID: id)
+    }
+
+    /// P2-1: Applies a lifecycle outcome from the GoalLifecycleCoordinator.
+    /// Centralizes state mutation + persistence so individual methods stay thin.
+    private func applyLifecycleOutcome(_ outcome: GoalLifecycleCoordinator.LifecycleOutcome, goalID: UUID) {
+        if outcome.removed {
+            goals.removeAll { $0.id == goalID }
+        } else if let updated = outcome.updatedGoal {
+            replace(updated)
+        }
+        if outcome.selectionInvalidated, selectedGoalID == goalID {
+            selectedGoalID = activeGoals.first?.id
+        }
+        if outcome.clearHighlight, highlightedTask?.goalID == goalID {
+            highlightedTask = nil
+        }
         persist()
     }
 
@@ -891,6 +896,20 @@ final class WeekflowStore {
         persist()
     }
 
+    /// P0-2/P2-3 fix: awaits completion of all in-flight asynchronous writes.
+    /// Call before app termination and in tests that exercise the production
+    /// async persistence path, so the final edited value is guaranteed to be
+    /// committed to disk before assertions or shutdown.
+    func flushPersistence() async {
+        textInputDebouncer.flush()
+        // Register the latest state directly (awaited) so the write is queued
+        // before we wait for in-flight writes to drain.
+        if goals != persistedGoals {
+            await enqueueGoalPersist(kind: .userEdit)
+        }
+        await persistenceCoordinator.flush()
+    }
+
     func setTaskPriority(
         goalID: UUID,
         taskID: UUID,
@@ -1016,47 +1035,22 @@ final class WeekflowStore {
     }
 
     func restoreDeletedTask(goalID: UUID, taskID: UUID) {
-        guard var goal = goals.first(where: { $0.id == goalID }) else { return }
-        let restoredTask = goal.tasks.first(where: { $0.id == taskID })
-        let restoredParentID = restoredTask?.parentTaskID
-        if let restoredTask,
-           let subgoalID = restoredTask.subgoalID,
-           !goal.subgoals.contains(where: { $0.id == subgoalID }) {
-            goal.subgoals.append(
-                GoalSubgoal(
-                    id: subgoalID,
-                    title: restoredTask.title,
-                    detail: restoredTask.description,
-                    isCompleted: false
-                )
-            )
-        }
-        for index in goal.tasks.indices where goal.tasks[index].id == taskID || goal.tasks[index].parentTaskID == taskID {
-            goal.tasks[index].status = .planned
-            goal.tasks[index].archivedAt = nil
-            goal.tasks[index].plannedDate = businessCalendar.calendar.startOfDay(for: .now)
-            goal.tasks[index].assignedDates = []
-            goal.tasks[index].startTime = nil
-            goal.tasks[index].executionWeekStart = nil
-            goal.tasks[index].updatedAt = .now
-        }
-        if let restoredParentID,
-           let parentIndex = goal.tasks.firstIndex(where: { $0.id == restoredParentID && $0.status == .deleted }) {
-            goal.tasks[parentIndex].status = .planned
-            goal.tasks[parentIndex].archivedAt = nil
-            goal.tasks[parentIndex].updatedAt = .now
-        }
-        goal = goalService.project(goal)
-        replace(goal)
+        guard let goal = goals.first(where: { $0.id == goalID }) else { return }
+        var updated = goalLifecycle.restoreDeletedTask(
+            in: goal,
+            taskID: taskID,
+            now: .now,
+            calendar: businessCalendar.calendar
+        )
+        updated = goalService.project(updated)
+        replace(updated)
         persist()
     }
 
     func permanentlyDeleteTask(goalID: UUID, taskID: UUID) {
-        guard var goal = goals.first(where: { $0.id == goalID }),
-              goal.tasks.contains(where: { $0.id == taskID && $0.isDeleted }) else { return }
-        goal.tasks.removeAll { $0.id == taskID || $0.parentTaskID == taskID }
-        if goal.primaryTaskID == taskID { goal.primaryTaskID = nil }
-        replace(goal)
+        guard let goal = goals.first(where: { $0.id == goalID }) else { return }
+        guard let updated = goalLifecycle.purgeTask(in: goal, taskID: taskID) else { return }
+        replace(updated)
         if highlightedTask?.goalID == goalID && highlightedTask?.taskID == taskID {
             highlightedTask = nil
         }
@@ -2231,6 +2225,8 @@ final class WeekflowStore {
                 id: subgoalIDs[subgoal.id] ?? UUID(),
                 title: subgoal.title,
                 detail: subgoal.detail,
+                // P1-6 fix: preserve the subgoal's independent channel on copy.
+                channelID: subgoal.channelID,
                 isCompleted: false
             )
         }
@@ -2349,13 +2345,24 @@ final class WeekflowStore {
     /// never need full-store synchronization again.
     @discardableResult
     private func synchronizeAllSubgoalTasksIfNeeded() -> Bool {
-        let migrationKey = "weekflow.goals.projectionSync.v1"
+        let migrationKey = "weekflow.goals.projectionSync.v2"
         guard !legacyPreferences.bool(forKey: migrationKey) else { return false }
-        let synchronizedGoals = goals.map(goalService.project)
+        let synchronizedGoals = goals.map { goalService.project($0) }
         legacyPreferences.set(true, forKey: migrationKey)
         guard synchronizedGoals != goals else { return false }
         goals = synchronizedGoals
         return true
+    }
+
+    /// P1-1: One-time eager payload normalization. Re-encodes all persisted
+    /// records at the storage layer so no mixed-format payloads remain after
+    /// a version upgrade. Runs directly on the repository (not through in-memory
+    /// state) to guarantee disk consistency regardless of Store mutations.
+    private func normalizePersistedPayloadsIfNeeded() {
+        let migrationKey = "weekflow.payloadNormalization.v1"
+        guard !legacyPreferences.bool(forKey: migrationKey) else { return }
+        _ = try? storage.normalizeAllPayloads()
+        legacyPreferences.set(true, forKey: migrationKey)
     }
 
     private func upsertDailyPlanningCutoffEvent(
@@ -2531,22 +2538,42 @@ final class WeekflowStore {
             _ = persistSync(kind: kind)
             return
         }
-        let changes = PersistenceGoalChangeSet.difference(
-            before: persistedGoals,
-            after: goals
+        // Cheap pre-check to avoid scheduling a write when nothing changed.
+        guard goals != persistedGoals else { return }
+        Task { await enqueueGoalPersist(kind: kind) }
+    }
+
+    /// Enqueues a goal persistence write on the coordinator (P0-2/P2-3 fix).
+    ///
+    /// The diff is computed at EXECUTION time (inside the coordinator's serial
+    /// writer) relative to the latest committed baseline, not at enqueue time.
+    /// Rapid edits coalesce into a single pending write whose diff is always
+    /// correct, eliminating the stale baseline that previously dropped inserts
+    /// (e.g. a freshly added goal) and caused out-of-order commits. Exposed as
+    /// an async method so `flushPersistence()` can await registration directly.
+    private func enqueueGoalPersist(kind: PersistenceMutationKind = .userEdit) async {
+        await persistenceCoordinator.enqueue(
+            label: "周目标与任务",
+            operation: { [weak self] in
+                guard let self else { return }
+                let changes = await MainActor.run {
+                    PersistenceGoalChangeSet.difference(
+                        before: self.persistedGoals,
+                        after: self.goals
+                    )
+                }
+                guard !changes.isEmpty else { return }
+                try await self.storage.applyGoalChangesAsync(changes, kind: kind)
+            },
+            commit: { [weak self] in
+                guard let self else { return }
+                self.persistedGoals = self.goals
+            },
+            rollback: { [weak self] in
+                guard let self else { return }
+                self.goals = self.persistedGoals
+            }
         )
-        guard !changes.isEmpty else { return }
-        let snapshot = persistedGoals
-        let currentGoals = goals
-        // Use coordinator to serialize writes (P0-2 fix)
-        Task {
-            await persistenceCoordinator.enqueue(
-                label: "周目标与任务",
-                operation: { try await self.storage.applyGoalChangesAsync(changes, kind: kind) },
-                commit: { self.persistedGoals = currentGoals },
-                rollback: { self.goals = snapshot }
-            )
-        }
     }
 
     /// Synchronous persist – blocks the calling thread. Use ONLY when the
@@ -2775,7 +2802,7 @@ final class WeekflowStore {
     }
 }
 
-struct TaskReference: Identifiable, Hashable {
+struct TaskReference: Identifiable, Hashable, Codable, Sendable {
     let goalID: UUID
     let taskID: UUID
     var id: UUID { taskID }

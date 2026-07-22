@@ -216,6 +216,8 @@ protocol WeekflowPersistenceRepository: AnyObject {
     func pendingAutomaticDistributionChanges() throws -> [PersistedAutomaticDistributionChange]
     func commitAutomaticDistribution(transactionID: UUID) throws
     func detachAutomaticDistribution(taskID: UUID, transactionID: UUID) throws
+    /// P1-1: Eagerly re-encode all payloads to the current format.
+    @discardableResult func normalizeAllPayloads() throws -> Int
     func diagnostics() throws -> PersistenceDiagnostics
 }
 

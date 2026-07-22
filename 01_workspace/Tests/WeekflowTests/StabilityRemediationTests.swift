@@ -559,3 +559,79 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
         #expect(actual == entry.2 + chunks.reduce(0, +))
     }
 }
+
+// MARK: - P2-4: Fixed-calendar timezone / DST parameterized coverage
+
+/// P2-4 fix: verifies day-boundary stability using FIXED calendars and
+/// `calendar.date(byAdding:.day:)` arithmetic instead of `Calendar.current`
+/// and a hard-coded 86,400-second day (which breaks across DST). Covers the
+/// timezones called out in review, including Europe/Berlin DST start.
+@Test("Day boundary stays stable across timezones and DST", arguments: [
+    "Asia/Shanghai",
+    "America/Los_Angeles",
+    "Pacific/Kiritimati",
+    "Pacific/Pago_Pago",
+    "Europe/Berlin"
+])
+func dayBoundaryStableAcrossTimezonesAndDST(timeZoneID: String) throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(identifier: timeZoneID))
+    let business = BusinessCalendar(calendar: calendar)
+    // Anchor at local noon to avoid midnight-edge ambiguity. 2026-03-28 sits
+    // just before the Europe/Berlin DST start (last Sunday of March).
+    let anchor = try #require(calendar.date(from: DateComponents(year: 2026, month: 3, day: 28, hour: 12)))
+    let startDay = business.day(containing: anchor)
+
+    for offset in 1...7 {
+        let advanced = try #require(calendar.date(byAdding: .day, value: offset, to: anchor))
+        let dayFromInstant = business.day(containing: advanced)
+        let dayFromArithmetic = business.addingDays(offset, to: startDay)
+        #expect(dayFromInstant == dayFromArithmetic, "tz=\(timeZoneID) offset=\(offset)")
+        // Round-trip Date -> LocalDay -> Date preserves the local day.
+        let roundTrip = business.day(containing: business.date(for: dayFromInstant))
+        #expect(roundTrip == dayFromInstant, "tz=\(timeZoneID) offset=\(offset)")
+    }
+}
+
+/// P2-4 fix: a 23:30 local instant must stay on the same LocalDay even when a
+/// DST shift changes the UTC offset, and adding one calendar day must land on
+/// the next LocalDay (not skip or repeat due to a 23/25-hour day).
+@Test("LocalDay honours calendar days not fixed seconds around DST", arguments: [
+    "Europe/Berlin",
+    "America/Los_Angeles"
+])
+func localDayHonoursCalendarDaysAroundDST(timeZoneID: String) throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(identifier: timeZoneID))
+    let business = BusinessCalendar(calendar: calendar)
+    let anchor = try #require(calendar.date(from: DateComponents(year: 2026, month: 3, day: 28, hour: 23, minute: 30)))
+    let day = business.day(containing: anchor)
+    #expect(day == LocalDay(year: 2026, month: 3, day: 28))
+    let nextDay = try #require(calendar.date(byAdding: .day, value: 1, to: anchor))
+    #expect(business.day(containing: nextDay) == LocalDay(year: 2026, month: 3, day: 29))
+}
+
+// MARK: - P1-4: Strict LocalDay / LocalTime validation
+
+@Test func localDayRejectsImpossibleComponents() {
+    #expect(LocalDay(validatingYear: 2026, month: 99, day: -10) == nil)
+    #expect(LocalDay(validatingYear: 2026, month: 2, day: 30) == nil)
+    #expect(LocalDay(validatingYear: 2026, month: 7, day: 22) != nil)
+}
+
+@Test func localTimeStrictInitRejectsOutOfRangeInsteadOfClamping() {
+    #expect(LocalTime(validatingMinutesSinceMidnight: -100) == nil)
+    #expect(LocalTime(validatingMinutesSinceMidnight: 100_000) == nil)
+    #expect(LocalTime(validatingMinutesSinceMidnight: 0)?.minutesSinceMidnight == 0)
+    #expect(LocalTime(validatingMinutesSinceMidnight: 23 * 60 + 59)?.minutesSinceMidnight == 23 * 60 + 59)
+}
+
+@Test func systemBusinessCalendarOverrideIsHonouredByModelLayer() throws {
+    var fixed = Calendar(identifier: .gregorian)
+    fixed.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+    SystemBusinessCalendar.override = BusinessCalendar(calendar: fixed)
+    defer { SystemBusinessCalendar.override = nil }
+    // The model-layer global calendar must now match the injected override,
+    // closing the gap where tests could not reach the model's global calls.
+    #expect(SystemBusinessCalendar.current.calendar.timeZone.identifier == "Asia/Shanghai")
+}

@@ -119,3 +119,21 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         try container.encode(sessionCount, forKey: .sessionCount)
     }
 }
+
+/// Persisted snapshot of an in-flight focus countdown (P1-8 fix).
+///
+/// The focus timer previously kept all running state in memory, so a crash,
+/// `kill -9`, or forced termination lost the active session and any unlogged
+/// elapsed seconds. This snapshot is written on every state change and
+/// periodically while running, allowing the next launch to recover the
+/// countdown and preserve elapsed work.
+struct FocusTimerSession: Codable, Equatable, Sendable {
+    var mode: FocusMode
+    var totalSeconds: Int
+    var remainingSeconds: Int
+    var unloggedSeconds: Int
+    var hasStarted: Bool
+    var linkedTask: TaskReference?
+    var linkedTaskTitle: String?
+    var lastCheckpointAt: Date
+}

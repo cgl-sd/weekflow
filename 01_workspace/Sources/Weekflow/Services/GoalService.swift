@@ -26,10 +26,20 @@ struct ReviewProjection: Equatable {
 }
 
 protocol GoalServicing {
-    func project(_ goal: WeeklyGoal) -> WeeklyGoal
-    func applyPrimaryProjectionEdit(_ goal: WeeklyGoal) -> WeeklyGoal
+    func project(_ goal: WeeklyGoal, now: Date) -> WeeklyGoal
+    func applyPrimaryProjectionEdit(_ goal: WeeklyGoal, now: Date) -> WeeklyGoal
     func weeklyPlanningProjection(_ goal: WeeklyGoal) -> WeeklyPlanningProjection
     func reviewProjection(_ goal: WeeklyGoal) -> ReviewProjection
+}
+
+extension GoalServicing {
+    /// Convenience wrapper that projects using the current wall-clock time.
+    /// The core `project(_:now:)` is pure; this is the only place that reads
+    /// the clock (P1-6 fix).
+    func project(_ goal: WeeklyGoal) -> WeeklyGoal { project(goal, now: .now) }
+    func applyPrimaryProjectionEdit(_ goal: WeeklyGoal) -> WeeklyGoal {
+        applyPrimaryProjectionEdit(goal, now: .now)
+    }
 }
 
 /// Unidirectional projection architecture (P2-1):
@@ -40,15 +50,23 @@ protocol GoalServicing {
 ///     └── tasks: [WeekTask]        ← derived projection (read-only)
 /// ```
 ///
-/// - `project()` regenerates tasks from subgoals. This is the ONLY direction
-///   of data flow during normal operation.
-/// - `applyPrimaryProjectionEdit()` is an **input translation layer**, not
-///   bidirectional sync. When the user edits via the primary-task editor,
+/// - `project(_:now:)` regenerates tasks from subgoals. This is the ONLY
+///   direction of data flow during normal operation.
+/// - `applyPrimaryProjectionEdit(_:now:)` is an **input translation layer**,
+///   not bidirectional sync. When the user edits via the primary-task editor,
 ///   the edit is translated once into the goal (source of truth), then all
 ///   projections are regenerated. The task array is never independently
 ///   mutated and synced back.
 /// - Views consume `WeeklyPlanningProjection`, `DailyTaskProjection`, and
 ///   `ReviewProjection` — all derived from the goal, never mutating it.
+///
+/// P1-6 fixes:
+/// - `project` is a pure function: the timestamp is injected via `now`, it
+///   never reads `Date.now` internally.
+/// - Subgoal `channelID` is preserved (no longer forcibly cleared); a subgoal
+///   task inherits its own subgoal channel, falling back to the goal channel.
+/// - Projection no longer resets an in-progress task back to `.planned`; it
+///   only marks completion, preserving the existing execution status.
 struct GoalService: GoalServicing {
     func primarySubtasks(
         for subgoals: [GoalSubgoal],
@@ -64,10 +82,10 @@ struct GoalService: GoalServicing {
         }
     }
 
-    func project(_ source: WeeklyGoal) -> WeeklyGoal {
+    func project(_ source: WeeklyGoal, now: Date) -> WeeklyGoal {
         var goal = source
-        let now = Date.now
-        for index in goal.subgoals.indices { goal.subgoals[index].channelID = nil }
+        // P1-6 fix: do NOT clear subgoal channelID. Each subgoal may carry its
+        // own channel; clearing it permanently destroyed user data.
 
         if let primaryTaskID = goal.primaryTaskID,
            let taskIndex = goal.tasks.firstIndex(where: { $0.id == primaryTaskID }) {
@@ -111,9 +129,12 @@ struct GoalService: GoalServicing {
             task.description = item.detail
             task.notes = item.detail
             task.dueDate = goal.endDate
-            task.channelID = goal.channelID
+            // P1-6 fix: prefer the subgoal's own channel, fall back to goal.
+            task.channelID = item.channelID ?? goal.channelID
             task.sourceType = .weeklyObjective
-            task.status = item.isCompleted ? .completed : .planned
+            // P1-6 fix: only reflect completion; preserve in-progress/other
+            // execution status instead of resetting to `.planned`.
+            task.status = item.isCompleted ? .completed : task.status
             if task != goal.tasks[taskIndex] { task.updatedAt = now; goal.tasks[taskIndex] = task }
         }
 
@@ -129,7 +150,7 @@ struct GoalService: GoalServicing {
                 notes: item.detail,
                 description: item.detail,
                 subgoalID: item.id,
-                channelID: goal.channelID,
+                channelID: item.channelID ?? goal.channelID,
                 sourceType: .weeklyObjective,
                 sortOrder: nextOrder
             ))
@@ -138,26 +159,32 @@ struct GoalService: GoalServicing {
         return goal
     }
 
-    func applyPrimaryProjectionEdit(_ source: WeeklyGoal) -> WeeklyGoal {
+    func applyPrimaryProjectionEdit(_ source: WeeklyGoal, now: Date) -> WeeklyGoal {
         var goal = source
         guard let primaryTaskID = goal.primaryTaskID,
-              let task = goal.tasks.first(where: { $0.id == primaryTaskID }) else { return project(goal) }
+              let task = goal.tasks.first(where: { $0.id == primaryTaskID }) else {
+            return project(goal, now: now)
+        }
         goal.title = task.title
         goal.outcome = task.description
         goal.startDate = task.plannedDate ?? goal.startDate
         goal.endDate = task.dueDate ?? goal.endDate
         goal.channelID = task.channelID
         goal.subgoals = task.subtasks.map { subtask in
-            GoalSubgoal(
+            let existing = goal.subgoals.first(where: { $0.id == subtask.id })
+            return GoalSubgoal(
                 id: subtask.id,
                 title: subtask.title,
-                detail: goal.subgoals.first(where: { $0.id == subtask.id })?.detail ?? "",
+                detail: existing?.detail ?? "",
+                // P1-6 fix: preserve the subgoal's independent channel when
+                // translating a primary-task edit back into the goal.
+                channelID: existing?.channelID,
                 isCompleted: subtask.completed
             )
         }
         let complete = !goal.subgoals.isEmpty && goal.subgoals.allSatisfy(\.isCompleted)
-        goal.completedAt = task.status == .completed || complete ? (goal.completedAt ?? .now) : nil
-        return project(goal)
+        goal.completedAt = task.status == .completed || complete ? (goal.completedAt ?? now) : nil
+        return project(goal, now: now)
     }
 
     func weeklyPlanningProjection(_ goal: WeeklyGoal) -> WeeklyPlanningProjection {

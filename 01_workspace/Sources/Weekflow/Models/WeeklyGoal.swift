@@ -471,7 +471,10 @@ struct WeekTask: Identifiable, Codable, Hashable {
         plannedDay == nil && !isArchived && !isDeleted
     }
 
-    func isAssigned(on date: Date, calendar: Calendar = .current) -> Bool {
+    /// P1-4 fix: default to the shared business calendar instead of a raw
+    /// `.current`, so this check honours the same calendar (and test override)
+    /// used everywhere else rather than bypassing `BusinessCalendar`.
+    func isAssigned(on date: Date, calendar: Calendar = SystemBusinessCalendar.current.calendar) -> Bool {
         assignedDays.contains(LocalDay(date, calendar: calendar))
     }
     var hasCompletionCredit: Bool { !completionCredits.isEmpty }

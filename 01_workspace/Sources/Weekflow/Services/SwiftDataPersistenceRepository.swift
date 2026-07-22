@@ -253,12 +253,30 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                     desiredAssignmentKeys.insert(assignment.key)
                     if let record = assignmentLookup[assignment.key] {
                         let before = try CompactPersistenceCoding.encode(assignmentSnapshot(record))
+                        // P0-3 Fix: When automatic distribution modifies an existing
+                        // assignment (e.g., mask 1→3), track the transaction ID so
+                        // undo can properly restore the previous state.
+                        let previousMask = record.placementMask
+                        let isAutomaticDistribution: Bool
+                        let automaticTransactionID: UUID?
+                        if case let .automaticDistribution(transactionID) = kind {
+                            isAutomaticDistribution = true
+                            automaticTransactionID = transactionID
+                        } else {
+                            isAutomaticDistribution = false
+                            automaticTransactionID = nil
+                        }
+                        // If automatic distribution is adding the assigned bit (2) to
+                        // an existing planned-only assignment, mark it for undo.
+                        let shouldTrackForUndo = isAutomaticDistribution
+                            && (assignment.placementMask & 2 != 0)
+                            && (previousMask & 2 == 0)
                         let updatedSnapshot = AssignmentSnapshot(
                             taskID: assignment.taskID,
                             day: assignment.day,
                             placementMask: assignment.placementMask,
-                            source: record.source,
-                            originTransactionID: record.originTransactionID
+                            source: shouldTrackForUndo ? "automatic" : record.source,
+                            originTransactionID: shouldTrackForUndo ? automaticTransactionID : record.originTransactionID
                         )
                         let after = try CompactPersistenceCoding.encode(updatedSnapshot)
                         if before != after {
@@ -273,6 +291,11 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                             )
                             record.day = businessCalendar.date(for: assignment.day)
                             record.placementMask = assignment.placementMask
+                            // P0-3 Fix: Update source and originTransactionID for undo tracking
+                            if shouldTrackForUndo {
+                                record.source = "automatic"
+                                record.originTransactionID = automaticTransactionID
+                            }
                             record.revision += 1
                         }
                     } else {
@@ -480,8 +503,39 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                 let desiredKeys = Set(desired.map(\.key))
                 for assignment in desired {
                     if let record = lookup[assignment.key] {
+                        // P0-3 Fix: When undoing automatic distribution, restore
+                        // the previous mask and clear the transaction tracking.
+                        let previousMask = record.placementMask
                         record.day = businessCalendar.date(for: assignment.day)
                         record.placementMask = assignment.placementMask
+                        // If this was an automatic assignment being undone, clear tracking
+                        if case .undoAutomaticDistribution = kind,
+                           record.originTransactionID != nil {
+                            record.source = "manual"
+                            record.originTransactionID = nil
+                            // Record the undo operation for audit trail
+                            recordOperation(
+                                transactionID: transaction.id,
+                                sequence: &sequence,
+                                entityType: "taskAssignment",
+                                entityID: record.id.uuidString,
+                                before: try CompactPersistenceCoding.encode(AssignmentSnapshot(
+                                    taskID: assignment.taskID,
+                                    day: assignment.day,
+                                    placementMask: previousMask,
+                                    source: "automatic",
+                                    originTransactionID: record.originTransactionID
+                                )),
+                                after: try CompactPersistenceCoding.encode(AssignmentSnapshot(
+                                    taskID: assignment.taskID,
+                                    day: assignment.day,
+                                    placementMask: assignment.placementMask,
+                                    source: "manual",
+                                    originTransactionID: nil
+                                )),
+                                storeFullPayload: true
+                            )
+                        }
                         record.revision += 1
                     } else {
                         let origin = kind.transactionID
@@ -740,6 +794,60 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             }
         }
         try finish(transaction: mutation, operationCount: sequence, kind: .userEdit)
+    }
+
+    /// P1-1 Fix: Eagerly normalize all payload records to the current encoding
+    /// format. Instead of waiting for each record to be individually edited
+    /// (lazy migration), this re-encodes every payload at startup so the
+    /// database never contains mixed-format records after a version upgrade.
+    /// Returns the number of records that were rewritten.
+    @discardableResult
+    func normalizeAllPayloads() throws -> Int {
+        var rewritten = 0
+        // Goal payloads
+        let goalRecords = try context.fetch(FetchDescriptor<PersistedGoalRecord>())
+        for record in goalRecords {
+            let decoded = try CompactPersistenceCoding.decode(WeeklyGoal.self, from: record.payload)
+            var envelope = decoded
+            envelope.tasks = []
+            let normalized = try CompactPersistenceCoding.encode(envelope)
+            if normalized != record.payload {
+                record.payload = normalized
+                record.revision += 1
+                record.updatedAt = .now
+                rewritten += 1
+            }
+        }
+        // Task payloads
+        let taskRecords = try context.fetch(FetchDescriptor<PersistedTaskRecord>())
+        for record in taskRecords {
+            let decoded = try CompactPersistenceCoding.decode(WeekTask.self, from: record.payload)
+            var envelope = decoded
+            envelope.subtasks = []
+            let normalized = try CompactPersistenceCoding.encode(envelope)
+            if normalized != record.payload {
+                record.payload = normalized
+                record.revision += 1
+                record.updatedAt = .now
+                rewritten += 1
+            }
+        }
+        // Generic payload records (channels, calendar events, etc.)
+        let payloadRecords = try context.fetch(FetchDescriptor<PersistedPayloadRecord>())
+        for record in payloadRecords {
+            // Re-encode raw plist through the current codec envelope.
+            // If the codec format changed, the wrapper will differ.
+            let rawDecoded = try CompactDataCodec.decode(record.payload)
+            let reEncoded = CompactDataCodec.encode(rawDecoded)
+            if reEncoded != record.payload {
+                record.payload = reEncoded
+                record.revision += 1
+                record.updatedAt = .now
+                rewritten += 1
+            }
+        }
+        if rewritten > 0 { try saveContextOrRollback() }
+        return rewritten
     }
 
     func diagnostics() throws -> PersistenceDiagnostics {

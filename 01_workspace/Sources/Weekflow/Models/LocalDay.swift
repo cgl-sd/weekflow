@@ -26,6 +26,16 @@ struct LocalDay: Hashable, Comparable, Sendable, CustomStringConvertible {
         self.day = day
     }
 
+    /// P1-4 fix: validating failable initializer. Rejects impossible dates
+    /// such as `LocalDay(year: 2026, month: 99, day: -10)` instead of storing
+    /// garbage components that later surface as `.distantPast` dates.
+    init?(validatingYear year: Int, month: Int, day: Int) {
+        guard Self.isValid(year: year, month: month, day: day) else { return nil }
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+
     init(_ date: Date, calendar: Calendar) {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         year = components.year ?? 1
@@ -94,8 +104,18 @@ extension LocalDay: Codable {
 struct LocalTime: Codable, Hashable, Comparable, Sendable {
     let minutesSinceMidnight: Int
 
+    /// Clamping initializer for trusted internal conversions (e.g. deriving a
+    /// time from a valid `Date`). Kept for backward compatibility.
     init(minutesSinceMidnight: Int) {
         self.minutesSinceMidnight = min(max(minutesSinceMidnight, 0), 23 * 60 + 59)
+    }
+
+    /// P1-4 fix: strict failable initializer. Returns `nil` for out-of-range
+    /// values instead of silently clamping, so upstream logic errors surface
+    /// rather than being masked (e.g. `-100 -> 00:00`, `100000 -> 23:59`).
+    init?(validatingMinutesSinceMidnight minutes: Int) {
+        guard (0...(23 * 60 + 59)).contains(minutes) else { return nil }
+        self.minutesSinceMidnight = minutes
     }
 
     init(_ date: Date, calendar: Calendar) {
@@ -143,6 +163,13 @@ struct BusinessCalendar: BusinessCalendarProviding, Sendable {
         day.date(in: calendar) ?? .distantPast
     }
 
+    /// P1-4 fix: non-failing conversion that returns `nil` instead of silently
+    /// substituting `.distantPast`. Callers that must not hide an invalid day
+    /// should prefer this over `date(for:)`.
+    func dateOrNil(for day: LocalDay) -> Date? {
+        day.date(in: calendar)
+    }
+
     func date(for time: LocalTime, on day: LocalDay) -> Date {
         time.date(on: day, calendar: calendar) ?? date(for: day)
     }
@@ -165,5 +192,20 @@ struct BusinessCalendar: BusinessCalendarProviding, Sendable {
 }
 
 enum SystemBusinessCalendar {
-    static var current: BusinessCalendar { BusinessCalendar() }
+    /// P1-4 fix: a process-wide override so tests can inject a fixed calendar
+    /// that the model-layer compatibility properties also honour. Without this,
+    /// `current` always built a fresh `.autoupdatingCurrent` calendar that test
+    /// fixtures could not reach, allowing a single operation to mix the Store's
+    /// injected calendar with a different global one. Thread-safe.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _override: BusinessCalendar?
+
+    static var override: BusinessCalendar? {
+        get { lock.lock(); defer { lock.unlock() }; return _override }
+        set { lock.lock(); defer { lock.unlock() }; _override = newValue }
+    }
+
+    static var current: BusinessCalendar {
+        override ?? BusinessCalendar()
+    }
 }

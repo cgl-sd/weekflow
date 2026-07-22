@@ -64,6 +64,12 @@ final class FocusTimerService {
     @ObservationIgnored private var lastTickDate: Date?
     @ObservationIgnored private let continuousClock = ContinuousClock()
     @ObservationIgnored private var lastTickInstant: ContinuousClock.Instant?
+    /// P1-8 fix: counts seconds since the last snapshot write so we persist
+    /// periodically (every ~30s) while running, not on every tick.
+    @ObservationIgnored private var secondsSinceSnapshot = 0
+    /// P1-8 fix: interval between periodic focus-session snapshots.
+    private static let snapshotIntervalSeconds = 30
+    private static let sessionKey = "weekflow.focus.activeSession.v1"
 
     init(
         defaults: UserDefaults = .standard,
@@ -80,6 +86,8 @@ final class FocusTimerService {
         let initialSeconds = (durations[.meditation] ?? FocusMode.meditation.defaultMinutes) * 60
         remainingSeconds = initialSeconds
         totalSeconds = initialSeconds
+        // P1-8 fix: recover an interrupted focus session if one was persisted.
+        restorePersistedSession()
     }
 
     var formattedRemaining: String {
@@ -164,6 +172,7 @@ final class FocusTimerService {
         linkedTask = reference
         linkedTaskTitle = title
         resetCountdown(seconds: max(estimatedMinutes, 1) * 60)
+        persistSnapshot()
     }
 
     func clearLinkedTask() {
@@ -171,6 +180,7 @@ final class FocusTimerService {
         linkedTask = nil
         linkedTaskTitle = nil
         resetCountdown(seconds: minutes(for: selectedMode) * 60)
+        persistSnapshot()
     }
 
     func start(now: Date = .now) {
@@ -187,6 +197,7 @@ final class FocusTimerService {
         lastTickDate = now
         lastTickInstant = continuousClock.now
         installTimer()
+        persistSnapshot(at: now)
     }
 
     func toggle() {
@@ -202,6 +213,7 @@ final class FocusTimerService {
         lastTickDate = nil
         lastTickInstant = nil
         flushElapsedTime()
+        persistSnapshot()
     }
 
     func cancel() {
@@ -216,6 +228,7 @@ final class FocusTimerService {
         linkedTask = nil
         linkedTaskTitle = nil
         resetCountdown(seconds: minutes(for: selectedMode) * 60)
+        clearSnapshot()
     }
 
     func stop() {
@@ -240,6 +253,7 @@ final class FocusTimerService {
         guard isRunning || hasStarted else { return }
         reconcileAfterInactivity()
         flushElapsedTime(at: now)
+        persistSnapshot(at: now)
     }
 
     func advance(by seconds: Int) {
@@ -249,6 +263,12 @@ final class FocusTimerService {
         unloggedSeconds += elapsed
         if let lastTickDate { self.lastTickDate = lastTickDate.addingTimeInterval(TimeInterval(elapsed)) }
         lastTickInstant = continuousClock.now
+        // P1-8 fix: periodically snapshot the running session so a crash loses
+        // at most ~30s of elapsed work.
+        secondsSinceSnapshot += elapsed
+        if secondsSinceSnapshot >= Self.snapshotIntervalSeconds {
+            persistSnapshot()
+        }
         guard remainingSeconds == 0 else { return }
         timer?.invalidate()
         timer = nil
@@ -257,6 +277,7 @@ final class FocusTimerService {
         lastTickDate = nil
         lastTickInstant = nil
         flushElapsedTime()
+        clearSnapshot()
         notificationScheduler.sendCompletion(mode: selectedMode, minutes: totalSeconds / 60)
     }
 
@@ -299,6 +320,7 @@ final class FocusTimerService {
         totalSeconds = max(seconds, 1)
         hasStarted = false
         unloggedSeconds = 0
+        secondsSinceSnapshot = 0
     }
 
     private func flushElapsedTime(at date: Date = .now) {
@@ -315,5 +337,64 @@ final class FocusTimerService {
 
     private static func durationKey(for mode: FocusMode) -> String {
         "weekflow.focus.duration.\(mode.rawValue)"
+    }
+
+    // MARK: - Crash Recovery (P1-8)
+
+    /// Persists the current countdown state so it can survive a crash or
+    /// forced termination. Called on every meaningful state change and
+    /// periodically while running.
+    private func persistSnapshot(at date: Date = .now) {
+        secondsSinceSnapshot = 0
+        let session = FocusTimerSession(
+            mode: selectedMode,
+            totalSeconds: totalSeconds,
+            remainingSeconds: remainingSeconds,
+            unloggedSeconds: unloggedSeconds,
+            hasStarted: hasStarted,
+            linkedTask: linkedTask,
+            linkedTaskTitle: linkedTaskTitle,
+            lastCheckpointAt: date
+        )
+        guard let data = try? JSONEncoder().encode(session) else { return }
+        defaults.set(data, forKey: Self.sessionKey)
+    }
+
+    /// Removes the persisted snapshot once a session is finished or cancelled,
+    /// so the next launch does not resurrect a completed countdown.
+    private func clearSnapshot() {
+        secondsSinceSnapshot = 0
+        defaults.removeObject(forKey: Self.sessionKey)
+    }
+
+    /// Recovers an interrupted focus session persisted by a previous run.
+    /// Offline elapsed time since the last checkpoint is folded into the
+    /// countdown and the unlogged accumulator so no elapsed work is lost.
+    /// The session is restored paused; the user resumes it explicitly.
+    private func restorePersistedSession(now: Date = .now) {
+        guard let data = defaults.data(forKey: Self.sessionKey),
+              let session = try? JSONDecoder().decode(FocusTimerSession.self, from: data) else {
+            return
+        }
+        selectedMode = session.mode
+        totalSeconds = max(session.totalSeconds, 1)
+        remainingSeconds = max(session.remainingSeconds, 0)
+        unloggedSeconds = max(session.unloggedSeconds, 0)
+        linkedTask = session.linkedTask
+        linkedTaskTitle = session.linkedTaskTitle
+        hasStarted = session.hasStarted
+        // Fold offline elapsed into the countdown for a running session.
+        if hasStarted {
+            let offline = max(Int(now.timeIntervalSince(session.lastCheckpointAt)), 0)
+            if offline > 0 {
+                let consumed = min(offline, remainingSeconds)
+                remainingSeconds -= consumed
+                unloggedSeconds += consumed
+            }
+            lastTickDate = now
+            lastTickInstant = continuousClock.now
+        }
+        // Remain paused; checkpoint will flush recovered unlogged seconds.
+        isRunning = false
     }
 }

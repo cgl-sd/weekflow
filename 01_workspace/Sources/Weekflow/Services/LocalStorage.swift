@@ -145,6 +145,12 @@ struct LocalStorage: @unchecked Sendable {
         try read { try $0.diagnostics() }
     }
 
+    /// P1-1: Eagerly normalize all persisted payloads to current format.
+    @discardableResult
+    func normalizeAllPayloads() throws -> Int {
+        try write { try $0.normalizeAllPayloads() }
+    }
+
     func saveApplicationSnapshot(
         _ snapshot: WeekflowPersistenceSnapshot,
         kind: PersistenceMutationKind = .userEdit

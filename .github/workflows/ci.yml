@@ -84,3 +84,39 @@ jobs:
               --title "Weekflow $GITHUB_REF_NAME" \
               --generate-notes
           gh release upload "$GITHUB_REF_NAME" release/Weekflow-*.zip release/Weekflow-*.dmg release/SHA256SUMS --clobber
+
+  # CI Fix: Thread Sanitizer job to detect data races and concurrency bugs.
+  thread-sanitizer:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          swift --version
+      - name: Build with ThreadSanitizer
+        working-directory: 01_workspace
+        run: swift build --build-tests -Xswiftc -sanitize=thread -Xlinker -sanitize=thread
+      - name: Test with ThreadSanitizer
+        working-directory: 01_workspace
+        run: swift test --skip-build -Xswiftc -sanitize=thread -Xlinker -sanitize=thread
+        env:
+          TSAN_OPTIONS: halt_on_error=0
+
+  # CI Fix: Address Sanitizer job to detect memory errors.
+  address-sanitizer:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          swift --version
+      - name: Build with AddressSanitizer
+        working-directory: 01_workspace
+        run: swift build --build-tests -Xswiftc -sanitize=address -Xlinker -sanitize=address
+      - name: Test with AddressSanitizer
+        working-directory: 01_workspace
+        run: swift test --skip-build -Xswiftc -sanitize=address -Xlinker -sanitize=address

@@ -1,8 +1,26 @@
 import Foundation
 import SwiftData
 
+// MARK: - Schema Versioning
+//
+// P1-1 Note: SwiftData's VersionedSchema currently shares the same @Model types
+// across versions. This means future modifications to model classes will affect
+// all schema versions. For true schema freezing, each version would need its own
+// model types (e.g., V1GoalRecord, V2GoalRecord).
+//
+// Current mitigation:
+// 1. Model changes require explicit migration stages
+// 2. Schema fingerprint validation detects accidental changes
+// 3. Payload-based storage minimizes model structure dependencies
+
+/// Schema V1 - Initial release schema.
+/// WARNING: Do not modify the model list without creating a new schema version.
 enum WeekflowSchemaV1: VersionedSchema {
     static let versionIdentifier = Schema.Version(1, 0, 0)
+
+    /// Fingerprint of V1 model structure for drift detection.
+    /// Update this when intentionally modifying models.
+    static let modelFingerprint = "v1-8models-metadata-goal-task-assignment-payload-lifecycle-transaction-operation"
 
     static var models: [any PersistentModel.Type] {
         [
@@ -18,17 +36,23 @@ enum WeekflowSchemaV1: VersionedSchema {
     }
 }
 
-/// V1 remains frozen above. V2 adds an append-only migration audit entity;
-/// business-date payload normalization is performed by backward-compatible
+/// Schema V2 - Adds migration audit entity.
+/// V1 models remain unchanged; V2 adds PersistedMigrationAuditRecord.
+/// Business-date payload normalization is performed by backward-compatible
 /// Codable adapters when records are next written.
 enum WeekflowSchemaV2: VersionedSchema {
     static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    /// Fingerprint of V2 model structure for drift detection.
+    static let modelFingerprint = "v2-9models-v1-plus-migration-audit"
 
     static var models: [any PersistentModel.Type] {
         WeekflowSchemaV1.models + [PersistedMigrationAuditRecord.self]
     }
 }
 
+/// Migration plan from V1 to V2.
+/// Future migrations (V2→V3, etc.) should add new stages here.
 enum WeekflowMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [WeekflowSchemaV1.self, WeekflowSchemaV2.self]
