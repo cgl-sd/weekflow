@@ -52,13 +52,18 @@ import Testing
         encoding: .utf8
     )
     let dailySource = try String(
-        contentsOf: root.appendingPathComponent("Views/DailyPlanningViews.swift"),
+        contentsOf: root.appendingPathComponent("Views/PlanningTaskPool.swift"),
         encoding: .utf8
     )
-    let settingsSource = try String(
+    let settingsColorPickers = try String(
+        contentsOf: root.appendingPathComponent("Views/SettingsColorPickers.swift"),
+        encoding: .utf8
+    )
+    let settingsMain = try String(
         contentsOf: root.appendingPathComponent("Views/ChannelSettingsView.swift"),
         encoding: .utf8
     )
+    let settingsSource = settingsColorPickers + settingsMain
 
     #expect(weeklySource.contains("ChartPalettePreferences.storageKey"))
     #expect(dailySource.contains("ChartPalettePreferences.storageKey"))
@@ -66,7 +71,7 @@ import Testing
     #expect(settingsSource.contains("ChartPaletteMenu"))
     #expect(settingsSource.contains("ChartPaletteAnchorPreferenceKey"))
     #expect(settingsSource.contains("TaskControlMenuSurface("))
-    #expect(settingsSource.contains("private struct ChartPaletteMenuRow: View"))
+    #expect(settingsSource.contains("struct ChartPaletteMenuRow: View"))
     #expect(settingsSource.contains("isHovering ? WeekflowPalette.surfaceHover : .clear"))
     #expect(settingsSource.contains("Text(\"用于每日回顾和周回顾。\")"))
     #expect(!settingsSource.contains("专注模式保留自身颜色"))

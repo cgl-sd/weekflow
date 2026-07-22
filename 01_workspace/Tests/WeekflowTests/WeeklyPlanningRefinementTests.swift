@@ -249,12 +249,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyPlanningUsesTaskStyleDateMenusAndQuickAssignment() throws {
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let toolbarSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/WorkspaceToolbar.swift"
@@ -296,12 +293,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyRelationshipSwitchLivesInTheTopToolbarInsteadOfTheBoardHeader() throws {
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let toolbarSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/WorkspaceToolbar.swift"
@@ -357,30 +351,21 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyGoalCreateAndEditEntriesOpenTheExactTaskDetailPage() throws {
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let contentSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/ContentView.swift"
         ),
         encoding: .utf8
     )
-    let detailSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/TaskDetailView.swift"
-        ),
-        encoding: .utf8
-    )
-    let homeCardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/HomeBoardViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let detailSource = try ["TaskDetailSupport.swift", "TaskDetailView.swift", "TaskDetailMenus.swift", "TaskDetailActions.swift", "ShortcutHelpView.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
+    let homeCardSource = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let appSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
             "Sources/Weekflow/App/WeekflowApp.swift"
@@ -699,12 +684,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyPlanningPoolUsesOneDraggableCardPerWeeklySubgoal() throws {
-    let weeklySource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let weeklySource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let storeSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Stores/WeekflowStore.swift"
@@ -793,18 +775,12 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func dailyPlanningPoolAndWeeklyAssignmentsUseOnlyWeeklyGoalWork() throws {
-    let dailySource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let dailySource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(dailySource.contains("store.weeklyPlanningPoolEntries"))
     #expect(boardSource.contains("entries: store.weeklyPlanningTasks(on: date)"))
@@ -813,12 +789,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyGoalEstimatedTotalSumsItsSubgoalEstimates() throws {
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(boardSource.contains("goal.subgoals.reduce(0) { total, subgoal in"))
     #expect(boardSource.contains("total + estimatedMinutes(for: subgoal)"))
@@ -828,12 +801,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func weeklyDailyAssignmentCardShowsOnlyItsWeeklyGoalOnTheSecondLine() throws {
-    let boardSource = try String(
-        contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let boardSource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: weeklyRefinementPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(boardSource.components(separatedBy: "Text(entry.goal.title)").count - 1 >= 2)
     #expect(!boardSource.contains("return \"\\(entry.goal.title) / \\(subgoal.title)\""))

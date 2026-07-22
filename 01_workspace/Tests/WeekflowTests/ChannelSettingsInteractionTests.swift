@@ -40,12 +40,21 @@ import Testing
         contentsOf: root.appendingPathComponent("Views/WeeklyReviewView.swift"),
         encoding: .utf8
     )
-    let assistantSource = try String(
+        let _assistantSource_part0 = try String(
         contentsOf: root.appendingPathComponent("Views/AssistantPanelViews.swift"),
         encoding: .utf8
     )
+    let _assistantSource_part1 = try String(
+        contentsOf: root.appendingPathComponent("Views/AssistantCalendarViews.swift"),
+        encoding: .utf8
+    )
+    let _assistantSource_part2 = try String(
+        contentsOf: root.appendingPathComponent("Views/AssistantListViews.swift"),
+        encoding: .utf8
+    )
+    let assistantSource = _assistantSource_part0 + _assistantSource_part1 + _assistantSource_part2
     let homeSource = try String(
-        contentsOf: root.appendingPathComponent("Views/HomeBoardViews.swift"),
+        contentsOf: root.appendingPathComponent("Views/HomeBoardComponents.swift"),
         encoding: .utf8
     )
 
@@ -183,10 +192,9 @@ import Testing
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let settings = try String(
-        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/ChannelSettingsView.swift"),
-        encoding: .utf8
-    )
+    let settings = try ["ChannelSettingsView.swift", "SettingsColorPickers.swift", "ChannelSettingComponents.swift"]
+            .map { try String(contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     #expect(settings.contains("SettingsHoverControl"))
     #expect(settings.contains("AppearanceSegmentedControl"))
     #expect(settings.contains("CompactColorPalettePicker"))
@@ -247,10 +255,9 @@ import Testing
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let settings = try String(
-        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/ChannelSettingsView.swift"),
-        encoding: .utf8
-    )
+    let settings = try ["ChannelSettingsView.swift", "SettingsColorPickers.swift", "ChannelSettingComponents.swift"]
+            .map { try String(contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let draftStart = try #require(settings.range(of: "HStack(spacing: 10) {\n                        ChannelIconButton("))
     let draftEnd = try #require(settings.range(of: "Divider()", range: draftStart.upperBound..<settings.endIndex))
     let draft = String(settings[draftStart.lowerBound..<draftEnd.lowerBound])

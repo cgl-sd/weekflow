@@ -249,7 +249,7 @@ struct AssistantSearchView: View {
 
 }
 
-private struct AssistantSearchDatePopover: View {
+struct AssistantSearchDatePopover: View {
     @Binding var selection: AssistantSearchDateFilter
 
     var body: some View {
@@ -275,7 +275,7 @@ private struct AssistantSearchDatePopover: View {
     }
 }
 
-private struct AssistantSearchFilterRow: View {
+struct AssistantSearchFilterRow: View {
     let title: String
     let symbol: String
     let selected: Bool

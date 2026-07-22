@@ -13,14 +13,22 @@ import Testing
         contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/ContentView.swift"),
         encoding: .utf8
     )
-    let assistantSource = try String(
+    let _assist_rail = try String(
         contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/AssistantPanelViews.swift"),
         encoding: .utf8
     )
-    let homeSource = try String(
-        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/HomeBoardViews.swift"),
+    let _assist_cal = try String(
+        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/AssistantCalendarViews.swift"),
         encoding: .utf8
     )
+    let _assist_lists = try String(
+        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/AssistantListViews.swift"),
+        encoding: .utf8
+    )
+    let assistantSource = _assist_rail + _assist_cal + _assist_lists
+    let homeSource = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(contentSource.contains("openCalendarDate: openCalendarDate"))
     #expect(contentSource.contains("assistantCalendarPresentation = .dayTasks"))

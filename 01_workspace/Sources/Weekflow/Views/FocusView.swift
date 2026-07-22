@@ -156,7 +156,7 @@ struct FocusView: View {
     }
 }
 
-private struct FocusControlButton: View {
+struct FocusControlButton: View {
     let symbol: String
     let accessibilityTitle: String
     let isPrimary: Bool
@@ -190,7 +190,7 @@ private struct FocusControlButton: View {
     }
 }
 
-private struct FocusModeButton: View {
+struct FocusModeButton: View {
     let mode: FocusMode
     let durationMinutes: Int
     let isSelected: Bool

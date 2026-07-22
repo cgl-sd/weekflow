@@ -21,7 +21,7 @@ struct CalendarCutoffFence: View {
     }
 }
 
-private struct CalendarWaveLine: Shape {
+struct CalendarWaveLine: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let middleY = rect.midY

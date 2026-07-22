@@ -399,7 +399,7 @@ struct WorkspaceToolbarMenuLayer: View {
     }
 }
 
-private struct ToolbarStaticPill: View {
+struct ToolbarStaticPill: View {
     let title: String
     let systemImage: String
 
@@ -415,7 +415,7 @@ private struct ToolbarStaticPill: View {
     }
 }
 
-private struct WorkspaceViewMenu: View {
+struct WorkspaceViewMenu: View {
     @Binding var selection: WorkspaceView
 
     var body: some View {
@@ -439,7 +439,7 @@ private struct WorkspaceViewMenu: View {
     }
 }
 
-private struct WorkspaceViewMenuRow: View {
+struct WorkspaceViewMenuRow: View {
     let view: WorkspaceView
     let isSelected: Bool
     let action: () -> Void
@@ -468,7 +468,7 @@ private struct WorkspaceViewMenuRow: View {
     }
 }
 
-private struct ToolbarIconButton: View {
+struct ToolbarIconButton: View {
     let systemImage: String
     let help: String
     let action: () -> Void
@@ -490,7 +490,7 @@ private struct ToolbarIconButton: View {
     }
 }
 
-private struct ToolbarPillButton: View {
+struct ToolbarPillButton: View {
     let title: String
     let systemImage: String
     var fixedWidth: CGFloat? = nil
@@ -516,7 +516,7 @@ private struct ToolbarPillButton: View {
     }
 }
 
-private struct DateJumpButton: View {
+struct DateJumpButton: View {
     let date: Date
     let isToday: Bool
     let calendarMode: WorkspaceView
@@ -656,7 +656,7 @@ struct DateJumpPopover: View {
     }
 }
 
-private struct PlanningDateJumpPopover: View {
+struct PlanningDateJumpPopover: View {
     @Binding var selectedDate: Date
     @State private var displayedMonth: Date
     private let calendar = SystemBusinessCalendar.current.calendar
@@ -709,7 +709,7 @@ private struct PlanningDateJumpPopover: View {
     }
 }
 
-private struct WeeklyDateJumpPopover: View {
+struct WeeklyDateJumpPopover: View {
     @Binding var selectedDate: Date
     @State private var displayedMonth: Date
     private let calendar = SystemBusinessCalendar.current.calendar
@@ -771,7 +771,7 @@ private struct WeeklyDateJumpPopover: View {
     }
 }
 
-private struct DateCommandRow: View {
+struct DateCommandRow: View {
     let title: String
     let shortcut: String
     let key: KeyEquivalent
@@ -899,7 +899,7 @@ struct TaskFilterPopover: View {
     }
 }
 
-private struct TaskFilterRow: View {
+struct TaskFilterRow: View {
     let title: String
     let symbol: String
     let color: Color

@@ -851,9 +851,15 @@ import SwiftUI
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let sourceURL = packageRoot
-        .appendingPathComponent("Sources/Weekflow/Views/TaskDetailView.swift")
-    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let _detail_main = try String(contentsOf: packageRoot
+        .appendingPathComponent("Sources/Weekflow/Views/TaskDetailView.swift"), encoding: .utf8)
+    let _detail_menus = try String(contentsOf: packageRoot
+        .appendingPathComponent("Sources/Weekflow/Views/TaskDetailMenus.swift"), encoding: .utf8)
+    let _detail_actions = try String(contentsOf: packageRoot
+        .appendingPathComponent("Sources/Weekflow/Views/TaskDetailActions.swift"), encoding: .utf8)
+    let _detail_support = try String(contentsOf: packageRoot
+        .appendingPathComponent("Sources/Weekflow/Views/TaskDetailSupport.swift"), encoding: .utf8)
+    let source = _detail_main + _detail_menus + _detail_actions + _detail_support
 
     #expect(source.contains("TaskChannelPopover("))
     #expect(source.contains("TaskPriorityPopover("))
@@ -935,10 +941,9 @@ import SwiftUI
         contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Support/PointingHandCursor.swift"),
         encoding: .utf8
     )
-    let detailSource = try String(
-        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/TaskDetailView.swift"),
-        encoding: .utf8
-    )
+    let detailSource = try ["TaskDetailSupport.swift", "TaskDetailView.swift", "TaskDetailMenus.swift", "TaskDetailActions.swift", "ShortcutHelpView.swift"]
+            .map { try String(contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(cursorSource.contains("label\n                .contentShape(Rectangle())"))
     #expect(detailSource.contains(".frame(width: 30, height: 42)\n                    .contentShape(Rectangle())"))

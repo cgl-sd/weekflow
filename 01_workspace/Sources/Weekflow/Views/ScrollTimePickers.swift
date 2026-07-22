@@ -152,7 +152,7 @@ struct ScrollClockTimePopover: View {
     }
 }
 
-private struct ScrollTimeChoiceHighlight: ViewModifier {
+struct ScrollTimeChoiceHighlight: ViewModifier {
     let selected: Bool
     @State private var hovering = false
 
@@ -273,7 +273,7 @@ struct ScrollDurationPopover: View {
     }
 }
 
-private struct DurationChoiceButton: View {
+struct DurationChoiceButton: View {
     let selected: Bool
     let title: String
     let action: () -> Void

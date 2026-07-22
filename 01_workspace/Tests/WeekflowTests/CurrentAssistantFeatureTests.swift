@@ -29,12 +29,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
     #expect(sidebarSource.contains("isWorkspaceHeaderHovering || isWorkspaceMenuPresented"))
     #expect(sidebarSource.contains("isWorkspaceMenuPresented.toggle()"))
 
-    let settingsSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/ChannelSettingsView.swift"
-        ),
-        encoding: .utf8
-    )
+    let settingsSource = try ["ChannelSettingsView.swift", "SettingsColorPickers.swift", "ChannelSettingComponents.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     #expect(settingsSource.components(separatedBy: ".scrollIndicators(.automatic)").count - 1 == 2)
     #expect(settingsSource.components(separatedBy: ".background(SystemOverlayScroller())").count - 1 == 2)
     #expect(!settingsSource.contains(".scrollIndicators(.visible)"))
@@ -76,23 +73,49 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 @MainActor
 @Test func trashLivesInLeftNavigationInsteadOfAssistantRail() throws {
     #expect(AssistantPanel.railCases == [.calendar, .goals, .backlog, .shutdown, .search])
-    let source = try String(
+    let _source_rail = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/AssistantPanelViews.swift"
         ),
         encoding: .utf8
     )
+    let _source_cal = try String(
+        contentsOf: currentPackageRoot.appendingPathComponent(
+            "Sources/Weekflow/Views/AssistantCalendarViews.swift"
+        ),
+        encoding: .utf8
+    )
+    let _source_lists = try String(
+        contentsOf: currentPackageRoot.appendingPathComponent(
+            "Sources/Weekflow/Views/AssistantListViews.swift"
+        ),
+        encoding: .utf8
+    )
+    let source = _source_rail + _source_cal + _source_lists
     #expect(!source.contains("AssistantRailAddButton"))
 }
 
 @MainActor
 @Test func assistantCalendarConsolidatesCutoffVisibilityIntoItsCustomMenu() throws {
-    let source = try String(
+    let _source_rail = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/AssistantPanelViews.swift"
         ),
         encoding: .utf8
     )
+    let _source_cal = try String(
+        contentsOf: currentPackageRoot.appendingPathComponent(
+            "Sources/Weekflow/Views/AssistantCalendarViews.swift"
+        ),
+        encoding: .utf8
+    )
+    let _source_lists = try String(
+        contentsOf: currentPackageRoot.appendingPathComponent(
+            "Sources/Weekflow/Views/AssistantListViews.swift"
+        ),
+        encoding: .utf8
+    )
+    let source = _source_rail + _source_cal + _source_lists
 
     #expect(source.contains("AssistantCalendarOptionsMenu("))
     #expect(source.contains("showsCalendarOptions.toggle()"))
@@ -142,12 +165,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
         ),
         encoding: .utf8
     )
-    let planningSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let planningSource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(contentSource.contains("@State private var dailyPlanningDate = SystemBusinessCalendar.current.calendar.date("))
     #expect(contentSource.contains("planningDate: dailyPlanningDate"))
@@ -165,12 +185,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func dailyPlanningTaskPoolReservesAnIndependentScrollbarLane() throws {
-    let source = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let source = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(source.contains("@State private var verticalScrollerTrackWidth = NSScroller.scrollerWidth("))
     #expect(source.contains("scrollerStyle: .legacy"))
@@ -185,12 +202,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func planningPoolAndDailyTasksUseTheSameSystemScrollerAlgorithm() throws {
-    let planningSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let planningSource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let scrollerSource = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Support/VerticalScrollerAlignment.swift"
@@ -216,18 +230,12 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func planningAndWeeklyBoardsShareTheHomepageMoveDropAlgorithm() throws {
-    let planningSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
-    let weeklySource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/WeeklyBoardView.swift"
-        ),
-        encoding: .utf8
-    )
+    let planningSource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
+    let weeklySource = try ["WeeklyBoardView.swift", "WeeklyRelationshipMap.swift", "WeeklyGoalCards.swift", "WeeklyDayColumn.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let dropSource = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/HomeTaskDropSupport.swift"
@@ -316,12 +324,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func dailyPlanningTaskListUsesHomepageWidthAndScrollerRules() throws {
-    let source = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let source = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(source.contains("WeekflowLayout.homeTaskScrollViewportWidth("))
     #expect(source.contains("WeekflowLayout.homeShowsVerticalScroller("))
@@ -441,24 +446,18 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func dailyPlanningUsesIndependentStableThreeColumnSteps() throws {
-    let planningSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let planningSource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let contentSource = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/ContentView.swift"
         ),
         encoding: .utf8
     )
-    let cardSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/HomeBoardViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let cardSource = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     #expect(planningSource.contains("title: \"每周任务池\""))
     #expect(planningSource.contains("workTimeCard(date: date)"))
@@ -544,12 +543,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func taskCardTimeMenusUseCustomStartPresentationAndMeasuredEstimatedAnchor() throws {
-    let homeSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/HomeBoardViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let homeSource = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     let sharedMenuSource = try String(
         contentsOf: currentPackageRoot.appendingPathComponent(
             "Sources/Weekflow/Views/TaskCardPrimaryMenuOverlays.swift"
@@ -566,18 +562,12 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func dailyPlanningUsesCustomTaskCardMenusButOmitsDateAdjustment() throws {
-    let homeSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/HomeBoardViews.swift"
-        ),
-        encoding: .utf8
-    )
-    let planningSource = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/DailyPlanningViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let homeSource = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
+    let planningSource = try ["DailyPlanningView.swift", "DailyShutdownView.swift", "PlanningTaskList.swift", "PlanningTaskPool.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
 
     for menuType in [
         "TaskCardDurationMenuOverlay(",
@@ -607,12 +597,9 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
 
 @MainActor
 @Test func taskCardMainAndSubtaskCompletionControlsCannotDriftInSize() throws {
-    let source = try String(
-        contentsOf: currentPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Views/HomeBoardViews.swift"
-        ),
-        encoding: .utf8
-    )
+    let source = try ["HomeBoardView.swift", "HomeBoardComponents.swift", "TaskCardView.swift", "TaskCardButtons.swift"]
+            .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
+            .joined(separator: "\n")
     #expect(source.components(separatedBy: "TaskCardCompletionButton(").count - 1 == 2)
     #expect(source.contains("sizeAdjustment: TaskCardTypographyPreferences.completionIconSizeAdjustment"))
 }

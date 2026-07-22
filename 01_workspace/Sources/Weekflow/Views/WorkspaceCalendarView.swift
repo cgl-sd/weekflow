@@ -44,7 +44,7 @@ struct WorkspaceCalendarView: View {
     }
 }
 
-private struct TimeWorkspaceCalendar: View {
+struct TimeWorkspaceCalendar: View {
     @Bindable var store: WeekflowStore
     let dates: [Date]
     let selectedChannelID: String
@@ -260,7 +260,7 @@ private struct TimeWorkspaceCalendar: View {
     }
 }
 
-private struct WorkspaceScheduleBlock: Identifiable {
+struct WorkspaceScheduleBlock: Identifiable {
     let id: UUID
     let title: String
     let start: Date
@@ -272,7 +272,7 @@ private struct WorkspaceScheduleBlock: Identifiable {
     let detail: String
 }
 
-private struct CalendarTimeBlock: View {
+struct CalendarTimeBlock: View {
     let block: WorkspaceScheduleBlock
     let displayedMinutes: Int
     let openTask: () -> Void
@@ -388,7 +388,7 @@ private struct CalendarTimeBlock: View {
     }
 }
 
-private struct DottedCalendarFill: View {
+struct DottedCalendarFill: View {
     let color: Color
 
     var body: some View {
@@ -405,7 +405,7 @@ private struct DottedCalendarFill: View {
     }
 }
 
-private struct CalendarStartFence: Shape {
+struct CalendarStartFence: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let toothWidth: CGFloat = 10
@@ -420,7 +420,7 @@ private struct CalendarStartFence: Shape {
     }
 }
 
-private struct MonthWorkspaceCalendar: View {
+struct MonthWorkspaceCalendar: View {
     @Bindable var store: WeekflowStore
     let month: Date
     let selectedChannelID: String

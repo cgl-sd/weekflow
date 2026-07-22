@@ -77,7 +77,7 @@ struct TrashSummaryView: View {
     }
 }
 
-private struct TrashTaskCard: View {
+struct TrashTaskCard: View {
     @Bindable var store: WeekflowStore
     let entry: (goal: WeeklyGoal, task: WeekTask)
     let openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)?
@@ -119,7 +119,7 @@ private struct TrashTaskCard: View {
     }
 }
 
-private struct TrashGoalCard: View {
+struct TrashGoalCard: View {
     @Bindable var store: WeekflowStore
     let goal: WeeklyGoal
 

@@ -477,7 +477,7 @@ struct TaskCardPriorityMenuOverlay: View {
     }
 }
 
-private struct TaskCardMenuPointer: View {
+struct TaskCardMenuPointer: View {
     let anchorX: CGFloat
     let menuTop: CGFloat
 

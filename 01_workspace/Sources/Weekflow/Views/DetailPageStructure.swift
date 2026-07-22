@@ -58,7 +58,7 @@ struct DetailPagePropertyBar<Leading: View, Values: View, Actions: View>: View {
     }
 }
 
-private struct DetailPageContentLayout: ViewModifier {
+struct DetailPageContentLayout: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, 42)

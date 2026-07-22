@@ -256,7 +256,7 @@ struct QuickTaskFormView: View {
 
 }
 
-private struct ComposerControl<Label: View>: View {
+struct ComposerControl<Label: View>: View {
     let tooltip: String
     let isExpanded: Bool
     let action: () -> Void
@@ -289,7 +289,7 @@ private struct ComposerControl<Label: View>: View {
     }
 }
 
-private struct ComposerSymbol: View {
+struct ComposerSymbol: View {
     let name: String
 
     init(_ name: String) {
@@ -306,7 +306,7 @@ private struct ComposerSymbol: View {
     }
 }
 
-private struct ComposerDatePicker: View {
+struct ComposerDatePicker: View {
     @Binding var plannedDate: Date
     @Binding var keepInTaskPool: Bool
     @Binding var executionWeekStart: Date?
@@ -500,7 +500,7 @@ struct ComposerChannelPicker: View {
     }
 }
 
-private struct ComposerChannelRow: View {
+struct ComposerChannelRow: View {
     let id: String?
     let title: String
     let color: Color
@@ -569,7 +569,7 @@ struct ComposerGoalPicker: View {
     }
 }
 
-private struct ComposerGoalRow: View {
+struct ComposerGoalRow: View {
     let goal: WeeklyGoal
     @Binding var selection: WeeklyGoal.ID?
     @State private var hovering = false
@@ -602,7 +602,7 @@ private struct ComposerGoalRow: View {
     }
 }
 
-private struct ComposerPriorityPicker: View {
+struct ComposerPriorityPicker: View {
     @Binding var selection: TaskPriority
 
     private let rows: [(TaskPriority, String, Color)] = [

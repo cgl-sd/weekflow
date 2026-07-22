@@ -186,7 +186,7 @@ struct TaskDatePopover: View {
     }
 }
 
-private struct CompactDateAction: View {
+struct CompactDateAction: View {
     let symbol: String
     let title: String
     let action: () -> Void
@@ -455,7 +455,7 @@ struct CompactTaskMonthCalendar: View {
     }
 }
 
-private struct CompactCalendarDayHighlight: ViewModifier {
+struct CompactCalendarDayHighlight: ViewModifier {
     let isEnabled: Bool
     @State private var hovering = false
 
@@ -519,7 +519,7 @@ struct TaskPriorityPopover: View {
     }
 }
 
-private struct TaskPriorityTextRow: View {
+struct TaskPriorityTextRow: View {
     let priority: TaskPriority
     let selected: Bool
     let action: () -> Void
@@ -714,7 +714,7 @@ struct TaskPopoverInteractiveHighlight: ViewModifier {
     }
 }
 
-private struct TaskPopoverRow: View {
+struct TaskPopoverRow: View {
     let symbol: String?
     let title: String
     let tint: Color

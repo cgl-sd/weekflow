@@ -65,7 +65,7 @@ struct WeeklyReviewView: View {
     }
 }
 
-private struct WeeklyReviewOverviewCard: View {
+struct WeeklyReviewOverviewCard: View {
     let snapshot: WeeklyReviewSnapshot
     @AppStorage(ChartPalettePreferences.storageKey)
     private var chartPaletteRawValue = ChartPalettePreferences.defaultPreset
@@ -184,7 +184,7 @@ private struct WeeklyReviewOverviewCard: View {
 
 }
 
-private struct WeeklyReviewRhythmChart: View {
+struct WeeklyReviewRhythmChart: View {
     let metrics: [WeeklyReviewDayMetric]
     let palette: ChartPalettePreset
     @Environment(\.colorScheme) private var colorScheme
@@ -260,7 +260,7 @@ private struct WeeklyReviewRhythmChart: View {
     }
 }
 
-private struct WeeklyReviewTimeRing: View {
+struct WeeklyReviewTimeRing: View {
     let taskMinutes: Int
     let focusMinutes: Int
     let palette: ChartPalettePreset
@@ -316,7 +316,7 @@ private struct WeeklyReviewTimeRing: View {
     }
 }
 
-private struct WeeklyReviewBreakdown: View {
+struct WeeklyReviewBreakdown: View {
     let snapshot: WeeklyReviewSnapshot
 
     var body: some View {
@@ -391,7 +391,7 @@ private struct WeeklyReviewBreakdown: View {
     }
 }
 
-private struct WeeklyReviewGoalCard: View {
+struct WeeklyReviewGoalCard: View {
     let goal: WeeklyGoal
     @Bindable var store: WeekflowStore
     @State private var showsSubgoals = true
@@ -497,7 +497,7 @@ private struct WeeklyReviewGoalCard: View {
     }
 }
 
-private struct WeeklyReviewGoalAction: View {
+struct WeeklyReviewGoalAction: View {
     let title: String
     let symbol: String
     var isPrimary = false

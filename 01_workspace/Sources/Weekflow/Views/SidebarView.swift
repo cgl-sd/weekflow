@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum SidebarMetrics {
+enum SidebarMetrics {
     static let sidebarHorizontalPadding: CGFloat = 22
     static let rowHorizontalPadding: CGFloat = 6
     static let rowIconWidth: CGFloat = 18
@@ -15,7 +15,7 @@ private enum SidebarMetrics {
     static let workspaceTitleFontSize: CGFloat = 18
 }
 
-private enum WorkspaceMenuPanel: Identifiable {
+enum WorkspaceMenuPanel: Identifiable {
     case settings
     case analytics
 
@@ -128,7 +128,7 @@ struct AppSidebarView: View {
     }
 }
 
-private struct WorkspaceMenuPopover: View {
+struct WorkspaceMenuPopover: View {
     let open: (WorkspaceMenuPanel) -> Void
     let dismiss: () -> Void
 
@@ -162,7 +162,7 @@ private struct WorkspaceMenuPopover: View {
     }
 }
 
-private struct WorkspaceMenuPointer: View {
+struct WorkspaceMenuPointer: View {
     let anchorX: CGFloat
 
     var body: some View {
@@ -199,7 +199,7 @@ private extension View {
     }
 }
 
-private struct WorkspaceMenuRow: View {
+struct WorkspaceMenuRow: View {
     let panel: WorkspaceMenuPanel
     let action: () -> Void
     @State private var isHovering = false
@@ -219,7 +219,7 @@ private struct WorkspaceMenuRow: View {
     }
 }
 
-private struct WorkspaceMenuSheet: View {
+struct WorkspaceMenuSheet: View {
     let panel: WorkspaceMenuPanel
     @Bindable var store: WeekflowStore
     @Environment(\.dismiss) private var dismiss
@@ -266,7 +266,7 @@ private struct WorkspaceMenuSheet: View {
     }
 }
 
-private struct SidebarGroup: View {
+struct SidebarGroup: View {
     var title: String? = nil
     let items: [AppDestination]
     @Binding var selection: AppDestination
