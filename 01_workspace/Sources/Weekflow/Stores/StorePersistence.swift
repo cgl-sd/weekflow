@@ -10,14 +10,18 @@ extension WeekflowStore {
             return
         }
         // Cheap pre-check to avoid scheduling a write when nothing changed.
+        // P1-5: the expensive diff is now computed OFF MainActor in the
+        // coordinator's background executor; this O(n) equality check is
+        // negligible compared to the dictionary-based diff.
         guard goals != persistedGoals else { return }
         enqueueGoalPersist(kind: kind)
     }
 
     /// Enqueues a goal persistence write on the coordinator (P0-1/P0-2 fix).
     ///
-    /// The diff is computed at EXECUTION time (inside the coordinator's serial
-    /// writer) relative to the latest committed baseline, not at enqueue time.
+    /// P1-5 fix: The diff is computed OFF the MainActor. Only the snapshot
+    /// capture (a value-type copy) happens on MainActor; the expensive
+    /// dictionary-based diff runs on the coordinator's background executor.
     /// P0-1 fix: The commit closure captures the goals snapshot at diff-computation
     /// time, ensuring `persistedGoals` reflects exactly what was written to disk,
     /// not the potentially-newer state from edits made during the write.
@@ -27,19 +31,20 @@ extension WeekflowStore {
             label: "周目标与任务",
             operation: { [weak self] in
                 guard let self else { return }
-                let (changes, writtenSnapshot) = await MainActor.run {
-                    let currentGoals = self.goals
-                    let changes = PersistenceGoalChangeSet.difference(
-                        before: self.persistedGoals,
-                        after: currentGoals
-                    )
-                    return (changes, currentGoals)
+                // P1-5 fix: only snapshot capture on MainActor (fast value copy).
+                let (currentGoals, baselineGoals) = await MainActor.run {
+                    (self.goals, self.persistedGoals)
                 }
+                // Expensive diff computed OFF MainActor.
+                let changes = PersistenceGoalChangeSet.difference(
+                    before: baselineGoals,
+                    after: currentGoals
+                )
                 guard !changes.isEmpty else { return }
                 try await self.storage.applyGoalChangesAsync(changes, kind: kind)
                 // Store the snapshot for commit (P0-1 fix)
                 await MainActor.run {
-                    self._pendingGoalSnapshot = writtenSnapshot
+                    self._pendingGoalSnapshot = currentGoals
                 }
             },
             commit: { [weak self] in
@@ -127,48 +132,119 @@ extension WeekflowStore {
     }
 
     func persistChannels() {
-        persistSafely(
-            "频道",
-            operation: { try storage.saveChannels(channels) },
-            commit: { persistedChannels = channels },
-            rollback: { channels = persistedChannels }
+        if synchronousPersistence {
+            persistSafely(
+                "频道",
+                operation: { try storage.saveChannels(channels) },
+                commit: { persistedChannels = channels },
+                rollback: { channels = persistedChannels }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        let snapshot = channels
+        let rollbackSnapshot = persistedChannels
+        persistenceCoordinator.enqueue(
+            domain: "metadata",
+            label: "频道",
+            operation: { [weak self] in
+                try await self?.storage.saveChannelsAsync(snapshot)
+            },
+            commit: { [weak self] in self?.persistedChannels = snapshot },
+            rollback: { [weak self] in self?.channels = rollbackSnapshot }
         )
     }
 
     func persistCalendarEvents() {
-        persistSafely(
-            "日历事件",
-            operation: { try storage.saveCalendarEvents(calendarEvents) },
-            commit: { persistedCalendarEvents = calendarEvents },
-            rollback: { calendarEvents = persistedCalendarEvents }
+        if synchronousPersistence {
+            persistSafely(
+                "日历事件",
+                operation: { try storage.saveCalendarEvents(calendarEvents) },
+                commit: { persistedCalendarEvents = calendarEvents },
+                rollback: { calendarEvents = persistedCalendarEvents }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        let snapshot = calendarEvents
+        let rollbackSnapshot = persistedCalendarEvents
+        persistenceCoordinator.enqueue(
+            domain: "metadata",
+            label: "日历事件",
+            operation: { [weak self] in
+                try await self?.storage.saveCalendarEventsAsync(snapshot)
+            },
+            commit: { [weak self] in self?.persistedCalendarEvents = snapshot },
+            rollback: { [weak self] in self?.calendarEvents = rollbackSnapshot }
         )
     }
 
     func persistDailyPlanningStates() {
-        persistSafely(
-            "每日计划",
-            operation: { try storage.saveDailyPlanningStates(dailyPlanningStates) },
-            commit: { persistedDailyPlanningStates = dailyPlanningStates },
-            rollback: { dailyPlanningStates = persistedDailyPlanningStates }
+        if synchronousPersistence {
+            persistSafely(
+                "每日计划",
+                operation: { try storage.saveDailyPlanningStates(dailyPlanningStates) },
+                commit: { persistedDailyPlanningStates = dailyPlanningStates },
+                rollback: { dailyPlanningStates = persistedDailyPlanningStates }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        let snapshot = dailyPlanningStates
+        let rollbackSnapshot = persistedDailyPlanningStates
+        persistenceCoordinator.enqueue(
+            domain: "metadata",
+            label: "每日计划",
+            operation: { [weak self] in
+                try await self?.storage.saveDailyPlanningStatesAsync(snapshot)
+            },
+            commit: { [weak self] in self?.persistedDailyPlanningStates = snapshot },
+            rollback: { [weak self] in self?.dailyPlanningStates = rollbackSnapshot }
         )
     }
 
     func persistDailyPlanAndCalendarEvents() {
-        persistSafely(
-            "每日计划与日历事件",
-            operation: {
-                try storage.saveDailyPlanAndCalendarEvents(
-                    states: dailyPlanningStates,
-                    events: calendarEvents
+        if synchronousPersistence {
+            persistSafely(
+                "每日计划与日历事件",
+                operation: {
+                    try storage.saveDailyPlanAndCalendarEvents(
+                        states: dailyPlanningStates,
+                        events: calendarEvents
+                    )
+                },
+                commit: {
+                    persistedDailyPlanningStates = dailyPlanningStates
+                    persistedCalendarEvents = calendarEvents
+                },
+                rollback: {
+                    dailyPlanningStates = persistedDailyPlanningStates
+                    calendarEvents = persistedCalendarEvents
+                }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        let statesSnapshot = dailyPlanningStates
+        let eventsSnapshot = calendarEvents
+        let rollbackStates = persistedDailyPlanningStates
+        let rollbackEvents = persistedCalendarEvents
+        persistenceCoordinator.enqueue(
+            domain: "metadata",
+            label: "每日计划与日历事件",
+            operation: { [weak self] in
+                try await self?.storage.saveDailyPlanAndCalendarEventsAsync(
+                    states: statesSnapshot,
+                    events: eventsSnapshot
                 )
             },
-            commit: {
-                persistedDailyPlanningStates = dailyPlanningStates
-                persistedCalendarEvents = calendarEvents
+            commit: { [weak self] in
+                self?.persistedDailyPlanningStates = statesSnapshot
+                self?.persistedCalendarEvents = eventsSnapshot
             },
-            rollback: {
-                dailyPlanningStates = persistedDailyPlanningStates
-                calendarEvents = persistedCalendarEvents
+            rollback: { [weak self] in
+                self?.dailyPlanningStates = rollbackStates
+                self?.calendarEvents = rollbackEvents
             }
         )
     }
@@ -189,45 +265,107 @@ extension WeekflowStore {
     }
 
     func persistDailySummaries() {
-        persistSafely(
-            "每日总结",
-            operation: { try storage.saveDailySummaries(dailySummaries) },
-            commit: { persistedDailySummaries = dailySummaries },
-            rollback: { dailySummaries = persistedDailySummaries }
+        if synchronousPersistence {
+            persistSafely(
+                "每日总结",
+                operation: { try storage.saveDailySummaries(dailySummaries) },
+                commit: { persistedDailySummaries = dailySummaries },
+                rollback: { dailySummaries = persistedDailySummaries }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        let snapshot = dailySummaries
+        let rollbackSnapshot = persistedDailySummaries
+        persistenceCoordinator.enqueue(
+            domain: "metadata",
+            label: "每日总结",
+            operation: { [weak self] in
+                try await self?.storage.saveDailySummariesAsync(snapshot)
+            },
+            commit: { [weak self] in self?.persistedDailySummaries = snapshot },
+            rollback: { [weak self] in self?.dailySummaries = rollbackSnapshot }
         )
     }
 
     func persistActiveTaskTimer() {
+        if synchronousPersistence {
+            let session = activeTaskTimer
+            _ = persistSafely(
+                "活动计时",
+                operation: { try storage.saveActiveTimerSession(session) },
+                commit: {},
+                rollback: {
+                    if session != nil { activeTaskTimer = nil }
+                }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
         let session = activeTaskTimer
-        _ = persistSafely(
-            "活动计时",
-            operation: { try storage.saveActiveTimerSession(session) },
+        persistenceCoordinator.enqueue(
+            domain: "timer",
+            label: "活动计时",
+            operation: { [weak self] in
+                try await self?.storage.saveActiveTimerSessionAsync(session)
+            },
             commit: {},
-            rollback: {
-                if session != nil { activeTaskTimer = nil }
+            rollback: { [weak self] in
+                if session != nil { self?.activeTaskTimer = nil }
             }
         )
     }
 
     func persistTaskAndActiveTimer(rollbackSession: TaskTimerSession?) {
+        if synchronousPersistence {
+            let changes = PersistenceGoalChangeSet.difference(
+                before: persistedGoals,
+                after: goals
+            )
+            let session = activeTaskTimer
+            _ = persistSafely(
+                "任务与活动计时",
+                operation: {
+                    try storage.saveGoalChangesAndActiveTimer(
+                        changes: changes,
+                        session: session
+                    )
+                },
+                commit: { persistedGoals = goals },
+                rollback: {
+                    goals = persistedGoals
+                    invalidateGoalIndex()
+                    taskTimerService.restore(session: rollbackSession)
+                }
+            )
+            return
+        }
+        // P1-4 fix: non-blocking write via coordinator.
+        // Cancel pending goal writes to avoid conflicts with this combined write.
+        persistenceCoordinator.cancelPending(for: "goals")
         let changes = PersistenceGoalChangeSet.difference(
             before: persistedGoals,
             after: goals
         )
         let session = activeTaskTimer
-        _ = persistSafely(
-            "任务与活动计时",
-            operation: {
-                try storage.saveGoalChangesAndActiveTimer(
+        let goalsSnapshot = goals
+        let rollbackGoals = persistedGoals
+        persistenceCoordinator.enqueue(
+            domain: "goals",
+            label: "任务与活动计时",
+            operation: { [weak self] in
+                try await self?.storage.saveGoalChangesAndActiveTimerAsync(
                     changes: changes,
                     session: session
                 )
             },
-            commit: { persistedGoals = goals },
-            rollback: {
-                goals = persistedGoals
-                invalidateGoalIndex()
-                taskTimerService.restore(session: rollbackSession)
+            commit: { [weak self] in
+                self?.persistedGoals = goalsSnapshot
+            },
+            rollback: { [weak self] in
+                self?.goals = rollbackGoals
+                self?.invalidateGoalIndex()
+                self?.taskTimerService.restore(session: rollbackSession)
             }
         )
     }

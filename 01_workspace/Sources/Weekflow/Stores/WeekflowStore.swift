@@ -484,7 +484,9 @@ final class WeekflowStore {
 
     /// Invalidates the O(1) goal lookup cache. Call after any direct mutation
     /// of the `goals` array that does not go through `replace(_:)`.
-    func invalidateGoalIndex() { goalIndexCache = nil }
+    func invalidateGoalIndex() {
+        goalIndexCache = nil
+    }
 
     /// Returns the index of a goal by ID in O(1) amortized time.
     func goalIndex(for id: UUID) -> Int? {

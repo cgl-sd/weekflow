@@ -309,16 +309,24 @@ extension SwiftDataPersistenceRepository {
             let transaction = makeTransaction(kind: kind)
             var sequence = 0
 
+            // P1-8 fix: batch-fetch all goal records in ONE query instead of N.
+            let goalIDs = changes.goalsToUpsert.map(\.id)
+            let existingGoals: [PersistedGoalRecord]
+            if goalIDs.isEmpty {
+                existingGoals = []
+            } else {
+                existingGoals = try context.fetch(FetchDescriptor<PersistedGoalRecord>(
+                    predicate: #Predicate { goalIDs.contains($0.id) }
+                ))
+            }
+            let goalRecordByID = Dictionary(uniqueKeysWithValues: existingGoals.map { ($0.id, $0) })
+
             for goal in changes.goalsToUpsert {
-                var descriptor = FetchDescriptor<PersistedGoalRecord>(
-                    predicate: #Predicate { $0.id == goal.id }
-                )
-                descriptor.fetchLimit = 1
                 var envelope = goal
                 envelope.tasks = []
                 let payload = try CompactPersistenceCoding.encode(envelope)
                 let lifecycle = lifecycleState(for: goal).rawValue
-                if let record = try context.fetch(descriptor).first {
+                if let record = goalRecordByID[goal.id] {
                     record.payload = payload
                     record.periodStart = businessCalendar.date(for: goal.startDay)
                     record.periodEnd = businessCalendar.date(for: goal.endDay)
@@ -341,18 +349,37 @@ extension SwiftDataPersistenceRepository {
             }
             try faultInjector?(.afterGoalWrite)
 
+            // P1-8 fix: batch-fetch all task records in ONE query instead of N.
+            let taskIDs = changes.tasksToUpsert.map(\.task.id)
+            let existingTasks: [PersistedTaskRecord]
+            if taskIDs.isEmpty {
+                existingTasks = []
+            } else {
+                existingTasks = try context.fetch(FetchDescriptor<PersistedTaskRecord>(
+                    predicate: #Predicate { taskIDs.contains($0.id) }
+                ))
+            }
+            let taskRecordByID = Dictionary(uniqueKeysWithValues: existingTasks.map { ($0.id, $0) })
+
+            // P1-8 fix: batch-fetch all assignment records for affected tasks.
+            let existingAssignments: [PersistedTaskAssignmentRecord]
+            if taskIDs.isEmpty {
+                existingAssignments = []
+            } else {
+                existingAssignments = try context.fetch(FetchDescriptor<PersistedTaskAssignmentRecord>(
+                    predicate: #Predicate { taskIDs.contains($0.taskID) }
+                ))
+            }
+            var assignmentsByTaskID = Dictionary(grouping: existingAssignments, by: \.taskID)
+
             for upsert in changes.tasksToUpsert {
                 let task = upsert.task
-                var descriptor = FetchDescriptor<PersistedTaskRecord>(
-                    predicate: #Predicate { $0.id == task.id }
-                )
-                descriptor.fetchLimit = 1
                 var envelope = task
                 envelope.plannedDay = nil
                 envelope.assignedDays = []
                 let payload = try CompactPersistenceCoding.encode(envelope)
                 let lifecycle = lifecycleState(for: task).rawValue
-                if let record = try context.fetch(descriptor).first {
+                if let record = taskRecordByID[task.id] {
                     record.goalID = upsert.goalID
                     record.subgoalID = task.subgoalID
                     record.payload = payload
@@ -375,9 +402,7 @@ extension SwiftDataPersistenceRepository {
                 try faultInjector?(.afterTaskWrite)
 
                 let taskID = task.id
-                let existing = try context.fetch(FetchDescriptor<PersistedTaskAssignmentRecord>(
-                    predicate: #Predicate { $0.taskID == taskID }
-                ))
+                let existing = assignmentsByTaskID[taskID] ?? []
                 if case let .manualOverride(overriddenTaskID, originalTransactionID) = kind,
                    overriddenTaskID == taskID {
                     for record in existing where record.originTransactionID == originalTransactionID {

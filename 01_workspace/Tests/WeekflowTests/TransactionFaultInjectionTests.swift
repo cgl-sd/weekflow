@@ -69,6 +69,7 @@ private enum InjectedPersistenceFailure: LocalizedError {
     defer { try? FileManager.default.removeItem(at: folder) }
     let day = SystemBusinessCalendar.current.date(for: LocalDay(year: 2026, month: 7, day: 23))
     var store: WeekflowStore? = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    store?.synchronousPersistence = true
     _ = store?.setDailyPlanningCutoff(minutes: 18 * 60, on: day)
     _ = store?.addDailyPlanningCutoffToCalendar(on: day)
     store = nil
@@ -77,6 +78,7 @@ private enum InjectedPersistenceFailure: LocalizedError {
         if point == .afterDailyPlanWrite { throw InjectedPersistenceFailure.diskFull }
     }
     let faultedStore = WeekflowStore(storage: faultedStorage)
+    faultedStore.synchronousPersistence = true
     _ = faultedStore.setDailyPlanningCutoff(minutes: 20 * 60, on: day)
     #expect(faultedStore.persistenceIssue != nil)
     #expect(faultedStore.dailyPlanningCutoffMinutes(on: day) == 18 * 60)
@@ -94,6 +96,7 @@ private enum InjectedPersistenceFailure: LocalizedError {
     defer { try? FileManager.default.removeItem(at: folder) }
     let storage = LocalStorage(baseDirectory: folder)
     var seed: WeekflowStore? = WeekflowStore(storage: storage)
+    seed?.synchronousPersistence = true
     let goalID = seed!.addGoal(title: "原子计时", outcome: "", endDate: .now)
     let firstTaskID = try #require(seed?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
     let secondTaskID = try #require(seed?.addTask(
@@ -113,6 +116,7 @@ private enum InjectedPersistenceFailure: LocalizedError {
         if point == .afterTaskWrite { throw InjectedPersistenceFailure.diskFull }
     }
     let store = WeekflowStore(storage: faulted)
+    store.synchronousPersistence = true
     store.startTaskTimer(goalID: goalID, taskID: secondTaskID, now: startedAt.addingTimeInterval(10))
 
     #expect(store.persistenceIssue != nil)

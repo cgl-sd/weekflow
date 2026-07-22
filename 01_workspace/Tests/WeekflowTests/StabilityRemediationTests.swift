@@ -492,6 +492,7 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
     defer { try? FileManager.default.removeItem(at: folder) }
     let storage = LocalStorage(baseDirectory: folder)
     var store: WeekflowStore? = WeekflowStore(storage: storage)
+    store?.synchronousPersistence = true
     let goalID = try #require(store?.addGoal(title: "恢复计时", outcome: "稳定性", endDate: .now))
     let taskID = try #require(store?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
     let startedAt = Date.now.addingTimeInterval(-61)
@@ -499,6 +500,7 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
     store = nil
 
     let restored = WeekflowStore(storage: storage)
+    restored.synchronousPersistence = true
     #expect(restored.activeTaskTimer?.goalID == goalID)
     #expect(restored.activeTaskTimer?.taskID == taskID)
     restored.pauseTaskTimer(goalID: goalID, taskID: taskID, now: startedAt.addingTimeInterval(61))
@@ -516,6 +518,7 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
     defer { try? FileManager.default.removeItem(at: folder) }
     let storage = LocalStorage(baseDirectory: folder)
     var store: WeekflowStore? = WeekflowStore(storage: storage)
+    store?.synchronousPersistence = true
     let goalID = try #require(store?.addGoal(title: "异常计时", outcome: "恢复", endDate: .now))
     let taskID = try #require(store?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
     store?.startTaskTimer(goalID: goalID, taskID: taskID, now: .now.addingTimeInterval(-2 * 86_400))

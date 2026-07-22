@@ -109,6 +109,7 @@ import Testing
     let targetDate = try #require(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13)))
     let storage = LocalStorage(baseDirectory: folder)
     var store: WeekflowStore? = WeekflowStore(storage: storage, legacyPreferences: preferences)
+    store?.synchronousPersistence = true
 
     _ = store?.setDailyPlanningCutoff(minutes: 20 * 60, on: targetDate)
     let eventID = try #require(store?.addDailyPlanningCutoffToCalendar(on: targetDate))

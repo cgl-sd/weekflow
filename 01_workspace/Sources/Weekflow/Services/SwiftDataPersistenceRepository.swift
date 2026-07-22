@@ -5,6 +5,10 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     static let schemaVersion = 2
     static let maximumMutationTransactions = 1_000
     static let mutationRetentionDays = 30
+    /// P2 fix: minimum interval between mutation history prune passes.
+    /// Pruning scans all transactions/operations; doing it every single write
+    /// is wasteful. At most once every 5 minutes is sufficient.
+    static let pruneIntervalSeconds: TimeInterval = 300
 
     let storeURL: URL
     let container: ModelContainer
@@ -12,6 +16,8 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     let businessCalendar: BusinessCalendar
     let faultInjector: PersistenceFaultInjector?
     var transactionNesting = 0
+    /// P2 fix: timestamp of the last mutation history prune pass.
+    var lastPruneAt: Date?
 
     init(
         storeURL: URL,
@@ -502,7 +508,12 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         }
         setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
         setMetadata(key: "migrationState", value: "native")
-        try pruneMutationHistory()
+        // P2 fix: throttle prune to at most once every pruneIntervalSeconds.
+        let now = Date.now
+        if lastPruneAt == nil || now.timeIntervalSince(lastPruneAt!) >= Self.pruneIntervalSeconds {
+            try pruneMutationHistory(now: now)
+            lastPruneAt = now
+        }
         try saveContextOrRollback()
     }
 

@@ -178,6 +178,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
 
     let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    store.synchronousPersistence = true
     store.deleteChannel(id: "research")
 
     #expect(store.channel(for: "research")?.archivedAt != nil)
@@ -279,6 +280,7 @@ import Testing
 
     let storage = LocalStorage(baseDirectory: folder)
     let store = WeekflowStore(storage: storage)
+    store.synchronousPersistence = true
     var channel = try #require(store.channel(for: "work"))
     channel.countsTowardWorkload = false // Retained for decoding older local data; no longer used as UI enablement.
     channel.colorName = TaskChannelRGB(red: 18, green: 52, blue: 86).encodedColorName
@@ -299,6 +301,7 @@ import Testing
 
     let storage = LocalStorage(baseDirectory: folder)
     let store = WeekflowStore(storage: storage)
+    store.synchronousPersistence = true
     var channel = try #require(store.channel(for: "research"))
     channel.isDefault = true
     store.updateChannel(channel)

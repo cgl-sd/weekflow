@@ -315,25 +315,52 @@ extension WeekflowStore {
     /// process exits. Called from `applicationWillTerminate` where async is not available.
     func persistForTermination() {
         textInputDebouncer.cancelPending()
-        // Cancel pending async writes and signal sync mode so in-flight
+        // Cancel ALL pending async writes and signal sync mode so in-flight
         // async writers skip their disk write (P0-3 fix, NSLock-based, no deadlock).
         persistenceCoordinator.cancelPending(for: "goals")
         persistenceCoordinator.cancelPending(for: "focusRecords")
+        persistenceCoordinator.cancelPending(for: "metadata")
+        persistenceCoordinator.cancelPending(for: "timer")
         persistenceCoordinator.beginSyncWrite()
-        // Persist all domains synchronously
+        // Persist all domains synchronously (termination must block).
         _ = persistSync()
-        persistChannels()
-        persistCalendarEvents()
-        persistDailyPlanningStates()
-        // Focus records: sync persist for termination safety
+        persistSafely(
+            "频道",
+            operation: { try storage.saveChannels(channels) },
+            commit: { persistedChannels = channels },
+            rollback: { channels = persistedChannels }
+        )
+        persistSafely(
+            "日历事件",
+            operation: { try storage.saveCalendarEvents(calendarEvents) },
+            commit: { persistedCalendarEvents = calendarEvents },
+            rollback: { calendarEvents = persistedCalendarEvents }
+        )
+        persistSafely(
+            "每日计划",
+            operation: { try storage.saveDailyPlanningStates(dailyPlanningStates) },
+            commit: { persistedDailyPlanningStates = dailyPlanningStates },
+            rollback: { dailyPlanningStates = persistedDailyPlanningStates }
+        )
         persistSafely(
             "专注记录",
             operation: { try storage.saveFocusRecords(focusRecords) },
             commit: { persistedFocusRecords = focusRecords },
             rollback: { focusRecords = persistedFocusRecords }
         )
-        persistDailySummaries()
-        persistActiveTaskTimer()
+        persistSafely(
+            "每日总结",
+            operation: { try storage.saveDailySummaries(dailySummaries) },
+            commit: { persistedDailySummaries = dailySummaries },
+            rollback: { dailySummaries = persistedDailySummaries }
+        )
+        let session = activeTaskTimer
+        _ = persistSafely(
+            "活动计时",
+            operation: { try storage.saveActiveTimerSession(session) },
+            commit: {},
+            rollback: { if session != nil { activeTaskTimer = nil } }
+        )
         persistenceCoordinator.endSyncWrite()
     }
 
@@ -370,8 +397,7 @@ extension WeekflowStore {
         // P2-7: O(1) goal lookup.
         guard let gIdx = goalIndex(for: goalID),
               let index = goals[gIdx].tasks.firstIndex(where: { $0.id == updatedTask.id }) else { return [] }
-        var goal = goals[gIdx]
-        let current = goal.tasks[index]
+        let current = goals[gIdx].tasks[index]
         let records = manualChangeRecords(from: original, to: updatedTask, date: now)
         guard !records.isEmpty else { return [] }
 
@@ -379,9 +405,12 @@ extension WeekflowStore {
         if task.startTime == nil { task.calendarPlacement = .suggested }
         task.changeRecords = recordChanges ? current.changeRecords + records : current.changeRecords
         task.updatedAt = now
-        goal.tasks[index] = task
+        // P1-6 fix: direct indexed mutation avoids copying the entire goal
+        // struct before the task array COW is triggered.
+        goals[gIdx].tasks[index] = task
+        var goal = goals[gIdx]
         goal = goalService.applyPrimaryProjectionEdit(goal)
-        replace(goal)
+        goals[gIdx] = goal
         if updatedTask.priority.isHigher(than: original.priority),
            let plannedDate = updatedTask.plannedDate {
             reorderTasksByPriority(
@@ -404,8 +433,7 @@ extension WeekflowStore {
         // P2-7: O(1) goal lookup.
         guard let gIdx = goalIndex(for: goalID),
               let index = goals[gIdx].tasks.firstIndex(where: { $0.id == taskID }) else { return nil }
-        var goal = goals[gIdx]
-        let current = goal.tasks[index]
+        let current = goals[gIdx].tasks[index]
         let changes = manualChangeRecords(from: original, to: current, date: now)
         guard !changes.isEmpty else {
             if persistImmediately { persist() }
@@ -424,9 +452,9 @@ extension WeekflowStore {
             newValue: fields.joined(separator: "、"),
             source: .manual
         )
-        goal.tasks[index].changeRecords.append(record)
-        goal.tasks[index].updatedAt = now
-        replace(goal)
+        // P1-6 fix: direct indexed mutation.
+        goals[gIdx].tasks[index].changeRecords.append(record)
+        goals[gIdx].tasks[index].updatedAt = now
         if persistImmediately { persist() }
         return record
     }
