@@ -14,6 +14,7 @@ struct ArchiveSummaryView: View {
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
     @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
 
     init(
         store: WeekflowStore,
@@ -83,10 +84,11 @@ struct ArchiveSummaryView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(WeekflowPalette.textMuted)
+                .foregroundStyle(isSearchFocused ? WeekflowPalette.objective : WeekflowPalette.textMuted)
             TextField("搜索已归档的内容…", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .focused($isSearchFocused)
             if !searchText.isEmpty {
                 WeekflowButton { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -99,7 +101,11 @@ struct ArchiveSummaryView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(WeekflowPalette.surface.opacity(0.6), in: WeekflowRoundedRectangle(cornerRadius: 8))
-        .overlay(WeekflowRoundedRectangle(cornerRadius: 8).stroke(WeekflowPalette.border.opacity(0.5)))
+        .overlay(
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(isSearchFocused ? WeekflowPalette.objective.opacity(0.6) : WeekflowPalette.border.opacity(0.5))
+        )
+        .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
     }
 
     private var filteredTasks: [(goal: WeeklyGoal, task: WeekTask)] {

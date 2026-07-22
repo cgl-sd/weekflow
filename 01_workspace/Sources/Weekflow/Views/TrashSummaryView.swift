@@ -9,6 +9,7 @@ struct TrashSummaryView: View {
     @State private var searchText = ""
     @State private var isConfirmingDeleteAllTasks = false
     @State private var isConfirmingDeleteAllGoals = false
+    @FocusState private var isSearchFocused: Bool
 
     init(
         store: WeekflowStore,
@@ -85,10 +86,11 @@ struct TrashSummaryView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(WeekflowPalette.textMuted)
+                .foregroundStyle(isSearchFocused ? WeekflowPalette.objective : WeekflowPalette.textMuted)
             TextField("搜索已删除的内容…", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .focused($isSearchFocused)
             if !searchText.isEmpty {
                 WeekflowButton { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -101,30 +103,16 @@ struct TrashSummaryView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(WeekflowPalette.surface.opacity(0.6), in: WeekflowRoundedRectangle(cornerRadius: 8))
-        .overlay(WeekflowRoundedRectangle(cornerRadius: 8).stroke(WeekflowPalette.border.opacity(0.5)))
+        .overlay(
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(isSearchFocused ? WeekflowPalette.objective.opacity(0.6) : WeekflowPalette.border.opacity(0.5))
+        )
+        .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
     }
 
     @ViewBuilder
     private func deleteAllButton(isConfirming: Binding<Bool>, action: @escaping () -> Void) -> some View {
-        WeekflowButton {
-            if isConfirming.wrappedValue {
-                action()
-                isConfirming.wrappedValue = false
-            } else {
-                withAnimation(.easeInOut(duration: 0.15)) { isConfirming.wrappedValue = true }
-            }
-        } label: {
-            Text(isConfirming.wrappedValue ? "确认全部删除" : "全部删除")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isConfirming.wrappedValue ? WeekflowPalette.danger : WeekflowPalette.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    isConfirming.wrappedValue ? WeekflowPalette.danger.opacity(0.1) : WeekflowPalette.surfaceHover.opacity(0.5),
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.plain)
+        DeleteAllCapsuleButton(isConfirming: isConfirming, action: action)
     }
 
     private var filteredTasks: [(goal: WeeklyGoal, task: WeekTask)] {
@@ -222,5 +210,66 @@ struct TrashGoalCard: View {
                 }
             )
         }
+    }
+}
+
+/// “全部删除”胶囊按钮：悬浮高亮 + 两步确认 + 点击外部取消
+struct DeleteAllCapsuleButton: View {
+    @Binding var isConfirming: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        WeekflowButton {
+            if isConfirming {
+                action()
+                withAnimation(.easeInOut(duration: 0.15)) { isConfirming = false }
+            } else {
+                withAnimation(.easeInOut(duration: 0.15)) { isConfirming = true }
+            }
+        } label: {
+            Text(isConfirming ? "确认全部删除" : "全部删除")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isConfirming ? WeekflowPalette.danger : WeekflowPalette.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    isConfirming
+                        ? WeekflowPalette.danger.opacity(0.12)
+                        : (isHovered ? WeekflowPalette.surfaceHover : WeekflowPalette.surfaceHover.opacity(0.5)),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().stroke(
+                        isConfirming
+                            ? WeekflowPalette.danger.opacity(0.4)
+                            : (isHovered ? WeekflowPalette.border : .clear),
+                        lineWidth: 1
+                    )
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) { isHovered = hovering }
+        }
+        .background {
+            if isConfirming {
+                GeometryReader { proxy in
+                    WindowOutsideClickMonitor(
+                        protectedRect: CGRect(origin: .zero, size: proxy.size),
+                        monitoredEventMask: .leftMouseDown,
+                        action: cancelConfirmation
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: isConfirming)
+    }
+
+    private func cancelConfirmation() {
+        guard isConfirming else { return }
+        withAnimation(.easeInOut(duration: 0.15)) { isConfirming = false }
     }
 }
