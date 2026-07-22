@@ -71,6 +71,9 @@ final class WeekflowStore {
     /// P2-7 fix: O(1) goal lookup index. Rebuilt lazily after any mutation to
     /// the goals array via `invalidateGoalIndex()`.
     @ObservationIgnored var goalIndexCache: [UUID: Int]?
+    /// P0-1 fix: holds the goals snapshot captured at diff-computation time,
+    /// used by the async commit to set persistedGoals to exactly what was written.
+    @ObservationIgnored var _pendingGoalSnapshot: [WeeklyGoal]?
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
     var synchronousPersistence = false
@@ -215,6 +218,12 @@ final class WeekflowStore {
             // Single consolidated startup persist – avoids multiple independent
             // save calls that could partially commit (P1-3 requirement).
             if needsPersist { persistStartup() }
+        }
+        // P0-4 fix: install error callback so async persistence failures
+        // propagate to the Store and trigger protection mode.
+        persistenceCoordinator.setOnFailure { [weak self] _, message in
+            self?.persistenceEnabled = false
+            self?.persistenceIssue = message
         }
     }
 

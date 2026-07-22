@@ -11,34 +11,46 @@ extension WeekflowStore {
         }
         // Cheap pre-check to avoid scheduling a write when nothing changed.
         guard goals != persistedGoals else { return }
-        Task { await enqueueGoalPersist(kind: kind) }
+        enqueueGoalPersist(kind: kind)
     }
 
-    /// Enqueues a goal persistence write on the coordinator (P0-2/P2-3 fix).
+    /// Enqueues a goal persistence write on the coordinator (P0-1/P0-2 fix).
     ///
     /// The diff is computed at EXECUTION time (inside the coordinator's serial
     /// writer) relative to the latest committed baseline, not at enqueue time.
-    /// Rapid edits coalesce into a single pending write whose diff is always
-    /// correct, eliminating the stale baseline that previously dropped inserts
-    /// (e.g. a freshly added goal) and caused out-of-order commits. Exposed as
-    /// an async method so `flushPersistence()` can await registration directly.
-    func enqueueGoalPersist(kind: PersistenceMutationKind = .userEdit) async {
-        await persistenceCoordinator.enqueue(
+    /// P0-1 fix: The commit closure captures the goals snapshot at diff-computation
+    /// time, ensuring `persistedGoals` reflects exactly what was written to disk,
+    /// not the potentially-newer state from edits made during the write.
+    func enqueueGoalPersist(kind: PersistenceMutationKind = .userEdit) {
+        persistenceCoordinator.enqueue(
+            domain: "goals",
             label: "周目标与任务",
             operation: { [weak self] in
                 guard let self else { return }
-                let changes = await MainActor.run {
-                    PersistenceGoalChangeSet.difference(
+                let (changes, writtenSnapshot) = await MainActor.run {
+                    let currentGoals = self.goals
+                    let changes = PersistenceGoalChangeSet.difference(
                         before: self.persistedGoals,
-                        after: self.goals
+                        after: currentGoals
                     )
+                    return (changes, currentGoals)
                 }
                 guard !changes.isEmpty else { return }
                 try await self.storage.applyGoalChangesAsync(changes, kind: kind)
+                // Store the snapshot for commit (P0-1 fix)
+                await MainActor.run {
+                    self._pendingGoalSnapshot = writtenSnapshot
+                }
             },
             commit: { [weak self] in
                 guard let self else { return }
-                self.persistedGoals = self.goals
+                // P0-1 fix: use the snapshot captured at diff time, not self.goals
+                if let snapshot = self._pendingGoalSnapshot {
+                    self.persistedGoals = snapshot
+                    self._pendingGoalSnapshot = nil
+                } else {
+                    self.persistedGoals = self.goals
+                }
             },
             rollback: { [weak self] in
                 guard let self else { return }
@@ -50,19 +62,33 @@ extension WeekflowStore {
     /// Synchronous persist – blocks the calling thread. Use ONLY when the
     /// return value is needed (automatic distribution rollback) or during
     /// startup/tests where blocking is acceptable.
+    /// P0-3 fix: uses synchronous coordinator API (NSLock-based) to cancel
+    /// pending async writes and advance the revision, preventing stale commits.
     @discardableResult
     func persistSync(kind: PersistenceMutationKind = .userEdit) -> Bool {
+        // Cancel any pending async write for goals and signal that a sync write
+        // is starting. In-flight async writers will skip their disk write.
+        persistenceCoordinator.cancelPending(for: "goals")
+        persistenceCoordinator.beginSyncWrite()
+
         let changes = PersistenceGoalChangeSet.difference(
             before: persistedGoals,
             after: goals
         )
-        guard !changes.isEmpty else { return true }
-        return persistSafely(
+        guard !changes.isEmpty else {
+            persistenceCoordinator.endSyncWrite()
+            return true
+        }
+        let success = persistSafely(
             "周目标与任务",
             operation: { try storage.applyGoalChanges(changes, kind: kind) },
             commit: { persistedGoals = goals },
             rollback: { goals = persistedGoals }
         )
+        // P0-3 fix: advance coordinator revision so in-flight async writes
+        // with older revisions will not commit stale state.
+        persistenceCoordinator.endSyncWrite()
+        return success
     }
 
     /// Single-transaction startup persist. All startup migrations and
@@ -263,12 +289,11 @@ extension WeekflowStore {
     func persistFocusRecordsAsync() {
         let records = focusRecords
         let snapshot = persistedFocusRecords
-        // Use coordinator to serialize writes (P0-2 fix)
-        // P0-2 review fix: use [weak self] to avoid retaining the Store if the
-        // coordinator holds a pending write during Store deallocation.
+        // P0-2 fix: use separate domain so focus writes never overwrite goal writes
         Task { [weak self] in
             guard let self else { return }
-            await persistenceCoordinator.enqueue(
+            persistenceCoordinator.enqueue(
+                domain: "focusRecords",
                 label: "专注记录",
                 operation: { try await self.storage.saveFocusRecordsAsync(records) },
                 commit: { self.persistedFocusRecords = records },

@@ -362,6 +362,7 @@ final class FocusTimerService {
             remainingSeconds: remainingSeconds,
             unloggedSeconds: unloggedSeconds,
             hasStarted: hasStarted,
+            isRunning: isRunning,
             linkedTask: linkedTask,
             linkedTaskTitle: linkedTaskTitle,
             lastCheckpointAt: date
@@ -378,9 +379,9 @@ final class FocusTimerService {
     }
 
     /// Recovers an interrupted focus session persisted by a previous run.
-    /// Offline elapsed time since the last checkpoint is folded into the
-    /// countdown and the unlogged accumulator so no elapsed work is lost.
-    /// The session is restored paused; the user resumes it explicitly.
+    /// P0-5 fix: only folds offline elapsed time if the timer was actively
+    /// running when the snapshot was persisted. A paused session (isRunning == false)
+    /// must NOT accumulate offline time.
     private func restorePersistedSession(now: Date = .now) {
         guard let data = defaults.data(forKey: Self.sessionKey),
               let session = try? JSONDecoder().decode(FocusTimerSession.self, from: data) else {
@@ -393,8 +394,11 @@ final class FocusTimerService {
         linkedTask = session.linkedTask
         linkedTaskTitle = session.linkedTaskTitle
         hasStarted = session.hasStarted
-        // Fold offline elapsed into the countdown for a running session.
-        if hasStarted {
+        // P0-5 fix: only fold offline time if the timer was RUNNING when persisted.
+        // For backward compatibility, if isRunning is nil (old snapshot), fall back
+        // to hasStarted (old behavior).
+        let wasRunning = session.isRunning ?? session.hasStarted
+        if wasRunning {
             let offline = max(Int(now.timeIntervalSince(session.lastCheckpointAt)), 0)
             if offline > 0 {
                 let consumed = min(offline, remainingSeconds)

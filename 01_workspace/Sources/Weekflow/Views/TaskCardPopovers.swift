@@ -591,40 +591,49 @@ struct TaskTimerInlinePanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                HStack(spacing: 6) {
-                    WeekflowButton {
-                        store.toggleTaskTimer(goalID: goalID, taskID: taskID, now: context.date)
-                    } label: {
-                        Image(systemName: isRunning ? "pause.fill" : "play.fill")
-                            .font(.system(size: WeekflowLayout.taskPopoverIconSize, weight: .semibold))
-                            .foregroundStyle(WeekflowPalette.textMuted)
-                            .frame(
-                                width: WeekflowLayout.taskTimerControlSize,
-                                height: WeekflowLayout.taskTimerControlSize
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
-                    .help(isRunning ? "暂停计时" : "开始计时")
-
-                    Spacer(minLength: 8)
-
-                    HStack(spacing: 10) {
-                        timerColumn(title: "实际", value: actualText(at: context.date))
-                        estimatedDurationButton
-                    }
+            // P1-2 fix: only subscribe to TimelineView when the timer is running.
+            // Static display when paused; 60s refresh when running (minute granularity).
+            if isRunning {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    timerPanelContent(at: context.date)
+                        .task(id: minuteBucket(at: context.date)) {
+                            store.synchronizeActiveTaskTimer(at: context.date)
+                        }
                 }
-                .padding(.horizontal, WeekflowLayout.taskTimerPanelInnerHorizontalPadding)
-                .frame(maxWidth: .infinity, minHeight: WeekflowLayout.taskTimerInlinePanelHeight)
-                .task(id: minuteBucket(at: context.date)) {
-                    store.synchronizeActiveTaskTimer(at: context.date)
-                }
+            } else {
+                timerPanelContent(at: .now)
             }
-
         }
         .accessibilityLabel("任务计时")
+    }
+
+    private func timerPanelContent(at date: Date) -> some View {
+        HStack(spacing: 6) {
+            WeekflowButton {
+                store.toggleTaskTimer(goalID: goalID, taskID: taskID, now: date)
+            } label: {
+                Image(systemName: isRunning ? "pause.fill" : "play.fill")
+                    .font(.system(size: WeekflowLayout.taskPopoverIconSize, weight: .semibold))
+                    .foregroundStyle(WeekflowPalette.textMuted)
+                    .frame(
+                        width: WeekflowLayout.taskTimerControlSize,
+                        height: WeekflowLayout.taskTimerControlSize
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+            .help(isRunning ? "暂停计时" : "开始计时")
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 10) {
+                timerColumn(title: "实际", value: actualText(at: date))
+                estimatedDurationButton
+            }
+        }
+        .padding(.horizontal, WeekflowLayout.taskTimerPanelInnerHorizontalPadding)
+        .frame(maxWidth: .infinity, minHeight: WeekflowLayout.taskTimerInlinePanelHeight)
     }
 
     private func timerColumn(title: String, value: String) -> some View {

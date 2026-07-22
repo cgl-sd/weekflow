@@ -133,6 +133,10 @@ struct FocusTimerSession: Codable, Equatable, Sendable {
     var remainingSeconds: Int
     var unloggedSeconds: Int
     var hasStarted: Bool
+    /// P0-5 fix: whether the timer was actively running when the snapshot was
+    /// persisted. Used on restore to distinguish a paused session (no offline
+    /// time should be counted) from a crash during active timing.
+    var isRunning: Bool?
     var linkedTask: TaskReference?
     var linkedTaskTitle: String?
     var lastCheckpointAt: Date

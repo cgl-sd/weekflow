@@ -485,39 +485,52 @@ struct SunsamaTaskCard: View {
     }
 
     private var durationButton: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            WeekflowButton {
-                toggleTimerPanel()
-            } label: {
-                Text(timerText(at: context.date))
-                    .font(.system(size: metadataSize, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(WeekflowPalette.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .boxHoverChrome(
-                        isHovering: false,
-                        cornerRadius: 5,
-                        fill: WeekflowPalette.surfaceSelected.opacity(0.72)
-                    )
-                    .contentShape(WeekflowRoundedRectangle(cornerRadius: 5))
-            }
-            .buttonStyle(.plain)
-            .pointingHandCursor()
-            .anchorPreference(
-                key: TaskDurationMenuAnchorPreferenceKey.self,
-                value: .bounds
-            ) { anchor in
-                [.durationButton(entry.task.id): anchor]
-            }
-            .help("打开计时")
-                .task(id: timerMinuteBucket(at: context.date)) {
-                    store.synchronizeActiveTaskTimer(at: context.date)
+        // P1-1 fix: only subscribe to TimelineView when this task's timer is
+        // actively running. Static tasks show a plain Text (zero refresh cost).
+        // Running tasks refresh every 60s (minute-level display granularity).
+        Group {
+            if isTimerRunning {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    durationButtonContent(at: context.date)
+                        .task(id: timerMinuteBucket(at: context.date)) {
+                            store.synchronizeActiveTaskTimer(at: context.date)
+                        }
                 }
+            } else {
+                durationButtonContent(at: .now)
+            }
         }
         .fixedSize(horizontal: true, vertical: false)
         .frame(width: WeekflowLayout.taskCardTimerControlWidth, alignment: .trailing)
         .layoutPriority(1)
+    }
+
+    private func durationButtonContent(at date: Date) -> some View {
+        WeekflowButton {
+            toggleTimerPanel()
+        } label: {
+            Text(timerText(at: date))
+                .font(.system(size: metadataSize, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(WeekflowPalette.textSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .boxHoverChrome(
+                    isHovering: false,
+                    cornerRadius: 5,
+                    fill: WeekflowPalette.surfaceSelected.opacity(0.72)
+                )
+                .contentShape(WeekflowRoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .anchorPreference(
+            key: TaskDurationMenuAnchorPreferenceKey.self,
+            value: .bounds
+        ) { anchor in
+            [.durationButton(entry.task.id): anchor]
+        }
+        .help("打开计时")
     }
 
     private var startTimeButton: some View {

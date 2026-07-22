@@ -54,15 +54,25 @@ extension TaskDetailView {
             if !target.isWeeklyGoalDetail {
                 startTimeEditor
             }
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+            // P1-3 fix: only subscribe to TimelineView when the timer is running.
+            // Static display when not running; 60s refresh when running.
+            if isTimerRunning(entry) {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    timeMetricEditor(
+                        title: "真实时间",
+                        value: detailActualTime(at: context.date),
+                        menu: .actualTime
+                    )
+                    .task(id: detailTimerMinuteBucket(entry, at: context.date)) {
+                        store.synchronizeActiveTaskTimer(at: context.date)
+                    }
+                }
+            } else {
                 timeMetricEditor(
                     title: "真实时间",
-                    value: detailActualTime(at: context.date),
+                    value: detailActualTime(at: .now),
                     menu: .actualTime
                 )
-                .task(id: detailTimerMinuteBucket(entry, at: context.date)) {
-                    store.synchronizeActiveTaskTimer(at: context.date)
-                }
             }
             timeMetricEditor(
                 title: "预计时间",

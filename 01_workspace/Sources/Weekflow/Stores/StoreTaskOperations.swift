@@ -305,17 +305,36 @@ extension WeekflowStore {
         // Register the latest state directly (awaited) so the write is queued
         // before we wait for in-flight writes to drain.
         if goals != persistedGoals {
-            await enqueueGoalPersist(kind: .userEdit)
+            enqueueGoalPersist(kind: .userEdit)
         }
         await persistenceCoordinator.flush()
     }
 
-    /// Synchronous termination guard (P0-1 fix). Performs a final synchronous
-    /// persist so no pending async writes are lost when the process exits.
-    /// Called from `applicationWillTerminate` where async is not available.
+    /// Synchronous termination guard (P0-1/P0-3 fix). Performs a final synchronous
+    /// persist of ALL data domains so no pending async writes are lost when the
+    /// process exits. Called from `applicationWillTerminate` where async is not available.
     func persistForTermination() {
         textInputDebouncer.cancelPending()
+        // Cancel pending async writes and signal sync mode so in-flight
+        // async writers skip their disk write (P0-3 fix, NSLock-based, no deadlock).
+        persistenceCoordinator.cancelPending(for: "goals")
+        persistenceCoordinator.cancelPending(for: "focusRecords")
+        persistenceCoordinator.beginSyncWrite()
+        // Persist all domains synchronously
         _ = persistSync()
+        persistChannels()
+        persistCalendarEvents()
+        persistDailyPlanningStates()
+        // Focus records: sync persist for termination safety
+        persistSafely(
+            "专注记录",
+            operation: { try storage.saveFocusRecords(focusRecords) },
+            commit: { persistedFocusRecords = focusRecords },
+            rollback: { focusRecords = persistedFocusRecords }
+        )
+        persistDailySummaries()
+        persistActiveTaskTimer()
+        persistenceCoordinator.endSyncWrite()
     }
 
     func setTaskPriority(
