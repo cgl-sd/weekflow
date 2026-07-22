@@ -1,6 +1,9 @@
 # macOS / editors
 .DS_Store
 **/.DS_Store
+
+# CI/CD (local only)
+.github/
 .AppleDouble
 *.log
 *.swp
