@@ -18,6 +18,9 @@ final class WeekflowStore {
     /// Archive/restore business logic service (P2-2 Store split). Handles
     /// lifecycle transitions for archive, trash, and restore operations.
     private let archiveService: ArchiveService
+    /// Daily planning business logic service (P2-2 Store split). Handles
+    /// cutoff/start time management and task scheduling rules.
+    private let planningService: PlanningService
     var goals: [WeeklyGoal]
     var selectedGoalID: WeeklyGoal.ID?
     var channels: [TaskChannel]
@@ -85,6 +88,7 @@ final class WeekflowStore {
         self.businessCalendar = businessCalendar
         self.taskService = TaskService(businessCalendar: businessCalendar)
         self.archiveService = ArchiveService(businessCalendar: businessCalendar)
+        self.planningService = PlanningService(businessCalendar: businessCalendar)
         activeDay = businessCalendar.date(for: businessCalendar.day(containing: .now))
         self.persistenceEnabled = false
         if let developmentFixture {
@@ -1689,89 +1693,49 @@ final class WeekflowStore {
     }
 
     func dailyPlanningCutoffMinutes(on date: Date) -> Int {
-        dailyPlanningStates.first {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }?.cutoffMinutes ?? DailyPlanningState.defaultCutoffMinutes
+        // Delegate to PlanningService (P2-2)
+        planningService.cutoffMinutes(for: date, in: dailyPlanningStates)
     }
 
     func dailyPlanningStartMinutes(on date: Date) -> Int {
-        dailyPlanningStates.first {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }?.startMinutes ?? DailyPlanningState.defaultStartMinutes
+        // Delegate to PlanningService (P2-2)
+        planningService.startMinutes(for: date, in: dailyPlanningStates)
     }
 
     @discardableResult
     func setDailyPlanningStart(minutes: Int, on date: Date) -> Int {
-        let normalized = DailyPlanningState.normalizedStartMinutes(minutes)
-        let currentCutoff = dailyPlanningCutoffMinutes(on: date)
-        let adjustedCutoff = currentCutoff > normalized
-            ? currentCutoff
-            : min(
-                normalized + DailyPlanningState.cutoffStepMinutes,
-                DailyPlanningState.maximumCutoffMinutes
-            )
-        if let index = dailyPlanningStates.firstIndex(where: {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }) {
-            dailyPlanningStates[index].startMinutes = normalized
-            dailyPlanningStates[index].cutoffMinutes = adjustedCutoff
-        } else {
-            dailyPlanningStates.append(
-                DailyPlanningState(
-                    date: date,
-                    startMinutes: normalized,
-                    cutoffMinutes: adjustedCutoff
-                )
-            )
-        }
+        // Delegate computation to PlanningService (P2-2)
+        let result = planningService.withStartMinutes(minutes, on: date, in: dailyPlanningStates)
+        dailyPlanningStates = result.states
         if dailyPlanningCutoffEvent(on: date) != nil {
             _ = upsertDailyPlanningCutoffEvent(
                 on: date,
-                minutes: adjustedCutoff,
+                minutes: result.cutoff,
                 persistImmediately: false
             )
             persistDailyPlanAndCalendarEvents()
         } else {
             persistDailyPlanningStates()
         }
-        return normalized
+        return result.start
     }
 
     @discardableResult
     func setDailyPlanningCutoff(minutes: Int, on date: Date) -> Int {
-        let normalized = DailyPlanningState.normalizedCutoffMinutes(minutes)
-        let currentStart = dailyPlanningStartMinutes(on: date)
-        let adjustedStart = currentStart < normalized
-            ? currentStart
-            : max(
-                normalized - DailyPlanningState.startStepMinutes,
-                DailyPlanningState.minimumStartMinutes
-            )
-        if let index = dailyPlanningStates.firstIndex(where: {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }) {
-            dailyPlanningStates[index].startMinutes = adjustedStart
-            dailyPlanningStates[index].cutoffMinutes = normalized
-        } else {
-            dailyPlanningStates.append(
-                DailyPlanningState(
-                    date: date,
-                    startMinutes: adjustedStart,
-                    cutoffMinutes: normalized
-                )
-            )
-        }
+        // Delegate computation to PlanningService (P2-2)
+        let result = planningService.withCutoffMinutes(minutes, on: date, in: dailyPlanningStates)
+        dailyPlanningStates = result.states
         if dailyPlanningCutoffEvent(on: date) != nil {
             _ = upsertDailyPlanningCutoffEvent(
                 on: date,
-                minutes: normalized,
+                minutes: result.cutoff,
                 persistImmediately: false
             )
             persistDailyPlanAndCalendarEvents()
         } else {
             persistDailyPlanningStates()
         }
-        return normalized
+        return result.cutoff
     }
 
     /// Ensures every task in a daily plan has a concrete clock time. A newly
