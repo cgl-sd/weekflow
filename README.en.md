@@ -67,7 +67,7 @@ Focus sessions contribute to actual task time and review statistics while preser
 
 ## Download
 
-Download the latest macOS ZIP from [GitHub Releases](https://github.com/cgl-sd/weekflow/releases/latest), extract it, and move `Weekflow.app` to Applications. The current public preview is not Apple-notarized, so the first launch may require right-clicking the app in Finder and choosing Open.
+Download the latest macOS DMG or ZIP from [GitHub Releases](https://github.com/cgl-sd/weekflow/releases/latest). Open the DMG and drag `Weekflow.app` to Applications, or extract the ZIP and move the app manually. The current public preview is not Apple-notarized, so the first launch may require right-clicking the app in Finder and choosing Open.
 
 ## Build from source
 
@@ -83,7 +83,7 @@ Build and launch the application:
 ./script/build_and_run.sh
 ```
 
-Create a release archive without user data:
+Create ZIP and DMG release packages without user data:
 
 ```bash
 ./script/build_and_run.sh --package

@@ -64,12 +64,27 @@ open_app() { /usr/bin/open -n "$APP_BUNDLE"; }
 open_fixture_app() { /usr/bin/open -n "$APP_BUNDLE" --args --development-fixtures; }
 package_app() {
   local archive="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.zip"
+  local disk_image="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.dmg"
+  local image_source
+  image_source="$(mktemp -d)"
   mkdir -p "$RELEASE_DIR"
   /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
   rm -f "$archive"
+  rm -f "$disk_image"
   /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$archive"
+  /usr/bin/ditto "$APP_BUNDLE" "$image_source/$APP_NAME.app"
+  ln -s /Applications "$image_source/Applications"
+  /usr/bin/hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$image_source" \
+    -format UDZO \
+    -ov \
+    "$disk_image" >/dev/null
+  rm -rf "$image_source"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+  /usr/bin/hdiutil verify "$disk_image" >/dev/null
   echo "$archive"
+  echo "$disk_image"
 }
 
 case "$MODE" in

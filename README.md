@@ -67,7 +67,7 @@ Weekflow 把“目标—任务—日期—投入—回顾”放在同一个数�
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/cgl-sd/weekflow/releases/latest) 下载最新的 macOS ZIP，解压后将 `Weekflow.app` 移入“应用程序”文件夹。当前公开预览版尚未经过 Apple 公证，首次启动时可能需要在 Finder 中右键应用并选择“打开”。
+从 [GitHub Releases](https://github.com/cgl-sd/weekflow/releases/latest) 下载最新的 macOS DMG 或 ZIP。打开 DMG 后将 `Weekflow.app` 拖入“应用程序”文件夹；ZIP 解压后也可直接移动安装。当前公开预览版尚未经过 Apple 公证，首次启动时可能需要在 Finder 中右键应用并选择“打开”。
 
 ## 开发构建
 
@@ -83,7 +83,7 @@ swift test
 ./script/build_and_run.sh
 ```
 
-生成无用户数据的 Release 安装包：
+生成无用户数据的 ZIP 与 DMG 安装包：
 
 ```bash
 ./script/build_and_run.sh --package
