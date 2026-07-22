@@ -141,6 +141,16 @@ extension WeekflowStore {
         applyLifecycleOutcome(outcome, goalID: id)
     }
 
+    func permanentlyDeleteAllDeletedGoals() {
+        let targets = deletedGoals
+        guard !targets.isEmpty else { return }
+        for goal in targets {
+            if let outcome = goalLifecycle.purge(goal) {
+                applyLifecycleOutcome(outcome, goalID: goal.id)
+            }
+        }
+    }
+
     /// P2-1: Applies a lifecycle outcome from the GoalLifecycleCoordinator.
     /// Centralizes state mutation + persistence so individual methods stay thin.
     func applyLifecycleOutcome(_ outcome: GoalLifecycleCoordinator.LifecycleOutcome, goalID: UUID) {

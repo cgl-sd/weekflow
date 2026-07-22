@@ -470,6 +470,19 @@ extension WeekflowStore {
         persist()
     }
 
+    func permanentlyDeleteAllDeletedTasks() {
+        let entries = deletedTasks
+        guard !entries.isEmpty else { return }
+        for entry in entries {
+            if let goal = goals.first(where: { $0.id == entry.goal.id }),
+               let updated = goalLifecycle.purgeTask(in: goal, taskID: entry.task.id) {
+                replace(updated)
+            }
+        }
+        highlightedTask = nil
+        persist()
+    }
+
     @discardableResult
     func duplicateTask(
         goalID: UUID,

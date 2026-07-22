@@ -13,6 +13,7 @@ struct ArchiveSummaryView: View {
     private let usesScrollContainer: Bool
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
+    @State private var searchText = ""
 
     init(
         store: WeekflowStore,
@@ -46,13 +47,15 @@ struct ArchiveSummaryView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(WeekflowPalette.textSecondary)
 
+            searchField
+
             ArchiveDisclosureSection(
                 title: "已归档的任务",
                 count: filteredTasks.count,
                 isExpanded: $tasksExpanded
             ) {
                 if filteredTasks.isEmpty {
-                    ArchiveEmptyRow(text: "当前筛选下没有归档任务")
+                    ArchiveEmptyRow(text: searchText.isEmpty ? "当前筛选下没有归档任务" : "没有匹配的任务")
                 } else {
                     ForEach(filteredTasks, id: \.task.id) { entry in
                         archivedTaskCard(entry)
@@ -66,7 +69,7 @@ struct ArchiveSummaryView: View {
                 isExpanded: $goalsExpanded
             ) {
                 if filteredGoals.isEmpty {
-                    ArchiveEmptyRow(text: "当前筛选下没有归档周目标")
+                    ArchiveEmptyRow(text: searchText.isEmpty ? "当前筛选下没有归档周目标" : "没有匹配的目标")
                 } else {
                     ForEach(filteredGoals) { goal in archivedGoalCard(goal) }
                 }
@@ -76,20 +79,50 @@ struct ArchiveSummaryView: View {
         .frame(maxWidth: 1_040, alignment: .topLeading)
     }
 
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(WeekflowPalette.textMuted)
+            TextField("搜索已归档的内容…", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if !searchText.isEmpty {
+                WeekflowButton { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(WeekflowPalette.surface.opacity(0.6), in: WeekflowRoundedRectangle(cornerRadius: 8))
+        .overlay(WeekflowRoundedRectangle(cornerRadius: 8).stroke(WeekflowPalette.border.opacity(0.5)))
+    }
+
     private var filteredTasks: [(goal: WeeklyGoal, task: WeekTask)] {
-        store.archivedTasks.filter { matchesChannel($0.task.channelID) }
+        store.archivedTasks.filter { entry in
+            matchesChannel(entry.task.channelID) && matchesSearch(entry.task.title)
+        }
     }
 
     private var filteredGoals: [WeeklyGoal] {
         store.archivedGoals.filter { goal in
-            selectedChannelID == "all"
+            let channelMatch = selectedChannelID == "all"
                 || matchesChannel(goal.channelID)
                 || goal.tasks.contains { matchesChannel($0.channelID) }
+            return channelMatch && matchesSearch(goal.title)
         }
     }
 
     private func matchesChannel(_ channelID: String?) -> Bool {
         ArchiveChannelFilter.matches(channelID: channelID, selectedChannelID: selectedChannelID)
+    }
+
+    private func matchesSearch(_ title: String) -> Bool {
+        searchText.isEmpty || title.localizedCaseInsensitiveContains(searchText)
     }
 
     private func archivedTaskCard(_ entry: (goal: WeeklyGoal, task: WeekTask)) -> some View {
@@ -154,11 +187,26 @@ struct ArchiveSummaryView: View {
     }
 }
 
-struct ArchiveDisclosureSection<Content: View>: View {
+struct ArchiveDisclosureSection<Content: View, Trailing: View>: View {
     let title: String
     let count: Int
     @Binding var isExpanded: Bool
+    @ViewBuilder let trailingAction: () -> Trailing
     @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        count: Int,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder trailingAction: @escaping () -> Trailing = { EmptyView() },
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.count = count
+        self._isExpanded = isExpanded
+        self.trailingAction = trailingAction
+        self.content = content()
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,6 +225,7 @@ struct ArchiveDisclosureSection<Content: View>: View {
                         .padding(.vertical, 3)
                         .background(WeekflowPalette.border.opacity(0.35), in: Capsule())
                     Spacer()
+                    trailingAction()
                 }
                 .foregroundStyle(WeekflowPalette.textPrimary)
                 .padding(.horizontal, 14)
