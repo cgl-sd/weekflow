@@ -1,0 +1,48 @@
+# Changelog
+
+## Unreleased — stability architecture remediation
+
+- Replaced timezone-sensitive business dates with canonical `LocalDay` / `LocalTime` payloads and stable `YYYY-MM-DD` keys.
+- Added frozen SwiftData V1 fixtures, a V1→V2 migration plan, migration audit records, pre-migration database backups, and full-content migration verification.
+- Moved the live SwiftData `ModelContext` behind `PersistenceActor`; added atomic cross-entity units of work, context rollback, Store snapshot rollback, and fault injection coverage.
+- Added targeted goal/task/assignment persistence so ordinary single-task edits no longer fetch and encode the complete database; text editors retain their debounce/session commit behavior.
+- Kept task and focus duration internally in seconds, persisted active task sessions, and used monotonic runtime clocks with wall-clock recovery after restart.
+- Bounded mutation history and exposed history size, age, and cleanup diagnostics.
+- Introduced `GoalService` and planning/review projections, plus `AppCoordinator`, `NavigationStore`, and a scene-targeted typed `CommandRouter` in place of the internal NotificationCenter command bus.
+- Disabled global shortcuts by default, removed Shift-only combinations, surfaced registration failures, and added deterministic unregister/re-register behavior.
+- Hardened compact payload decoding with versioning, bounds, checksums, and corruption handling.
+- Split preview packaging from Developer ID + Hardened Runtime + notarized release packaging; CI now gates release artifacts on tests and release builds and publishes SHA-256 checksums.
+
+## 0.4.0 — 2026-07-14
+
+- 固化首页三日等分布局，并让每日计划、每日收尾使用同一套三列宽度计算。
+- 完成任务卡紧凑化、进度条设置、时间菜单、日期菜单、频道菜单和优先级菜单的一致化。
+- 统一主要自定义交互控件的小手指针，移除会改变任务池卡片尺寸的悬浮缩放。
+- 降低指针区域的重复注册频率，避免动画和控件显隐期间的鼠标形态抖动。
+- 删除不可达的旧子任务表单与三个无调用 Store 查询入口。
+- 本地数据读取失败时暂停持久化并提示用户，避免用空状态覆盖原始 JSON 文件。
+- 完成 0.4 稳定基线的目录、架构、功能、测试与运行审查。
+
+## 0.3.0 — 2026-07-12
+
+- 完成 V3 十四阶段中的功能阶段、视觉回归和代码 Review。
+- 新增专注计时、三步每日计划、每日收尾总结、子周目标、目标导向周回顾和归档工作区。
+- 将固定窗口、右侧面板和首页可视日期几何集中为可测试布局常量。
+- 将大型 SwiftUI 文件按首页、每日流程、右侧面板、专注、周回顾和表单职责拆分。
+- 删除不可达的旧“今日/待办箱”页面、重复拖拽实现和无调用 Store 入口。
+- 删除只含构建缓存的旧 `04_workspace/`，旧需求文档保留到 `docs/legacy_specs/`。
+
+## 0.2.0 — 2026-07-11
+
+- 按 `sunsama/board/` 实测比例加入六种工作区视图与紧凑视图菜单。
+- 将右侧辅助内容由浮窗改为 300pt 内联面板，图标轨收窄为 48pt。
+- 加入与首页任务同步的分色日历时间轴及非破坏性验收示例任务。
+- 修复添加任务悬浮提示的横线和被系统弹窗遮挡问题。
+- 删除重复的旧版 `04_workspace` 工程和未使用早期视图，保留原始图标素材到正式资源目录。
+
+## 0.1.0 — 2026-07-10
+
+- 初始化 Weekflow 原生 macOS MVP。
+- 建立周目标、里程碑、任务与每日执行的核心数据模型。
+- 加入本地 JSON 持久化、SwiftPM 构建和 Codex Run 按钮配置。
+- 补充产品范围、模块设计、功能汇报与本地运行文档。
