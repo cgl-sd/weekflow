@@ -1,0 +1,42 @@
+# macOS / editors
+.DS_Store
+**/.DS_Store
+.AppleDouble
+*.log
+*.swp
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager / Xcode caches
+.build/
+**/.build/
+.swiftpm/
+DerivedData/
+
+# Local Codex and developer state
+.codex/
+.local/
+/AGENTS.md
+.env
+.env.*
+!.env.example
+
+# Generated application and release packages
+dist/
+release/
+*.app
+*.dmg
+*.pkg
+
+# Local persistence databases and crash output
+*.store
+*.store-shm
+*.store-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.crash
+
+# Compatibility: old local-only directories
+artifacts/
+sunsama/
