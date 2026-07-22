@@ -99,6 +99,7 @@ struct TrashSummaryView: View {
                         .foregroundStyle(WeekflowPalette.textMuted)
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
             }
         }
         .padding(.horizontal, 12)
@@ -250,6 +251,7 @@ struct DeleteAllCapsuleButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.1)) { isHovered = hovering }
         }

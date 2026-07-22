@@ -97,6 +97,7 @@ struct ArchiveSummaryView: View {
                         .foregroundStyle(WeekflowPalette.textMuted)
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
             }
         }
         .padding(.horizontal, 12)
