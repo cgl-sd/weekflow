@@ -12,6 +12,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # CI Fix: Pin Xcode version for reproducible builds
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          swift --version
+          xcodebuild -version
       - name: Debug build
         working-directory: 01_workspace
         run: swift build
@@ -32,6 +38,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # CI Fix: Pin Xcode version for reproducible builds
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          swift --version
       - name: Validate tag version
         run: test "${GITHUB_REF_NAME#v}" = "$(tr -d '[:space:]' < VERSION)"
       - name: Import Developer ID certificate
@@ -66,4 +77,10 @@ jobs:
       - name: Publish release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" release/Weekflow-*.zip release/Weekflow-*.dmg release/SHA256SUMS --clobber
+        run: |
+          # CI Fix: Create release if it doesn't exist before uploading
+          gh release view "$GITHUB_REF_NAME" 2>/dev/null || \
+            gh release create "$GITHUB_REF_NAME" \
+              --title "Weekflow $GITHUB_REF_NAME" \
+              --generate-notes
+          gh release upload "$GITHUB_REF_NAME" release/Weekflow-*.zip release/Weekflow-*.dmg release/SHA256SUMS --clobber

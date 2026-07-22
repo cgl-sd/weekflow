@@ -179,8 +179,8 @@ struct LocalStorage: @unchecked Sendable {
         }
     }
 
-    private func read<Result>(
-        _ operation: @escaping (SwiftDataPersistenceRepository) throws -> Result
+    private func read<Result: Sendable>(
+        _ operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result? {
         if let initializationError { throw initializationError }
         if !fileManager.fileExists(atPath: databaseURL.path) {
@@ -191,8 +191,8 @@ struct LocalStorage: @unchecked Sendable {
         return try PersistenceActorBridge.run(on: persistenceActor, operation)
     }
 
-    private func readOptional<Result>(
-        _ operation: @escaping (SwiftDataPersistenceRepository) throws -> Result?
+    private func readOptional<Result: Sendable>(
+        _ operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result?
     ) throws -> Result? {
         if let initializationError { throw initializationError }
         if !fileManager.fileExists(atPath: databaseURL.path) {
@@ -203,8 +203,8 @@ struct LocalStorage: @unchecked Sendable {
         return try PersistenceActorBridge.run(on: persistenceActor, operation)
     }
 
-    private func write<Result>(
-        _ operation: @escaping (SwiftDataPersistenceRepository) throws -> Result
+    private func write<Result: Sendable>(
+        _ operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result {
         if let initializationError { throw initializationError }
         if !fileManager.fileExists(atPath: databaseURL.path), legacyFilesExist {
@@ -302,10 +302,16 @@ struct LocalStorage: @unchecked Sendable {
         legacyURLs.contains { fileManager.fileExists(atPath: $0.path) }
     }
 
+    /// Creates a pre-migration backup with versioned path (P1-3 fix).
+    /// Future migrations (V2→V3, etc.) will create separate backup directories.
     private func ensurePreMigrationBackup() throws {
+        let currentVersion = SwiftDataPersistenceRepository.schemaVersion
+        let previousVersion = currentVersion - 1
+        guard previousVersion >= 1 else { return }  // No backup needed for V1
+
         let backupDirectory = directoryURL
             .appendingPathComponent("MigrationBackups", isDirectory: true)
-            .appendingPathComponent("v1-before-v2", isDirectory: true)
+            .appendingPathComponent("v\(previousVersion)-to-v\(currentVersion)", isDirectory: true)
         let completionMarker = backupDirectory.appendingPathComponent("complete")
         guard !fileManager.fileExists(atPath: completionMarker.path) else { return }
 
@@ -325,7 +331,13 @@ struct LocalStorage: @unchecked Sendable {
                     to: temporary.appendingPathComponent(source.lastPathComponent)
                 )
             }
-            let manifest = "from=1\nto=2\ncreatedAt=\(ISO8601DateFormatter().string(from: .now))\n"
+            // Versioned manifest (P1-3 fix)
+            let manifest = """
+            fromVersion=\(previousVersion)
+            toVersion=\(currentVersion)
+            createdAt=\(ISO8601DateFormatter().string(from: .now))
+            databaseFiles=\(family.map(\.lastPathComponent).joined(separator: ","))
+            """
             try Data(manifest.utf8).write(
                 to: temporary.appendingPathComponent("complete"),
                 options: .atomic

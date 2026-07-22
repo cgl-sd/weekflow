@@ -46,6 +46,8 @@ final class WeekflowStore {
     private let storage: LocalStorage
     private let developmentFixture: WeekflowDevelopmentFixture?
     private var persistenceEnabled: Bool
+    /// Coordinates async writes to prevent out-of-order commits (P0-2 fix).
+    private let persistenceCoordinator = PersistenceCoordinator()
     private let legacyPreferences: UserDefaults
     private let businessCalendar: any BusinessCalendarProviding
     private var taskClipboard: (reference: TaskReference, cutsSource: Bool)?
@@ -2384,23 +2386,14 @@ final class WeekflowStore {
         return event.id
     }
 
+    /// P1-7 Fix: Delegate to PlanningService for consistent cutoff date calculation.
     private func cutoffDate(on date: Date, minutes: Int) -> Date {
-        let normalized = DailyPlanningState.normalizedCutoffMinutes(minutes)
-        var components = businessCalendar.calendar.dateComponents([.year, .month, .day], from: date)
-        components.hour = normalized / 60
-        components.minute = normalized % 60
-        components.second = 0
-        return businessCalendar.calendar.date(from: components) ?? date
+        planningService.cutoffDate(on: date, minutes: minutes)
     }
 
+    /// P1-7 Fix: Delegate to PlanningService for consistent source key format.
     private func dailyPlanningCutoffSourceKey(for date: Date) -> String {
-        let components = businessCalendar.calendar.dateComponents([.year, .month, .day], from: date)
-        return String(
-            format: "weekflow.daily-planning.cutoff.%04d-%02d-%02d",
-            components.year ?? 0,
-            components.month ?? 0,
-            components.day ?? 0
-        )
+        planningService.cutoffSourceKey(for: date)
     }
 
     @discardableResult
@@ -2530,6 +2523,9 @@ final class WeekflowStore {
     /// suspended via the PersistenceActor so the run loop stays responsive.
     /// In test mode (`synchronousPersistence == true`) this delegates to
     /// `persistSync` so assertions can read back from disk immediately.
+    ///
+    /// P0-2 Fix: Uses PersistenceCoordinator to serialize writes and prevent
+    /// out-of-order commits and stale rollbacks.
     private func persist(kind: PersistenceMutationKind = .userEdit) {
         if synchronousPersistence {
             _ = persistSync(kind: kind)
@@ -2542,9 +2538,10 @@ final class WeekflowStore {
         guard !changes.isEmpty else { return }
         let snapshot = persistedGoals
         let currentGoals = goals
-        Task { @MainActor in
-            await persistSafelyAsync(
-                "周目标与任务",
+        // Use coordinator to serialize writes (P0-2 fix)
+        Task {
+            await persistenceCoordinator.enqueue(
+                label: "周目标与任务",
                 operation: { try await self.storage.applyGoalChangesAsync(changes, kind: kind) },
                 commit: { self.persistedGoals = currentGoals },
                 rollback: { self.goals = snapshot }
@@ -2766,9 +2763,10 @@ final class WeekflowStore {
     private func persistFocusRecordsAsync() {
         let records = focusRecords
         let snapshot = persistedFocusRecords
-        Task { @MainActor in
-            await persistSafelyAsync(
-                "专注记录",
+        // Use coordinator to serialize writes (P0-2 fix)
+        Task {
+            await persistenceCoordinator.enqueue(
+                label: "专注记录",
                 operation: { try await self.storage.saveFocusRecordsAsync(records) },
                 commit: { self.persistedFocusRecords = records },
                 rollback: { self.focusRecords = snapshot }

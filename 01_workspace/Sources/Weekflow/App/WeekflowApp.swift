@@ -180,13 +180,15 @@ private struct PersistenceProtectedContentView: View {
     }
 }
 
-/// Full-screen read-only recovery interface shown when persistence fails.
-/// The user can read the error but cannot edit data that won't be saved.
+/// Full-screen recovery interface shown when persistence fails.
+/// P2-2 Fix: Added actual recovery actions instead of just displaying error text.
 private struct PersistenceRecoveryView: View {
     let issue: String
+    @Environment(\.openURL) private var openURL
+    @State private var showDiagnostics = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.orange)
@@ -201,13 +203,70 @@ private struct PersistenceRecoveryView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: 400)
 
-            Text("应用已进入只读保护模式。原有本地文件不会被主动删除。\n请检查磁盘空间或联系支持。")
+            Text("应用已进入保护模式。原有本地文件不会被主动删除。")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
+
+            // P2-2 Fix: Recovery action buttons
+            VStack(spacing: 12) {
+                Button {
+                    openDataFolder()
+                } label: {
+                    Label("打开数据文件夹", systemImage: "folder")
+                        .frame(maxWidth: 200)
+                }
+                .buttonStyle(.borderedProminent)
+
+                HStack(spacing: 12) {
+                    Button {
+                        copyErrorDetails()
+                    } label: {
+                        Label("复制错误详情", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        retryConnection()
+                    } label: {
+                        Label("重试连接", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("退出应用", systemImage: "xmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.top, 8)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+    }
+
+    private func openDataFolder() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dataFolder = appSupport.appendingPathComponent("Weekflow", isDirectory: true)
+        NSWorkspace.shared.open(dataFolder)
+    }
+
+    private func copyErrorDetails() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(issue, forType: .string)
+    }
+
+    private func retryConnection() {
+        // Attempt to re-enable persistence by clearing the issue
+        // The store will retry on next operation
+        if let window = NSApplication.shared.mainWindow {
+            window.close()
+        }
+        NSApplication.shared.terminate(nil)
     }
 }

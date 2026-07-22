@@ -115,9 +115,23 @@ final class TaskTimerService {
     }
 
     /// Restores a persisted session (e.g., after crash recovery).
-    func restore(session: TaskTimerSession?) {
+    ///
+    /// P0-4 Fix: Rebase the session on restore to ensure UI and monotonic
+    /// calculations are consistent. The offline elapsed time is added to
+    /// `baseActualSeconds` and `startedAt` is reset to now.
+    func restore(session: TaskTimerSession?, now: Date = .now) {
+        guard var session else {
+            activeSession = nil
+            startedInstant = nil
+            return
+        }
+        // Calculate offline elapsed time and add to base
+        let offlineElapsed = max(Int(now.timeIntervalSince(session.startedAt)), 0)
+        session.baseActualSeconds += offlineElapsed
+        session.startedAt = now
+        session.lastCheckpointAt = now
         activeSession = session
-        startedInstant = session != nil ? clock.now : nil
+        startedInstant = clock.now
     }
 
     func clear() {

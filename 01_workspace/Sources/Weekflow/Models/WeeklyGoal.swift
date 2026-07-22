@@ -216,17 +216,15 @@ struct WeekTask: Identifiable, Codable, Hashable {
     /// Monday of a target execution week when the exact day is intentionally undecided.
     var executionWeekStartDay: LocalDay?
     var estimatedMinutes: Int
+    /// P1-5 Fix: `actualMinutes` is now a computed property derived from
+    /// `actualSeconds` (the single source of truth). Setting it updates
+    /// `actualSeconds` accordingly.
     var actualMinutes: Int {
-        didSet {
-            let normalized = max(actualMinutes, 0)
-            if normalized != actualMinutes { actualMinutes = normalized }
-            if DurationDisplay.minutes(for: actualSeconds) != normalized {
-                actualSeconds = normalized * 60
-            }
-        }
+        get { DurationDisplay.minutes(for: actualSeconds) }
+        set { actualSeconds = max(newValue, 0) * 60 }
     }
-    /// Canonical accumulated duration. `actualMinutes` remains a compatibility
-    /// projection for existing payloads and UI bindings.
+    /// Canonical accumulated duration in seconds. This is the single source
+    /// of truth for task actual time.
     var actualSeconds: Int
     var status: TaskStatus
     /// Archiving is independent from completion so a completed task can retain
@@ -335,7 +333,8 @@ struct WeekTask: Identifiable, Codable, Hashable {
         dueDay = dueDate.map(SystemBusinessCalendar.current.day(containing:))
         executionWeekStartDay = executionWeekStart.map(SystemBusinessCalendar.current.day(containing:))
         self.estimatedMinutes = estimatedMinutes
-        self.actualMinutes = actualMinutes
+        // P1-5 Fix: Initialize actualSeconds first (single source of truth).
+        // actualMinutes is now a computed property.
         self.actualSeconds = max(actualSeconds ?? actualMinutes * 60, 0)
         self.status = status
         self.archivedAt = archivedAt
@@ -393,9 +392,11 @@ struct WeekTask: Identifiable, Codable, Hashable {
             ?? container.decodeIfPresent(Date.self, forKey: .executionWeekStart)
                 .map(SystemBusinessCalendar.current.day(containing:))
         estimatedMinutes = try container.decodeIfPresent(Int.self, forKey: .estimatedMinutes) ?? 60
-        actualMinutes = try container.decodeIfPresent(Int.self, forKey: .actualMinutes) ?? 0
+        // P1-5 Fix: actualSeconds is the single source of truth.
+        // Migrate from actualMinutes if actualSeconds is not present.
+        let decodedActualMinutes = try container.decodeIfPresent(Int.self, forKey: .actualMinutes) ?? 0
         actualSeconds = try container.decodeIfPresent(Int.self, forKey: .actualSeconds)
-            ?? actualMinutes * 60
+            ?? decodedActualMinutes * 60
         status = try container.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .planned
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""

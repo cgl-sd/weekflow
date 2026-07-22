@@ -211,10 +211,11 @@ private final class FakeGlobalDateShortcutBackend: GlobalDateShortcutBackend {
     goal.startDay = planned
     goal.endDay = assigned
 
+    let goalToSave = goal
     try withPersistenceActor(url: storeURL, calendar: shanghai) { repository in
-        try repository.saveGoals([goal], kind: .userEdit)
+        try repository.saveGoals([goalToSave], kind: .userEdit)
     }
-    var loaded = try withPersistenceActor(url: storeURL, calendar: losAngeles) {
+    let loaded = try withPersistenceActor(url: storeURL, calendar: losAngeles) {
         try #require($0.loadGoals()?.first)
     }
     #expect(loaded.startDay == planned)
@@ -222,9 +223,11 @@ private final class FakeGlobalDateShortcutBackend: GlobalDateShortcutBackend {
     #expect(loaded.tasks[0].plannedDay == planned)
     #expect(loaded.tasks[0].assignedDays == [assigned])
     #expect(loaded.tasks[0].completionCredits[0].day == planned)
-    loaded.title = "洛杉矶改写"
+    var modifiedLoaded = loaded
+    modifiedLoaded.title = "洛杉矶改写"
+    let loadedToSave = modifiedLoaded
     try withPersistenceActor(url: storeURL, calendar: losAngeles) {
-        try $0.saveGoals([loaded], kind: .userEdit)
+        try $0.saveGoals([loadedToSave], kind: .userEdit)
     }
     let verified = try withPersistenceActor(url: storeURL, calendar: shanghai) {
         try #require($0.loadGoals()?.first)
@@ -257,12 +260,14 @@ private final class FakeGlobalDateShortcutBackend: GlobalDateShortcutBackend {
     try withPersistenceActor(url: url, calendar: plusFourteen) {
         try $0.saveGoals([goal], kind: .automaticDistribution(transactionID: transactionID))
     }
-    var loaded = try withPersistenceActor(url: url, calendar: minusTwelve) {
+    let loaded = try withPersistenceActor(url: url, calendar: minusTwelve) {
         try #require($0.loadGoals()?.first)
     }
-    loaded.tasks[0].assignedDays = []
+    var modifiedLoaded = loaded
+    modifiedLoaded.tasks[0].assignedDays = []
+    let loadedToSave = modifiedLoaded
     try withPersistenceActor(url: url, calendar: minusTwelve) {
-        try $0.saveGoals([loaded], kind: .undoAutomaticDistribution(transactionID: transactionID))
+        try $0.saveGoals([loadedToSave], kind: .undoAutomaticDistribution(transactionID: transactionID))
     }
     let verified = try withPersistenceActor(url: url, calendar: plusFourteen) {
         try #require($0.loadGoals()?.first)
@@ -321,10 +326,10 @@ private func calendar(secondsFromGMT: Int) throws -> Calendar {
     return value
 }
 
-private func withPersistenceActor<Result>(
+private func withPersistenceActor<Result: Sendable>(
     url: URL,
     calendar: Calendar,
-    operation: @escaping (SwiftDataPersistenceRepository) throws -> Result
+    operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
 ) throws -> Result {
     try PersistenceActorBridge.run(
         on: PersistenceActor(storeURL: url, calendar: calendar),
