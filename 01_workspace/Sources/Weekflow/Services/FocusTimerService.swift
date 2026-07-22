@@ -281,10 +281,15 @@ final class FocusTimerService {
         notificationScheduler.sendCompletion(mode: selectedMode, minutes: totalSeconds / 60)
     }
 
+    /// P3-15 fix: maximum seconds that a single reconciliation step may advance.
+    /// Prevents an entire night's sleep from being counted as focus time.
+    private static let maximumReconcileStepSeconds = 120
+
     func reconcileAfterInactivity() {
         guard isRunning, let lastTickInstant else { return }
         let duration = lastTickInstant.duration(to: continuousClock.now)
-        let elapsed = max(Int(duration.components.seconds), 0)
+        // P3-15 fix: cap elapsed to avoid counting device sleep as focus time.
+        let elapsed = min(max(Int(duration.components.seconds), 0), Self.maximumReconcileStepSeconds)
         guard elapsed > 0 else { return }
         advance(by: elapsed)
         if isRunning {
@@ -297,7 +302,8 @@ final class FocusTimerService {
     /// and tests. Runtime ticks use the monotonic overload above.
     func reconcileAfterInactivity(now: Date) {
         guard isRunning, let lastTickDate else { return }
-        let elapsed = max(Int(now.timeIntervalSince(lastTickDate)), 0)
+        // P3-15 fix: cap elapsed to avoid counting device sleep as focus time.
+        let elapsed = min(max(Int(now.timeIntervalSince(lastTickDate)), 0), Self.maximumReconcileStepSeconds)
         guard elapsed > 0 else { return }
         advance(by: elapsed)
         if isRunning {
@@ -308,8 +314,12 @@ final class FocusTimerService {
 
     private func installTimer() {
         timer?.invalidate()
+        // P2-11 fix: the Timer fires on the main RunLoop so we are already on
+        // MainActor; avoid allocating a Task object every tick.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reconcileAfterInactivity() }
+            MainActor.assumeIsolated {
+                self?.reconcileAfterInactivity()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

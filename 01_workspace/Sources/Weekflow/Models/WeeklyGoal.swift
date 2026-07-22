@@ -434,7 +434,10 @@ struct WeekTask: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(dueDay, forKey: .dueDay)
         try container.encodeIfPresent(executionWeekStartDay, forKey: .executionWeekStartDay)
         try container.encode(estimatedMinutes, forKey: .estimatedMinutes)
-        try container.encode(actualMinutes, forKey: .actualMinutes)
+        // P2-10 fix: only encode actualSeconds (the single source of truth).
+        // actualMinutes is a derived computed property; encoding both inflated
+        // every task payload by ~20 bytes. The decoder already migrates from
+        // actualMinutes when actualSeconds is absent.
         try container.encode(actualSeconds, forKey: .actualSeconds)
         try container.encode(status, forKey: .status)
         try container.encodeIfPresent(archivedAt, forKey: .archivedAt)

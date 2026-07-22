@@ -128,7 +128,12 @@ actor PersistenceActor {
     }
 }
 
-/// Thread-safe result transport for synchronous bridge.
+/// Thread-safe result transport for the synchronous actor bridge.
+///
+/// P4-17/18 fix: Safety invariant — `value`/`error` are written exactly once
+/// inside the `Task` closure, then read after `semaphore.wait()`. The
+/// DispatchSemaphore provides the happens-before edge that guarantees the
+/// reader sees the written values. No concurrent access occurs.
 private final class ResultBox<Result>: @unchecked Sendable {
     var value: Result?
     var error: Error?

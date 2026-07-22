@@ -24,6 +24,9 @@ final class WeekflowStore {
     /// P2-1: Feature-boundary coordinator for goal lifecycle operations.
     /// Owns archive/trash/restore/purge domain rules and navigation side-effects.
     private let goalLifecycle: GoalLifecycleCoordinator
+    /// P1-3 fix: encapsulates timer settlement domain logic (actual time
+    /// computation, change records, completion credits).
+    private let timerCoordinator: TimerCoordinator
     var goals: [WeeklyGoal]
     var selectedGoalID: WeeklyGoal.ID?
     var channels: [TaskChannel]
@@ -65,6 +68,9 @@ final class WeekflowStore {
     /// Debouncer for text-input persistence. Rapid keystrokes coalesce into a
     /// single write after a 300 ms quiet period (P1-7 requirement).
     @ObservationIgnored private let textInputDebouncer = PersistenceDebouncer()
+    /// P2-7 fix: O(1) goal lookup index. Rebuilt lazily after any mutation to
+    /// the goals array via `invalidateGoalIndex()`.
+    @ObservationIgnored private var goalIndexCache: [UUID: Int]?
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
     var synchronousPersistence = false
@@ -94,7 +100,11 @@ final class WeekflowStore {
         self.taskService = TaskService(businessCalendar: businessCalendar)
         self.archiveService = ArchiveService(businessCalendar: businessCalendar)
         self.planningService = PlanningService(businessCalendar: businessCalendar)
-        self.goalLifecycle = GoalLifecycleCoordinator(archiveService: ArchiveService(businessCalendar: businessCalendar))
+        // P1-4 fix: share the same ArchiveService instance with the lifecycle
+        // coordinator to express a single source of business rules.
+        self.goalLifecycle = GoalLifecycleCoordinator(archiveService: archiveService)
+        // P1-3 fix: timer settlement domain logic.
+        self.timerCoordinator = TimerCoordinator(businessCalendar: businessCalendar)
         activeDay = businessCalendar.date(for: businessCalendar.day(containing: .now))
         self.persistenceEnabled = false
         if let developmentFixture {
@@ -229,6 +239,7 @@ final class WeekflowStore {
     func resetDevelopmentFixture() -> Bool {
         guard let developmentFixture else { return false }
         goals = developmentFixture.goals
+        invalidateGoalIndex()
         channels = developmentFixture.channels
         calendarEvents = developmentFixture.calendarEvents
         dailyPlanningStates = []
@@ -242,7 +253,9 @@ final class WeekflowStore {
         return true
     }
 
-    var selectedGoal: WeeklyGoal? { goals.first { $0.id == selectedGoalID } }
+    var selectedGoal: WeeklyGoal? {
+        selectedGoalID.flatMap { id in goalIndex(for: id).map { goals[$0] } }
+    }
     var activeGoals: [WeeklyGoal] {
         goals.filter { !$0.isArchived && !$0.isDeleted }.sorted {
             if $0.isPinned != $1.isPinned { return $0.isPinned }
@@ -484,6 +497,7 @@ final class WeekflowStore {
         }
         newGoal = goalService.project(newGoal)
         goals.insert(newGoal, at: 0)
+        invalidateGoalIndex()
         selectedGoalID = newGoal.id
         if persistImmediately { persist() }
         return newGoal.id
@@ -591,6 +605,7 @@ final class WeekflowStore {
     private func applyLifecycleOutcome(_ outcome: GoalLifecycleCoordinator.LifecycleOutcome, goalID: UUID) {
         if outcome.removed {
             goals.removeAll { $0.id == goalID }
+            invalidateGoalIndex()
         } else if let updated = outcome.updatedGoal {
             replace(updated)
         }
@@ -910,13 +925,22 @@ final class WeekflowStore {
         await persistenceCoordinator.flush()
     }
 
+    /// Synchronous termination guard (P0-1 fix). Performs a final synchronous
+    /// persist so no pending async writes are lost when the process exits.
+    /// Called from `applicationWillTerminate` where async is not available.
+    func persistForTermination() {
+        textInputDebouncer.cancelPending()
+        _ = persistSync()
+    }
+
     func setTaskPriority(
         goalID: UUID,
         taskID: UUID,
         priority: TaskPriority,
         on date: Date
     ) {
-        guard let goalIndex = goals.firstIndex(where: { $0.id == goalID }),
+        // P2-7: O(1) goal lookup.
+        guard let goalIndex = goalIndex(for: goalID),
               let taskIndex = goals[goalIndex].tasks.firstIndex(where: { $0.id == taskID }) else { return }
         let previousPriority = goals[goalIndex].tasks[taskIndex].priority
         goals[goalIndex].tasks[taskIndex].priority = priority
@@ -939,8 +963,10 @@ final class WeekflowStore {
         recordChanges: Bool = true,
         persistImmediately: Bool = true
     ) -> [TaskChangeRecord] {
-        guard var goal = goals.first(where: { $0.id == goalID }),
-              let index = goal.tasks.firstIndex(where: { $0.id == updatedTask.id }) else { return [] }
+        // P2-7: O(1) goal lookup.
+        guard let gIdx = goalIndex(for: goalID),
+              let index = goals[gIdx].tasks.firstIndex(where: { $0.id == updatedTask.id }) else { return [] }
+        var goal = goals[gIdx]
         let current = goal.tasks[index]
         let records = manualChangeRecords(from: original, to: updatedTask, date: now)
         guard !records.isEmpty else { return [] }
@@ -971,8 +997,10 @@ final class WeekflowStore {
         now: Date = .now,
         persistImmediately: Bool = true
     ) -> TaskChangeRecord? {
-        guard var goal = goals.first(where: { $0.id == goalID }),
-              let index = goal.tasks.firstIndex(where: { $0.id == taskID }) else { return nil }
+        // P2-7: O(1) goal lookup.
+        guard let gIdx = goalIndex(for: goalID),
+              let index = goals[gIdx].tasks.firstIndex(where: { $0.id == taskID }) else { return nil }
+        var goal = goals[gIdx]
         let current = goal.tasks[index]
         let changes = manualChangeRecords(from: original, to: current, date: now)
         guard !changes.isEmpty else {
@@ -1072,20 +1100,8 @@ final class WeekflowStore {
             shifted.sortOrder += 1
             return shifted
         }
-        var copy = original
-        copy.id = UUID()
-        copy.title = "\(original.title) 副本"
-        copy.actualMinutes = 0
-        copy.status = .planned
-        copy.changeRecords = []
-        copy.subtasks = original.subtasks.map {
-            TaskSubtask(title: $0.title, plannedMinutes: $0.plannedMinutes)
-        }
-        copy.recurrenceRootID = nil
-        copy.completionCredits = []
-        copy.createdAt = now
-        copy.updatedAt = now
-        copy.sortOrder = original.sortOrder + 1
+        // P1-5 fix: delegate duplication logic to TaskService.
+        let copy = taskService.duplicated(original, sortOrder: original.sortOrder + 1)
         goal.tasks.append(copy)
         replace(goal)
         if persistImmediately { persist() }
@@ -1419,32 +1435,26 @@ final class WeekflowStore {
         rollbackSession: TaskTimerSession? = nil
     ) -> Int {
         guard let current = task(goalID: goalID, taskID: taskID) else { return 0 }
-        let newActualSeconds = baseActualSeconds + elapsedSeconds
-        let newActualMinutes = DurationDisplay.minutes(for: newActualSeconds)
+        // P1-3 fix: delegate settlement computation to TimerCoordinator.
+        let outcome = timerCoordinator.settle(
+            baseActualSeconds: baseActualSeconds,
+            elapsedSeconds: elapsedSeconds,
+            currentTask: current,
+            now: now
+        )
         updateTask(goalID: goalID, taskID: taskID, persistImmediately: false) { task in
-            task.actualMinutes = max(current.actualMinutes, newActualMinutes)
-            task.actualSeconds = max(current.actualSeconds, newActualSeconds)
+            task.actualMinutes = outcome.newActualMinutes
+            task.actualSeconds = outcome.newActualSeconds
             task.status = .planned
-            task.changeRecords.append(TaskChangeRecord(
-                date: now,
-                field: "实际时间",
-                oldValue: DurationDisplay.minutes(for: baseActualSeconds).hourMinuteClockText,
-                newValue: max(current.actualMinutes, newActualMinutes).hourMinuteClockText,
-                source: .timer
-            ))
-            if !task.completionCredits.contains(where: { $0.reason == .actualTimeLogged && businessCalendar.calendar.isDate($0.date, inSameDayAs: now) }) {
-                task.completionCredits.append(CompletionCredit(
-                    date: now,
-                    reason: .actualTimeLogged,
-                    minutes: DurationDisplay.minutes(for: elapsedSeconds),
-                    seconds: elapsedSeconds
-                ))
+            task.changeRecords.append(outcome.changeRecord)
+            if let credit = outcome.completionCredit {
+                task.completionCredits.append(credit)
             }
         }
         if persistImmediately {
             persistTaskAndActiveTimer(rollbackSession: rollbackSession)
         }
-        return DurationDisplay.minutes(for: elapsedSeconds)
+        return outcome.elapsedMinutes
     }
 
     func toggleTaskTimer(goalID: UUID, taskID: UUID) {
@@ -1589,7 +1599,9 @@ final class WeekflowStore {
         title: String,
         persistImmediately: Bool = true
     ) -> UUID {
-        let subtask = TaskSubtask(title: title)
+        // P1-5 fix: delegate to TaskService for title trimming + creation.
+        let subtask = TaskSubtask(title: title.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !subtask.title.isEmpty else { return subtask.id }
         updateTask(goalID: goalID, taskID: taskID, persistImmediately: persistImmediately) {
             $0.subtasks.append(subtask)
         }
@@ -1641,8 +1653,9 @@ final class WeekflowStore {
         subtaskID: UUID,
         persistImmediately: Bool = true
     ) {
+        // P1-5 fix: delegate to TaskService.
         updateTask(goalID: goalID, taskID: taskID, persistImmediately: persistImmediately) { task in
-            task.subtasks.removeAll { $0.id == subtaskID }
+            task = taskService.withDeletedSubtask(task, subtaskID: subtaskID)
         }
     }
 
@@ -2276,6 +2289,7 @@ final class WeekflowStore {
             sortOrder: source.sortOrder + 1
         )
         goals.insert(copy, at: 0)
+        invalidateGoalIndex()
         selectedGoalID = copy.id
         persist()
         return copy.id
@@ -2325,6 +2339,7 @@ final class WeekflowStore {
         currentGoal.archivedAt = now
         replace(currentGoal)
         goals.insert(newGoal, at: 0)
+        invalidateGoalIndex()
         selectedGoalID = newGoal.id
         persist()
         return newGoal.id
@@ -2337,7 +2352,26 @@ final class WeekflowStore {
         }
     }
 
-    private func replace(_ goal: WeeklyGoal) { guard let index = goals.firstIndex(where: { $0.id == goal.id }) else { return }; goals[index] = goal }
+    private func replace(_ goal: WeeklyGoal) {
+        // P2-7: O(1) lookup via index cache. In-place replacement does not
+        // change the ID→index mapping, so no invalidation is needed.
+        guard let index = goalIndex(for: goal.id) else { return }
+        goals[index] = goal
+    }
+
+    // MARK: - Goal Index (P2-7 fix)
+
+    /// Invalidates the O(1) goal lookup cache. Call after any direct mutation
+    /// of the `goals` array that does not go through `replace(_:)`.
+    private func invalidateGoalIndex() { goalIndexCache = nil }
+
+    /// Returns the index of a goal by ID in O(1) amortized time.
+    private func goalIndex(for id: UUID) -> Int? {
+        if let cache = goalIndexCache { return cache[id] }
+        let cache = Dictionary(uniqueKeysWithValues: goals.enumerated().map { ($1.id, $0) })
+        goalIndexCache = cache
+        return cache[id]
+    }
 
     /// One-time migration (P2-1): ensures tasks derived from subgoals are
     /// consistent with the goal-as-source-of-truth model. After this migration
@@ -2351,6 +2385,7 @@ final class WeekflowStore {
         legacyPreferences.set(true, forKey: migrationKey)
         guard synchronizedGoals != goals else { return false }
         goals = synchronizedGoals
+        invalidateGoalIndex()
         return true
     }
 
@@ -2430,35 +2465,14 @@ final class WeekflowStore {
         return true
     }
 
+    /// P4-16 fix: delegates to TaskService.changeRecords (single source of truth).
     private func manualChangeRecords(from original: WeekTask, to updated: WeekTask, date: Date) -> [TaskChangeRecord] {
-        var records: [TaskChangeRecord] = []
-        func record(_ field: String, _ oldValue: String, _ newValue: String) {
-            guard oldValue != newValue else { return }
-            records.append(TaskChangeRecord(date: date, field: field, oldValue: oldValue, newValue: newValue, source: .manual))
-        }
-        func dateText(_ value: Date?) -> String {
-            value?.formatted(.dateTime.year().month().day().hour().minute()) ?? "未设置"
-        }
-
-        record("标题", original.title, updated.title)
-        record("说明", original.description, updated.description)
-        record("备注", original.notes, updated.notes)
-        record("分类", channel(for: original.channelID)?.title ?? "未分类", channel(for: updated.channelID)?.title ?? "未分类")
-        record("优先级", original.priority.label, updated.priority.label)
-        record("安排日期", dateText(original.plannedDate), dateText(updated.plannedDate))
-        record("截止日期", dateText(original.dueDate), dateText(updated.dueDate))
-        record("开始时间", dateText(original.startTime), dateText(updated.startTime))
-        record("预计时间", original.estimatedMinutes.hourMinuteClockText, updated.estimatedMinutes.hourMinuteClockText)
-        record("实际时间", original.actualMinutes.hourMinuteClockText, updated.actualMinutes.hourMinuteClockText)
-        record("重复", original.recurringRule?.frequency.label ?? "不重复", updated.recurringRule?.frequency.label ?? "不重复")
-        record("完成状态", original.status.rawValue, updated.status.rawValue)
-        func subtaskText(_ subtasks: [TaskSubtask]) -> String {
-            subtasks.map {
-                "\($0.completed ? "已完成" : "未完成"):\($0.title):\($0.actualMinutes ?? 0):\($0.plannedMinutes ?? 0)"
-            }.joined(separator: "|")
-        }
-        record("子任务", subtaskText(original.subtasks), subtaskText(updated.subtasks))
-        return records
+        taskService.changeRecords(
+            from: original,
+            to: updated,
+            date: date,
+            channelTitle: { [weak self] id in self?.channel(for: id)?.title ?? "未分类" }
+        )
     }
 
     @discardableResult
@@ -2619,6 +2633,7 @@ final class WeekflowStore {
             },
             rollback: {
                 goals = persistedGoals
+                invalidateGoalIndex()
                 channels = persistedChannels
                 calendarEvents = persistedCalendarEvents
                 dailyPlanningStates = persistedDailyPlanningStates
@@ -2728,6 +2743,7 @@ final class WeekflowStore {
             commit: { persistedGoals = goals },
             rollback: {
                 goals = persistedGoals
+                invalidateGoalIndex()
                 taskTimerService.restore(session: rollbackSession)
             }
         )
@@ -2791,7 +2807,10 @@ final class WeekflowStore {
         let records = focusRecords
         let snapshot = persistedFocusRecords
         // Use coordinator to serialize writes (P0-2 fix)
-        Task {
+        // P0-2 review fix: use [weak self] to avoid retaining the Store if the
+        // coordinator holds a pending write during Store deallocation.
+        Task { [weak self] in
+            guard let self else { return }
             await persistenceCoordinator.enqueue(
                 label: "专注记录",
                 operation: { try await self.storage.saveFocusRecordsAsync(records) },

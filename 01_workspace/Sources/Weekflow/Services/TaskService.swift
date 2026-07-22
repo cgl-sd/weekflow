@@ -166,51 +166,69 @@ struct TaskService {
     // MARK: - Task Duplication
 
     /// Creates a duplicate of a task with a new ID.
-    func duplicated(_ task: WeekTask, newTitle: String? = nil) -> WeekTask {
+    /// P1-5 fix: enhanced to cover Store's inline duplication logic.
+    func duplicated(_ task: WeekTask, newTitle: String? = nil, sortOrder: Int? = nil) -> WeekTask {
         var copy = task
         copy.id = UUID()
-        copy.title = newTitle ?? "\(task.title) (副本)"
+        copy.title = newTitle ?? "\(task.title) 副本"
         copy.status = .planned
         copy.archivedAt = nil
         copy.actualMinutes = 0
         copy.actualSeconds = 0
         copy.completionCredits = []
         copy.changeRecords = []
+        copy.recurrenceRootID = nil
         copy.createdAt = .now
         copy.updatedAt = .now
+        if let sortOrder { copy.sortOrder = sortOrder }
         copy.subtasks = task.subtasks.map { subtask in
-            var copySubtask = subtask
-            copySubtask.id = UUID()
-            copySubtask.completed = false
-            copySubtask.completedAt = nil
-            return copySubtask
+            TaskSubtask(title: subtask.title, plannedMinutes: subtask.plannedMinutes)
         }
         return copy
     }
 
     // MARK: - Change Records
 
-    /// Computes change records between original and updated task.
-    func changeRecords(from original: WeekTask, to updated: WeekTask, date: Date, source: TaskChangeSource = .manual) -> [TaskChangeRecord] {
+    /// Computes comprehensive change records between original and updated task.
+    /// P4-16 fix: this is the single source of truth for change-record diffing.
+    /// - Parameters:
+    ///   - channelTitle: closure to resolve channel display name from ID.
+    func changeRecords(
+        from original: WeekTask,
+        to updated: WeekTask,
+        date: Date,
+        source: TaskChangeSource = .manual,
+        channelTitle: (String?) -> String = { _ in "未分类" }
+    ) -> [TaskChangeRecord] {
         var records: [TaskChangeRecord] = []
 
         func record(_ field: String, _ oldValue: String, _ newValue: String) {
             guard oldValue != newValue else { return }
-            records.append(TaskChangeRecord(field: field, oldValue: oldValue, newValue: newValue, source: source))
+            records.append(TaskChangeRecord(date: date, field: field, oldValue: oldValue, newValue: newValue, source: source))
         }
 
         func dateText(_ value: Date?) -> String {
-            value.map { businessCalendar.calendar.startOfDay(for: $0).description } ?? "无"
+            value?.formatted(.dateTime.year().month().day().hour().minute()) ?? "未设置"
         }
 
         func subtaskText(_ subtasks: [TaskSubtask]) -> String {
-            subtasks.map(\.title).joined(separator: ", ")
+            subtasks.map {
+                "\($0.completed ? "已完成" : "未完成"):\($0.title):\($0.actualMinutes ?? 0):\($0.plannedMinutes ?? 0)"
+            }.joined(separator: "|")
         }
 
         record("标题", original.title, updated.title)
-        record("计划日期", dateText(original.plannedDate), dateText(updated.plannedDate))
-        record("预计时长", "\(original.estimatedMinutes) 分钟", "\(updated.estimatedMinutes) 分钟")
+        record("说明", original.description, updated.description)
         record("备注", original.notes, updated.notes)
+        record("分类", channelTitle(original.channelID), channelTitle(updated.channelID))
+        record("优先级", original.priority.label, updated.priority.label)
+        record("安排日期", dateText(original.plannedDate), dateText(updated.plannedDate))
+        record("截止日期", dateText(original.dueDate), dateText(updated.dueDate))
+        record("开始时间", dateText(original.startTime), dateText(updated.startTime))
+        record("预计时间", original.estimatedMinutes.hourMinuteClockText, updated.estimatedMinutes.hourMinuteClockText)
+        record("实际时间", original.actualMinutes.hourMinuteClockText, updated.actualMinutes.hourMinuteClockText)
+        record("重复", original.recurringRule?.frequency.label ?? "不重复", updated.recurringRule?.frequency.label ?? "不重复")
+        record("完成状态", original.status.rawValue, updated.status.rawValue)
         record("子任务", subtaskText(original.subtasks), subtaskText(updated.subtasks))
 
         return records

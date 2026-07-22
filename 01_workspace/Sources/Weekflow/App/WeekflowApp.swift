@@ -8,6 +8,8 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private let focusStatusItemController = FocusStatusItemController()
     private let applicationMenu = WeekflowApplicationMenu()
     private var checkpointActiveTimer: (() -> Void)?
+    /// P0-1 fix: synchronous termination persist callback.
+    private var terminationPersist: (() -> Void)?
     private let defaultWindowSize = NSSize(
         width: WeekflowLayout.windowWidth,
         height: WeekflowLayout.windowHeight
@@ -56,8 +58,15 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         checkpointActiveTimer = checkpoint
     }
 
+    /// P0-1 fix: installs the synchronous termination persist callback.
+    func installTerminationPersist(_ persist: @escaping () -> Void) {
+        terminationPersist = persist
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         checkpointActiveTimer?()
+        // P0-1 fix: flush any pending async writes synchronously before exit.
+        terminationPersist?()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         CommandRouter.shared.globalShortcutRefreshHandler = nil
         globalDateShortcuts.shutdown()
@@ -90,8 +99,9 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         let windows = NSApp.windows.filter { !($0 is NSPanel) }
         guard !windows.isEmpty else {
             guard remainingAttempts > 0 else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-                self.configureAndActivateWindows(remainingAttempts: remainingAttempts - 1)
+            // P3-14 fix: use [weak self] to avoid strong capture in retry loop.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                self?.configureAndActivateWindows(remainingAttempts: remainingAttempts - 1)
             }
             return
         }
@@ -144,6 +154,10 @@ struct WeekflowApp: App {
                     appDelegate.installFocusStatusItem(timer: focusTimer)
                     appDelegate.installActiveTimerCheckpoint {
                         store.checkpointActiveTaskTimer()
+                    }
+                    // P0-1 fix: ensure pending writes are flushed on termination.
+                    appDelegate.installTerminationPersist {
+                        store.persistForTermination()
                     }
                     appDelegate.installApplicationMenu {
                         store.addGoal(
@@ -262,10 +276,20 @@ private struct PersistenceRecoveryView: View {
     }
 
     private func retryConnection() {
-        // Attempt to re-enable persistence by clearing the issue
-        // The store will retry on next operation
-        if let window = NSApplication.shared.mainWindow {
-            window.close()
+        // P3-13 fix: The retry action terminates and relaunches the app so the
+        // Store is re-initialized from disk. A plain window close + relaunch is
+        // the safest recovery path for a corrupted persistence session.
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dataFolder = appSupport.appendingPathComponent("Weekflow", isDirectory: true)
+        // Remove the failure marker so the next launch attempts a fresh connection.
+        let failureMarker = dataFolder.appendingPathComponent("Database/persistence-failure.json")
+        try? FileManager.default.removeItem(at: failureMarker)
+        // Relaunch: open a new instance then terminate the current one.
+        if let appURL = Bundle.main.bundleURL as URL? {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            task.arguments = [appURL.path]
+            try? task.run()
         }
         NSApplication.shared.terminate(nil)
     }
