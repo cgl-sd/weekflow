@@ -84,10 +84,11 @@ struct ArchiveSummaryView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isSearchFocused ? WeekflowPalette.objective : WeekflowPalette.textMuted)
+                .foregroundStyle(WeekflowPalette.textMuted)
             TextField("搜索已归档的内容…", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: isSearchFocused ? .medium : .regular))
+                .foregroundStyle(isSearchFocused ? WeekflowPalette.textPrimary : .primary)
                 .focused($isSearchFocused)
             if !searchText.isEmpty {
                 WeekflowButton { searchText = "" } label: {
@@ -103,9 +104,8 @@ struct ArchiveSummaryView: View {
         .background(WeekflowPalette.surface.opacity(0.6), in: WeekflowRoundedRectangle(cornerRadius: 8))
         .overlay(
             WeekflowRoundedRectangle(cornerRadius: 8)
-                .stroke(isSearchFocused ? WeekflowPalette.objective.opacity(0.6) : WeekflowPalette.border.opacity(0.5))
+                .stroke(WeekflowPalette.border.opacity(0.5))
         )
-        .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
     }
 
     private var filteredTasks: [(goal: WeeklyGoal, task: WeekTask)] {
