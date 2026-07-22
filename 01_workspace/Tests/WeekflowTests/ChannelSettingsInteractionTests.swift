@@ -40,7 +40,7 @@ import Testing
         contentsOf: root.appendingPathComponent("Views/WeeklyReviewView.swift"),
         encoding: .utf8
     )
-        let _assistantSource_part0 = try String(
+    let _assistantSource_part0 = try String(
         contentsOf: root.appendingPathComponent("Views/AssistantPanelViews.swift"),
         encoding: .utf8
     )
