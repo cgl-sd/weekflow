@@ -48,3 +48,8 @@ release/
 # Compatibility: old local-only directories
 artifacts/
 sunsama/
+
+# Generated closure/hardening validation output (read from disk by the verifier)
+HardeningValidation/
+.weekflow-validation/
+.weekflow-hardening.json
