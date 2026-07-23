@@ -354,6 +354,59 @@ private struct TestWriteFailure: Error {}
     }
 }
 
+// MARK: - P0-1: a full-snapshot sync write must supersede per-task (`task:<uuid>`) writes
+
+@MainActor
+@Test func cancelPendingByPrefixRemovesNotYetStartedSingleTaskWrites() async {
+    let coordinator = PersistenceCoordinator()
+    let recorder = ConcurrencyRecorder()
+    let gate = PhaseGate()
+    // Block the single writer so the task: write stays pending.
+    coordinator.enqueue(
+        domain: "goals", label: "阻塞写",
+        operation: { await gate.arriveAndWait() },
+        commit: { recorder.commits.append("blocker") },
+        rollback: {}
+    )
+    await gate.waitForArrival()
+    coordinator.enqueue(
+        domain: "task:ABC", label: "单任务编辑",
+        operation: {},
+        commit: { recorder.commits.append("task") },
+        rollback: {}
+    )
+    // A full-snapshot sync write cancels the pending per-task edit.
+    coordinator.cancelPending(matchingPrefix: "task:")
+    await gate.release()
+    await coordinator.flush()
+    // blocker committed; the pending task: write was cancelled before running.
+    #expect(recorder.commits == ["blocker"])
+    #expect(recorder.rollbacks.isEmpty)
+}
+
+@MainActor
+@Test func syncBarrierInvalidatesInFlightSingleTaskWriteByPrefix() async {
+    let coordinator = PersistenceCoordinator()
+    let recorder = ConcurrencyRecorder()
+    let gate = PhaseGate()
+    coordinator.enqueue(
+        domain: "task:ABC", label: "单任务编辑",
+        operation: { await gate.arriveAndWait() },
+        commit: { recorder.commits.append("task") },
+        rollback: { recorder.rollbacks.append("task") }
+    )
+    await gate.waitForArrival()   // the task: write is now in-flight (operating)
+    // A full-snapshot sync write supersedes it via prefix invalidation.
+    coordinator.cancelPending(matchingPrefix: "task:")
+    coordinator.beginSyncWrite(invalidating: ["goals"], invalidatingPrefixes: ["task:"])
+    await gate.release()
+    await coordinator.flush()
+    coordinator.endSyncWrite()
+    // The in-flight task: write was invalidated → neither commit nor rollback fires.
+    #expect(recorder.commits.isEmpty)
+    #expect(recorder.rollbacks.isEmpty)
+}
+
 @MainActor
 private final class NoopFocusNotificationSchedulerForCoordinatorTests: FocusNotificationScheduling {
     func requestPermission() {}

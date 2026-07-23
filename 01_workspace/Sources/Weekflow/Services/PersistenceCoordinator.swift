@@ -24,6 +24,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
     private var committedRevisionByDomain: [String: UInt64] = [:]
     private var invalidatedRevisionByDomain: [String: UInt64] = [:]
     private var globallyInvalidatedRevision: UInt64 = 0
+    private var invalidatedPrefixCutoffs: [String: UInt64] = [:]
     private var pendingWrites: [PendingWrite] = []
     private var activeWrite: ActiveWrite?
     private var writerTask: Task<Void, Never>?
@@ -108,11 +109,18 @@ final class PersistenceCoordinator: @unchecked Sendable {
         withState { pendingWrites.removeAll() }
     }
 
+    /// Cancels pending (not-yet-started) writes whose domain begins with `prefix`.
+    /// Used by a full-snapshot sync write to supersede every per-task edit
+    /// (`task:<uuid>`) without touching unrelated domains (focus/calendar/…).
+    func cancelPending(matchingPrefix prefix: String) {
+        withState { pendingWrites.removeAll { $0.domain.hasPrefix(prefix) } }
+    }
+
     /// Pauses the queue and permanently invalidates writes that were already
     /// issued for the supplied domains. Passing nil invalidates every write issued
     /// so far. Newer writes enqueued while the barrier is active remain valid and
     /// resume after `endSyncWrite()`.
-    func beginSyncWrite(invalidating domains: Set<String>? = nil) {
+    func beginSyncWrite(invalidating domains: Set<String>? = nil, invalidatingPrefixes: [String] = []) {
         withState {
             syncBarrierDepth += 1
             let cutoff = nextRevision
@@ -125,6 +133,11 @@ final class PersistenceCoordinator: @unchecked Sendable {
                 }
             } else {
                 globallyInvalidatedRevision = max(globallyInvalidatedRevision, cutoff)
+            }
+            // Prefix invalidation: a full-snapshot sync write supersedes every
+            // in-flight per-task edit (`task:<uuid>`) issued before the barrier.
+            for prefix in invalidatingPrefixes {
+                invalidatedPrefixCutoffs[prefix] = max(invalidatedPrefixCutoffs[prefix] ?? 0, cutoff)
             }
         }
     }
@@ -285,7 +298,13 @@ final class PersistenceCoordinator: @unchecked Sendable {
     }
 
     private func isInvalidatedLocked(domain: String, revision: UInt64) -> Bool {
-        revision <= globallyInvalidatedRevision
-            || revision <= (invalidatedRevisionByDomain[domain] ?? 0)
+        if revision <= globallyInvalidatedRevision
+            || revision <= (invalidatedRevisionByDomain[domain] ?? 0) {
+            return true
+        }
+        for (prefix, cutoff) in invalidatedPrefixCutoffs where domain.hasPrefix(prefix) {
+            if revision <= cutoff { return true }
+        }
+        return false
     }
 }

@@ -148,7 +148,11 @@ extension WeekflowStore {
         // is starting. In-flight async writers will skip their disk write.
         persistenceCoordinator.cancelPending(for: "goals")
         persistenceCoordinator.cancelPending(for: "goalsTimer")
-        persistenceCoordinator.beginSyncWrite(invalidating: ["goals", "goalsTimer"])
+        // P0-1: a full-snapshot sync write supersedes every per-task edit. Cancel
+        // pending `task:<uuid>` writes AND invalidate any in-flight one, so a stale
+        // single-task write cannot land after this authoritative snapshot.
+        persistenceCoordinator.cancelPending(matchingPrefix: "task:")
+        persistenceCoordinator.beginSyncWrite(invalidating: ["goals", "goalsTimer"], invalidatingPrefixes: ["task:"])
         guard persistenceCoordinator.drainInvalidatedWriteBlocking() else {
             persistenceCoordinator.endSyncWrite()
             goals = persistedGoals
@@ -467,6 +471,9 @@ extension WeekflowStore {
         // The combined transaction supersedes pending goal-only and timer-only writes.
         persistenceCoordinator.cancelPending(for: "goals")
         persistenceCoordinator.cancelPending(for: "timer")
+        // P0-1: also supersede pending per-task edits — the combined snapshot below
+        // captures the full latest goal graph, so any `task:<uuid>` write is redundant.
+        persistenceCoordinator.cancelPending(matchingPrefix: "task:")
         // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
         let box = GoalSnapshotBox()
         // Capture the snapshots now, on the MainActor (this method runs there).
