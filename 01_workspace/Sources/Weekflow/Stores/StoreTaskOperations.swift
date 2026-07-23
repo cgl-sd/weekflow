@@ -302,61 +302,56 @@ extension WeekflowStore {
     /// committed to disk before assertions or shutdown.
     func flushPersistence() async {
         textInputDebouncer.flush()
-        // Register the latest state directly (awaited) so the write is queued
-        // before we wait for in-flight writes to drain.
-        if goals != persistedGoals {
-            enqueueGoalPersist(kind: .userEdit)
-        }
+        // Always enqueue; the background diff handles the empty-change case.
+        enqueueGoalPersist(kind: .userEdit)
         await persistenceCoordinator.flush()
     }
 
-    /// Synchronous termination guard (P0-1/P0-3 fix). Performs a final synchronous
-    /// persist of ALL data domains so no pending async writes are lost when the
+    /// Synchronous termination guard. Performs a final synchronous persist of ALL
+    /// data in a single transaction so no pending async writes are lost when the
     /// process exits. Called from `applicationWillTerminate` where async is not available.
+    ///
+    /// Uses `saveApplicationSnapshot` (one atomic transaction) instead of multiple
+    /// separate saves, ensuring cross-entity consistency even if disk fails mid-write.
+    /// Does NOT call `persistSync()` to avoid nested begin/endSyncWrite issues.
     func persistForTermination() {
         textInputDebouncer.cancelPending()
-        // Cancel ALL pending async writes and signal sync mode so in-flight
-        // async writers skip their disk write (P0-3 fix, NSLock-based, no deadlock).
-        persistenceCoordinator.cancelPending(for: "goals")
-        persistenceCoordinator.cancelPending(for: "focusRecords")
-        persistenceCoordinator.cancelPending(for: "channels")
-        persistenceCoordinator.cancelPending(for: "calendarEvents")
-        persistenceCoordinator.cancelPending(for: "dailyPlanning")
-        persistenceCoordinator.cancelPending(for: "dailySummaries")
-        persistenceCoordinator.cancelPending(for: "timer")
+        // Cancel ALL pending async writes and raise the sync barrier so in-flight
+        // async writers skip their disk write. Nesting-safe counter.
+        persistenceCoordinator.cancelAllPending()
         persistenceCoordinator.beginSyncWrite()
-        // Persist all domains synchronously (termination must block).
-        _ = persistSync()
-        persistSafely(
-            "频道",
-            operation: { try storage.saveChannels(channels) },
-            commit: { persistedChannels = channels },
-            rollback: { channels = persistedChannels }
+        // Single atomic snapshot persist (goals + channels + calendar + planning +
+        // focus records + daily summaries in one transaction).
+        let snapshot = WeekflowPersistenceSnapshot(
+            goals: goals,
+            channels: channels,
+            calendarEvents: calendarEvents,
+            dailyPlanningStates: dailyPlanningStates,
+            focusRecords: focusRecords,
+            dailySummaries: dailySummaries
         )
-        persistSafely(
-            "日历事件",
-            operation: { try storage.saveCalendarEvents(calendarEvents) },
-            commit: { persistedCalendarEvents = calendarEvents },
-            rollback: { calendarEvents = persistedCalendarEvents }
+        _ = persistSafely(
+            "退出保存",
+            operation: { try storage.saveApplicationSnapshot(snapshot) },
+            commit: {
+                persistedGoals = goals
+                persistedChannels = channels
+                persistedCalendarEvents = calendarEvents
+                persistedDailyPlanningStates = dailyPlanningStates
+                persistedFocusRecords = focusRecords
+                persistedDailySummaries = dailySummaries
+            },
+            rollback: {
+                goals = persistedGoals
+                invalidateGoalIndex()
+                channels = persistedChannels
+                calendarEvents = persistedCalendarEvents
+                dailyPlanningStates = persistedDailyPlanningStates
+                focusRecords = persistedFocusRecords
+                dailySummaries = persistedDailySummaries
+            }
         )
-        persistSafely(
-            "每日计划",
-            operation: { try storage.saveDailyPlanningStates(dailyPlanningStates) },
-            commit: { persistedDailyPlanningStates = dailyPlanningStates },
-            rollback: { dailyPlanningStates = persistedDailyPlanningStates }
-        )
-        persistSafely(
-            "专注记录",
-            operation: { try storage.saveFocusRecords(focusRecords) },
-            commit: { persistedFocusRecords = focusRecords },
-            rollback: { focusRecords = persistedFocusRecords }
-        )
-        persistSafely(
-            "每日总结",
-            operation: { try storage.saveDailySummaries(dailySummaries) },
-            commit: { persistedDailySummaries = dailySummaries },
-            rollback: { dailySummaries = persistedDailySummaries }
-        )
+        // Persist active timer session separately (not part of the snapshot).
         let session = activeTaskTimer
         _ = persistSafely(
             "活动计时",

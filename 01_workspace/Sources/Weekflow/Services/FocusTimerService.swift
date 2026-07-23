@@ -400,8 +400,10 @@ final class FocusTimerService {
         let wasRunning = session.isRunning ?? session.hasStarted
         if wasRunning {
             let offline = max(Int(now.timeIntervalSince(session.lastCheckpointAt)), 0)
-            if offline > 0 {
-                let consumed = min(offline, remainingSeconds)
+            // Cap offline recovery to the same maximum as runtime reconciliation.
+            // Prevents hours of offline time from being silently counted as focus.
+            let consumed = min(offline, remainingSeconds, Self.maximumReconcileStepSeconds)
+            if consumed > 0 {
                 remainingSeconds -= consumed
                 unloggedSeconds += consumed
             }

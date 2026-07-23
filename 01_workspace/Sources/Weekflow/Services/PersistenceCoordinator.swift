@@ -1,23 +1,24 @@
 import Foundation
 
 /// Coordinates asynchronous persistence writes to prevent out-of-order commits,
-/// stale rollbacks, and cross-domain data loss (P0-1/P0-2/P0-3/P0-4 fix).
+/// stale rollbacks, and cross-domain data loss.
 ///
 /// Key guarantees:
-/// - Per-domain pending write slots (goals and focus records never overwrite each other)
+/// - Per-domain pending write slots (different entities never overwrite each other)
+/// - Per-domain committed revision (one domain's success/failure cannot affect another)
 /// - Commits use the snapshot captured at diff-computation time, not the latest state
-/// - Monotonically increasing revision prevents stale async commits after sync writes
+/// - Nesting-aware sync barrier prevents in-flight async writes from writing stale data
 /// - Error callback propagates async failures to the Store for UI protection mode
 /// - `cancelPending(for:)`, `beginSyncWrite()`, and `endSyncWrite()` are synchronous,
 ///   safe to call from MainActor without DispatchSemaphore (avoids deadlock in tests)
-/// - `syncInProgress` flag prevents in-flight async writes from writing stale data
-///   to disk when a sync persist is running
 final class PersistenceCoordinator: @unchecked Sendable {
     private let lock = NSLock()
-    /// Monotonically increasing revision counter shared across all domains.
-    private var latestRevision: UInt64 = 0
-    /// The revision that was last successfully committed to disk (any domain).
-    private var committedRevision: UInt64 = 0
+    /// Per-domain monotonically increasing revision counter.
+    private var latestRevisionByDomain: [String: UInt64] = [:]
+    /// Per-domain committed revision. A write commits only if its revision is
+    /// greater than its own domain's committed revision (P0 fix: no cross-domain
+    /// interference).
+    private var committedRevisionByDomain: [String: UInt64] = [:]
     /// Per-domain pending write slots. Each domain coalesces independently.
     private var pendingWrites: [String: PendingWrite] = [:]
     /// Per-domain writer tasks.
@@ -28,11 +29,13 @@ final class PersistenceCoordinator: @unchecked Sendable {
     private var failureMessage: String?
     /// Callback invoked on MainActor when an async write fails.
     private var onFailure: (@MainActor (String, String) -> Void)?
-    /// Set to true while a sync persist is running. Async writers check this
-    /// BEFORE writing to disk to avoid putting stale data on disk (P0-3 fix).
-    private var _syncInProgress = false
+    /// Nesting-aware sync barrier counter. Async writers skip disk writes when
+    /// this is > 0. Using a counter instead of Bool prevents inner endSyncWrite
+    /// from prematurely releasing the outer barrier (P0 termination fix).
+    private var _syncBarrierDepth = 0
 
     struct PendingWrite {
+        let domain: String
         let revision: UInt64
         let label: String
         let operation: @Sendable () async throws -> Void
@@ -57,7 +60,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
 
     /// Enqueues a write operation for the given domain. If a write is already
     /// pending for this domain, it will be replaced (coalesced) with this newer one.
-    /// Different domains never interfere with each other (P0-2 fix).
+    /// Different domains never interfere with each other.
     func enqueue(
         domain: String,
         label: String,
@@ -67,10 +70,11 @@ final class PersistenceCoordinator: @unchecked Sendable {
     ) {
         let enabled: Bool = withState {
             guard isEnabled else { return false }
-            latestRevision += 1
-            let revision = latestRevision
+            let nextRevision = (latestRevisionByDomain[domain] ?? 0) + 1
+            latestRevisionByDomain[domain] = nextRevision
             pendingWrites[domain] = PendingWrite(
-                revision: revision,
+                domain: domain,
+                revision: nextRevision,
                 label: label,
                 operation: operation,
                 commit: commit,
@@ -97,24 +101,36 @@ final class PersistenceCoordinator: @unchecked Sendable {
     }
 
     /// Cancels any pending (not yet executing) write for the given domain.
-    /// Synchronous – safe to call from MainActor without blocking (P0-3 fix).
+    /// Synchronous – safe to call from MainActor without blocking.
     func cancelPending(for domain: String) {
-        withState { pendingWrites.removeValue(forKey: domain) }
+        withState { _ = pendingWrites.removeValue(forKey: domain) }
+    }
+
+    /// Cancels ALL pending writes across every domain.
+    func cancelAllPending() {
+        withState { pendingWrites.removeAll() }
     }
 
     /// Marks the beginning of a sync write. Async writers will skip their disk
-    /// write if this flag is set, preventing stale data from reaching disk (P0-3 fix).
+    /// write while the barrier depth is > 0. Supports nesting: multiple callers
+    /// can begin/end without prematurely releasing the barrier.
     func beginSyncWrite() {
-        withState { _syncInProgress = true }
+        withState { _syncBarrierDepth += 1 }
     }
 
-    /// Marks the end of a sync write and advances the committed revision.
-    /// In-flight async writes with older revisions will not commit stale state (P0-1/P0-3 fix).
+    /// Marks the end of a sync write. Decrements the barrier depth. When depth
+    /// reaches 0, advances ALL domain committed revisions to their latest so
+    /// in-flight async writes with older revisions will not commit stale state.
     func endSyncWrite() {
         withState {
-            _syncInProgress = false
-            latestRevision += 1
-            committedRevision = latestRevision
+            guard _syncBarrierDepth > 0 else { return }
+            _syncBarrierDepth -= 1
+            if _syncBarrierDepth == 0 {
+                // Advance all domains' committed revision to their latest.
+                for (domain, latest) in latestRevisionByDomain {
+                    committedRevisionByDomain[domain] = latest
+                }
+            }
         }
     }
 
@@ -155,20 +171,21 @@ final class PersistenceCoordinator: @unchecked Sendable {
     }
 
     private func executeWrite(_ write: PendingWrite) async -> Bool {
-        // P0-3 fix: if a sync write is in progress, skip the disk write entirely.
-        let syncActive: Bool = withState { _syncInProgress }
+        // If a sync barrier is active, skip the disk write entirely.
+        let syncActive: Bool = withState { _syncBarrierDepth > 0 }
         guard !syncActive else { return true }
 
         do {
             try await write.operation()
 
-            // After the disk write, check again: a sync write may have started
-            // during our operation. If so, skip the commit (P0-1/P0-3 fix).
+            // After the disk write, check again: a sync barrier may have been
+            // raised during our operation. If so, skip the commit.
             let shouldCommit: Bool = withState {
-                guard write.revision > committedRevision && !_syncInProgress else {
+                let domainCommitted = committedRevisionByDomain[write.domain] ?? 0
+                guard write.revision > domainCommitted && _syncBarrierDepth == 0 else {
                     return false
                 }
-                committedRevision = write.revision
+                committedRevisionByDomain[write.domain] = write.revision
                 return true
             }
             if shouldCommit {
@@ -176,8 +193,11 @@ final class PersistenceCoordinator: @unchecked Sendable {
             }
             return true
         } catch {
+            // Per-domain error handling: only suppress if this domain already
+            // committed a newer revision (meaning our write is stale).
             let report: (callback: (@MainActor (String, String) -> Void)?, message: String)? = withState {
-                guard write.revision > committedRevision else { return nil }
+                let domainCommitted = committedRevisionByDomain[write.domain] ?? 0
+                guard write.revision > domainCommitted else { return nil }
                 isEnabled = false
                 let message = "\(write.label)保存失败，本次会话已暂停后续保存。原有本地文件不会被主动删除。\n\n\(error.localizedDescription)"
                 failureMessage = message

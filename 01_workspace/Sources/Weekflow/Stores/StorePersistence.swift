@@ -9,11 +9,9 @@ extension WeekflowStore {
             _ = persistSync(kind: kind)
             return
         }
-        // Cheap pre-check to avoid scheduling a write when nothing changed.
-        // P1-5: the expensive diff is now computed OFF MainActor in the
-        // coordinator's background executor; this O(n) equality check is
-        // negligible compared to the dictionary-based diff.
-        guard goals != persistedGoals else { return }
+        // O(1) scheduling: the coordinator coalesces per-domain, and the
+        // background diff (in enqueueGoalPersist) handles the empty-change case.
+        // This avoids an O(N) deep array comparison on MainActor.
         enqueueGoalPersist(kind: kind)
     }
 
@@ -227,10 +225,30 @@ extension WeekflowStore {
             )
             return
         }
-        // Self-check fix: delegate to individual domain writers so each entity
-        // type has its own coalescing slot and never overwrites the other.
-        persistDailyPlanningStates()
-        persistCalendarEvents()
+        // Atomic async write: both entities in ONE transaction on a dedicated
+        // domain so they always succeed or fail together.
+        let statesSnapshot = dailyPlanningStates
+        let eventsSnapshot = calendarEvents
+        let rollbackStates = persistedDailyPlanningStates
+        let rollbackEvents = persistedCalendarEvents
+        persistenceCoordinator.enqueue(
+            domain: "dailyPlanCalendar",
+            label: "每日计划与日历事件",
+            operation: { [weak self] in
+                try await self?.storage.saveDailyPlanAndCalendarEventsAsync(
+                    states: statesSnapshot,
+                    events: eventsSnapshot
+                )
+            },
+            commit: { [weak self] in
+                self?.persistedDailyPlanningStates = statesSnapshot
+                self?.persistedCalendarEvents = eventsSnapshot
+            },
+            rollback: { [weak self] in
+                self?.dailyPlanningStates = rollbackStates
+                self?.calendarEvents = rollbackEvents
+            }
+        )
     }
 
     func persistFocusRecords() {
