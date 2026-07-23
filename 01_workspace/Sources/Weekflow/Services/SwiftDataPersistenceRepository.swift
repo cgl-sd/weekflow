@@ -327,6 +327,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     }
 
     private func normalizeAllPayloadsBody() throws -> Int {
+        try faultInjector?(.duringNormalization)
         var rewritten = 0
         let goalRecords = try context.fetch(FetchDescriptor<PersistedGoalRecord>())
         for record in goalRecords {

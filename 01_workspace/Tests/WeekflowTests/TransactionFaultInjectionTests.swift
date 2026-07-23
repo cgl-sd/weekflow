@@ -9,7 +9,9 @@ private enum InjectedPersistenceFailure: LocalizedError {
 
 @MainActor
 @Test func everyTransactionStepRollsBackWithoutPartialCommit() throws {
-    for point in PersistenceFaultPoint.allCases {
+    // `.duringNormalization` is not part of the saveApplicationSnapshot transaction;
+    // it is exercised by NormalizationFailureTests instead.
+    for point in PersistenceFaultPoint.allCases where point != .duringNormalization {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("WeekflowTransaction-\(point.rawValue)-\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }

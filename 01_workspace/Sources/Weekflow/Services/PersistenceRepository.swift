@@ -90,6 +90,7 @@ enum PersistenceFaultPoint: String, CaseIterable, Sendable {
     case afterDailyPlanWrite
     case afterCalendarEventWrite
     case beforeFinalSave
+    case duringNormalization
 }
 
 typealias PersistenceFaultInjector = @Sendable (PersistenceFaultPoint) throws -> Void
