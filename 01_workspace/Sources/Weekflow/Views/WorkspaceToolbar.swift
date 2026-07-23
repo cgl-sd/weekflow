@@ -30,7 +30,8 @@ struct WorkspaceToolbar: View {
     @Binding var selectedTaskChannel: String
     @Binding var presentedMenu: WorkspaceToolbarMenu?
 
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     private var selectedDate: Date {
         if destination == .dailyPlanning {
@@ -583,7 +584,8 @@ struct DateJumpPopover: View {
     @Binding var selectedIndex: Double
     let visibleDayCount: Int
     @State private var displayedMonth: Date
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     init(
         selectedIndex: Binding<Double>,
@@ -659,7 +661,8 @@ struct DateJumpPopover: View {
 struct PlanningDateJumpPopover: View {
     @Binding var selectedDate: Date
     @State private var displayedMonth: Date
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     init(selectedDate: Binding<Date>) {
         _selectedDate = selectedDate
@@ -712,7 +715,8 @@ struct PlanningDateJumpPopover: View {
 struct WeeklyDateJumpPopover: View {
     @Binding var selectedDate: Date
     @State private var displayedMonth: Date
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     init(selectedDate: Binding<Date>) {
         _selectedDate = selectedDate

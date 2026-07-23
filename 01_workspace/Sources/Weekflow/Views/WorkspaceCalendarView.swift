@@ -5,7 +5,8 @@ struct WorkspaceCalendarView: View {
     let mode: WorkspaceView
     let selectedDate: Date
     let selectedChannelID: String
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     var body: some View {
         Group {
@@ -48,7 +49,8 @@ struct TimeWorkspaceCalendar: View {
     @Bindable var store: WeekflowStore
     let dates: [Date]
     let selectedChannelID: String
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let hourHeight: CGFloat = 48
     private let timeGutterWidth: CGFloat = 48
     @State private var resizePreviewMinutes: [UUID: Int] = [:]
@@ -424,7 +426,8 @@ struct MonthWorkspaceCalendar: View {
     @Bindable var store: WeekflowStore
     let month: Date
     let selectedChannelID: String
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let weekTitles = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
     var body: some View {

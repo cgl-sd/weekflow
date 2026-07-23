@@ -13,7 +13,8 @@ struct HomeBoardView: View {
     let showCalendar: () -> Void
     var planDay: (Date) -> Void = { _ in }
     var referenceDate: Date = .now
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let columnSpacing = WeekflowLayout.homeDayColumnSpacing
     private let visibleColumnCount = WeekflowLayout.boardVisibleDayCount
     private let boardLeadingPadding = WeekflowLayout.homeBoardLeadingPadding

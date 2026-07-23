@@ -70,7 +70,8 @@ struct AssistantCalendarView: View {
     @Bindable var store: WeekflowStore
     @Binding var activeDate: Date
     var openDayTasks: ((Date) -> Void)? = nil
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let hourHeight: CGFloat = 44
     @State private var resizePreviewMinutes: [UUID: Int] = [:]
     @State private var isDateHovering = false

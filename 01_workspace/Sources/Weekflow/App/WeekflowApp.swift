@@ -180,6 +180,7 @@ struct WeekflowApp: App {
     @ViewBuilder
     private func loadedContent(_ store: WeekflowStore) -> some View {
         PersistenceProtectedContentView(store: store, focusTimer: focusTimer)
+            .environment(\.businessCalendar, store.businessCalendar)
             .onAppear {
                 appearancePreference.applyToApplication()
                 appDelegate.installFocusStatusItem(timer: focusTimer)

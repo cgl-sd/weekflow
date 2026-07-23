@@ -260,7 +260,8 @@ struct CompactTaskMonthCalendar: View {
     let highlightedRangeStart: Date?
     let highlightedRangeEnd: Date?
     let select: (Date) -> Void
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let weekdayTitles = ["一", "二", "三", "四", "五", "六", "日"]
 
     init(

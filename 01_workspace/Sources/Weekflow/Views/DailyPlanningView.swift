@@ -36,7 +36,8 @@ struct DailyPlanningView: View {
     @State private var isAddToCalendarHovering = false
     @State private var draggedTaskToken: TaskDragToken?
     @State private var newlyAssignedTaskID: UUID?
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     var body: some View {
         let tomorrow = planningDate.map { calendar.startOfDay(for: $0) }
@@ -442,7 +443,8 @@ struct WorkTimePickerMenuOverlay: View {
     let selectStart: (Int) -> Void
     let selectCutoff: (Int) -> Void
     let dismiss: () -> Void
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     var body: some View {
         let activeFrame = activeAnchor == .start ? startFrame : cutoffFrame

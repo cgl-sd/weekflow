@@ -53,7 +53,8 @@ struct WeeklyBoardView: View {
     @State private var planningRangeBoundary: WeeklyPlanningRangeBoundary = .start
     @State private var isPlanningRangeInteractionActive = false
     @State private var showsPlanningRange = false
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
 
     init(
         store: WeekflowStore,

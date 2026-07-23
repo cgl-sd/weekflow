@@ -12,7 +12,8 @@ struct ScrollClockTimePopover: View {
     let title: String
     let select: (Date?) -> Void
 
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     private let rowHeight: CGFloat = 30
 
     init(

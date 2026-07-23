@@ -310,7 +310,8 @@ struct ComposerDatePicker: View {
     @Binding var plannedDate: Date
     @Binding var keepInTaskPool: Bool
     @Binding var executionWeekStart: Date?
-    private let calendar = SystemBusinessCalendar.current.calendar
+    @Environment(\.businessCalendar) private var businessCalendar
+    private var calendar: Calendar { businessCalendar.calendar }
     @State private var displayedMonth = Date.now
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
