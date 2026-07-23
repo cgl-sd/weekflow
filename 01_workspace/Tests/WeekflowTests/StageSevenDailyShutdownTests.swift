@@ -142,15 +142,21 @@ import Testing
         preferences.removePersistentDomain(forName: suiteName)
     }
     let storage = LocalStorage(baseDirectory: folder)
-    var store: WeekflowStore? = WeekflowStore(storage: storage, legacyPreferences: preferences)
-    store?.synchronousPersistence = true
+    var store: WeekflowStore? = WeekflowStore(
+        storage: storage,
+        legacyPreferences: preferences,
+        synchronousPersistence: true
+    )
     store?.recordFocusSession(mode: .meditation, minutes: 15, date: .now)
     store?.recordFocusSession(mode: .meditation, minutes: 10, date: .now)
     store?.recordFocusSession(mode: .leisure, minutes: 20, date: .now)
     store?.saveDailySummary("## 今日总结\n完成了验收。", on: .now)
     store = nil
 
-    let reloaded = WeekflowStore(storage: storage, legacyPreferences: preferences)
+    // Simulate an app restart: a fresh LocalStorage reading the same on-disk file
+    // (reusing the previous store's live storage instance is not a realistic
+    // restart and races the shared persistence actor's teardown).
+    let reloaded = WeekflowStore(storage: LocalStorage(baseDirectory: folder), legacyPreferences: preferences)
     #expect(reloaded.focusMinutes(on: .now)[.meditation] == 25)
     #expect(reloaded.focusMinutes(on: .now)[.leisure] == 20)
     #expect(reloaded.dailySummary(on: .now)?.content.contains("完成了验收") == true)

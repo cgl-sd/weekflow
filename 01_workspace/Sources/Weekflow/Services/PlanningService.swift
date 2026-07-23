@@ -16,16 +16,16 @@ struct PlanningService {
 
     /// Returns the cutoff minutes for a date, or the default if not set.
     func cutoffMinutes(for date: Date, in states: [DailyPlanningState]) -> Int {
-        states.first {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }?.cutoffMinutes ?? DailyPlanningState.defaultCutoffMinutes
+        let day = businessCalendar.day(containing: date)
+        return states.first { $0.day == day }?.cutoffMinutes
+            ?? DailyPlanningState.defaultCutoffMinutes
     }
 
     /// Returns the start minutes for a date, or the default if not set.
     func startMinutes(for date: Date, in states: [DailyPlanningState]) -> Int {
-        states.first {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }?.startMinutes ?? DailyPlanningState.defaultStartMinutes
+        let day = businessCalendar.day(containing: date)
+        return states.first { $0.day == day }?.startMinutes
+            ?? DailyPlanningState.defaultStartMinutes
     }
 
     // MARK: - Cutoff/Start Time Updates

@@ -105,9 +105,13 @@ final class WeekflowStore {
         storage: LocalStorage = LocalStorage(),
         developmentFixture: WeekflowDevelopmentFixture? = nil,
         legacyPreferences: UserDefaults = .standard,
-        businessCalendar: any BusinessCalendarProviding = BusinessCalendar()
+        businessCalendar: any BusinessCalendarProviding = BusinessCalendar(),
+        synchronousPersistence: Bool = false
     ) {
         self.storage = storage
+        // Set before the startup persist so a synchronous store never races an
+        // async startup snapshot against subsequent synchronous writes.
+        self.synchronousPersistence = synchronousPersistence
         self.developmentFixture = developmentFixture
         self.legacyPreferences = legacyPreferences
         self.businessCalendar = businessCalendar

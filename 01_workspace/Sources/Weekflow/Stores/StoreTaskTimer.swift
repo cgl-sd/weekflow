@@ -212,44 +212,42 @@ extension WeekflowStore {
 
     func recordFocusSession(mode: FocusMode, seconds: Int, date: Date = .now) {
         guard seconds > 0 else { return }
-        let calendar = businessCalendar.calendar
+        let day = businessCalendar.day(containing: date)
         let record: FocusRecord
         if let index = focusRecords.firstIndex(where: {
-            $0.mode == mode && calendar.isDate($0.date, inSameDayAs: date)
+            $0.mode == mode && $0.day == day
         }) {
             focusRecords[index].seconds += seconds
             focusRecords[index].sessionCount += 1
-            focusRecords[index].date = date
+            focusRecords[index].day = day
             record = focusRecords[index]
         } else {
-            record = FocusRecord(date: date, mode: mode, seconds: seconds)
+            record = FocusRecord(date: date, mode: mode, seconds: seconds, calendar: businessCalendar)
             focusRecords.append(record)
         }
         persistFocusRecord(record)
     }
 
     func focusMinutes(on date: Date) -> [FocusMode: Int] {
-        Dictionary(grouping: focusRecords.filter {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: date)
-        }, by: \.mode)
-        .mapValues { $0.reduce(0) { $0 + $1.minutes } }
+        let day = businessCalendar.day(containing: date)
+        return Dictionary(grouping: focusRecords.filter { $0.day == day }, by: \.mode)
+            .mapValues { $0.reduce(0) { $0 + $1.minutes } }
     }
 
     func dailySummary(on date: Date) -> DailySummary? {
-        dailySummaries.first { businessCalendar.calendar.isDate($0.date, inSameDayAs: date) }
+        let day = businessCalendar.day(containing: date)
+        return dailySummaries.first { $0.day == day }
     }
 
     func saveDailySummary(_ content: String, on date: Date = .now) {
-        let day = businessCalendar.calendar.startOfDay(for: date)
+        let day = businessCalendar.day(containing: date)
         let summary: DailySummary
-        if let index = dailySummaries.firstIndex(where: {
-            businessCalendar.calendar.isDate($0.date, inSameDayAs: day)
-        }) {
+        if let index = dailySummaries.firstIndex(where: { $0.day == day }) {
             dailySummaries[index].content = content
             dailySummaries[index].updatedAt = .now
             summary = dailySummaries[index]
         } else {
-            summary = DailySummary(date: day, content: content)
+            summary = DailySummary(date: date, content: content, calendar: businessCalendar)
             dailySummaries.append(summary)
         }
         persistDailySummaryRecord(summary)

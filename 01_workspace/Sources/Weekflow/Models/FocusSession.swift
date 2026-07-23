@@ -59,10 +59,11 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         date: Date,
         mode: FocusMode,
         seconds: Int,
-        sessionCount: Int = 1
+        sessionCount: Int = 1,
+        calendar: BusinessCalendarProviding = SystemBusinessCalendar.current
     ) {
         self.id = id
-        day = SystemBusinessCalendar.current.day(containing: date)
+        day = calendar.day(containing: date)
         self.mode = mode
         self.seconds = max(seconds, 0)
         self.sessionCount = sessionCount
@@ -76,14 +77,16 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         mode: FocusMode,
         minutes: Int,
         seconds: Int? = nil,
-        sessionCount: Int = 1
+        sessionCount: Int = 1,
+        calendar: BusinessCalendarProviding = SystemBusinessCalendar.current
     ) {
         self.init(
             id: id,
             date: date,
             mode: mode,
             seconds: seconds ?? minutes * 60,
-            sessionCount: sessionCount
+            sessionCount: sessionCount,
+            calendar: calendar
         )
     }
 

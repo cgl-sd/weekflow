@@ -11,9 +11,10 @@ struct DailySummary: Identifiable, Codable, Hashable {
         set { day = SystemBusinessCalendar.current.day(containing: newValue) }
     }
 
-    init(id: UUID = UUID(), date: Date, content: String, updatedAt: Date = .now) {
+    init(id: UUID = UUID(), date: Date, content: String, updatedAt: Date = .now,
+         calendar: BusinessCalendarProviding = SystemBusinessCalendar.current) {
         self.id = id
-        day = SystemBusinessCalendar.current.day(containing: date)
+        day = calendar.day(containing: date)
         self.content = content
         self.updatedAt = updatedAt
     }
