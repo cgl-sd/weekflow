@@ -12,6 +12,21 @@ struct AutomaticDistributionChange: Equatable {
 @Observable
 final class WeekflowStore {
     let goalService = GoalService()
+    let applicationSnapshotService = ApplicationSnapshotService()
+
+    /// R08: the atomic snapshot of all persisted entity collections, assembled by
+    /// ApplicationSnapshotService. Used by both startup and termination persists.
+    func makeApplicationSnapshot() -> WeekflowPersistenceSnapshot {
+        applicationSnapshotService.makeSnapshot(
+            goals: goals,
+            channels: channels,
+            calendarEvents: calendarEvents,
+            dailyPlanningStates: dailyPlanningStates,
+            focusRecords: focusRecords,
+            dailySummaries: dailySummaries,
+            activeTimerSession: activeTaskTimer
+        )
+    }
     /// Task business logic service (P2-2 Store split). Handles task creation,
     /// mutation, and lifecycle rules independent of persistence and UI.
     let taskService: TaskService

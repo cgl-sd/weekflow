@@ -325,15 +325,7 @@ extension WeekflowStore {
         await persistenceCoordinator.flush()
         defer { persistenceCoordinator.endSyncWrite() }
 
-        let snapshot = WeekflowPersistenceSnapshot(
-            goals: goals,
-            channels: channels,
-            calendarEvents: calendarEvents,
-            dailyPlanningStates: dailyPlanningStates,
-            focusRecords: focusRecords,
-            dailySummaries: dailySummaries,
-            activeTimerSession: activeTaskTimer
-        )
+        let snapshot = makeApplicationSnapshot()
         return await persistSafelyAsync(
             "退出保存",
             operation: { [storage] in

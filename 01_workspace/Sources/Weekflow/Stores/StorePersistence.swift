@@ -195,15 +195,7 @@ extension WeekflowStore {
     /// synchronization are committed atomically so a crash during startup
     /// cannot leave partially committed state (P1-3 requirement).
     func persistStartup() {
-        let snapshot = WeekflowPersistenceSnapshot(
-            goals: goals,
-            channels: channels,
-            calendarEvents: calendarEvents,
-            dailyPlanningStates: dailyPlanningStates,
-            focusRecords: focusRecords,
-            dailySummaries: dailySummaries,
-            activeTimerSession: activeTaskTimer
-        )
+        let snapshot = makeApplicationSnapshot()
         if synchronousPersistence {
             _ = persistSafely(
                 "启动同步",
