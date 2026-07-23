@@ -153,36 +153,8 @@ extension WeekflowStore {
             taskID: taskID,
             persistImmediately: persistImmediately,
             persistenceKind: override ?? .userEdit
-        ) { task in
-            let calendar = businessCalendar.calendar
-            let targetDay = calendar.startOfDay(for: date)
-            task.executionWeekStart = nil
-            if task.plannedDate == nil || task.sourceType == .weeklyObjective {
-                if let sourceDate,
-                   !calendar.isDate(sourceDate, inSameDayAs: targetDay) {
-                    task.assignedDates.removeAll {
-                        calendar.isDate($0, inSameDayAs: sourceDate)
-                    }
-                }
-                if !task.isAssigned(on: targetDay, calendar: calendar) {
-                    task.assignedDates.append(targetDay)
-                }
-            } else {
-                task.plannedDate = targetDay
-                if let oldStartTime = task.startTime {
-                    let time = calendar.dateComponents([.hour, .minute, .second], from: oldStartTime)
-                    task.startTime = calendar.date(
-                        bySettingHour: time.hour ?? 0,
-                        minute: time.minute ?? 0,
-                        second: time.second ?? 0,
-                        of: targetDay
-                    )
-                }
-            }
-            if task.isArchived {
-                task.status = task.status == .archived ? .planned : task.status
-                task.archivedAt = nil
-            }
+        ) { [taskService] task in
+            task = taskService.relocated(task, from: sourceDate, to: date)
         }
         if saved, override != nil { removeAutomaticDistributionChange(goalID: goalID, taskID: taskID) }
     }

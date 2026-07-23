@@ -151,6 +151,44 @@ struct TaskService {
         return mutableTask
     }
 
+    /// Relocates a task to a new date (drag/drop). R08: the domain rule lives
+    /// here and uses the injected business calendar (LocalDay-based) rather than
+    /// the global calendar, so it is parallel-safe and directly testable.
+    func relocated(_ task: WeekTask, from sourceDate: Date?, to date: Date) -> WeekTask {
+        var mutableTask = task
+        let calendar = businessCalendar.calendar
+        let targetDay = businessCalendar.day(containing: date)
+        mutableTask.executionWeekStart = nil
+        if mutableTask.plannedDay == nil || mutableTask.sourceType == .weeklyObjective {
+            if let sourceDate {
+                let sourceDay = businessCalendar.day(containing: sourceDate)
+                if sourceDay != targetDay {
+                    mutableTask.assignedDays.removeAll { $0 == sourceDay }
+                }
+            }
+            if !mutableTask.assignedDays.contains(targetDay) {
+                mutableTask.assignedDays.append(targetDay)
+            }
+        } else {
+            mutableTask.plannedDay = targetDay
+            if let oldStartTime = mutableTask.startTime {
+                let time = calendar.dateComponents([.hour, .minute, .second], from: oldStartTime)
+                mutableTask.startTime = calendar.date(
+                    bySettingHour: time.hour ?? 0,
+                    minute: time.minute ?? 0,
+                    second: time.second ?? 0,
+                    of: calendar.startOfDay(for: date)
+                )
+            }
+        }
+        if mutableTask.isArchived {
+            mutableTask.status = mutableTask.status == .archived ? .planned : mutableTask.status
+            mutableTask.archivedAt = nil
+        }
+        mutableTask.updatedAt = .now
+        return mutableTask
+    }
+
     // MARK: - Task Scheduling
 
     /// Sets task schedule (date, start time, duration).
