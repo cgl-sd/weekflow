@@ -24,23 +24,7 @@ extension WeekflowStore {
         // Delegate computation to PlanningService (P2-2)
         let result = planningService.withStartMinutes(minutes, on: date, in: dailyPlanningStates)
         dailyPlanningStates = result.states
-        if dailyPlanningCutoffEvent(on: date) != nil {
-            let eventID = upsertDailyPlanningCutoffEvent(
-                on: date,
-                minutes: result.cutoff,
-                persistImmediately: false
-            )
-            if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }),
-               let event = calendarEvents.first(where: { $0.id == eventID }) {
-                persistDailyPlanAndCalendarEventRecord(state: state, event: event)
-            } else {
-                persistDailyPlanAndCalendarEvents()
-            }
-        } else if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }) {
-            persistDailyPlanningStateRecord(state)
-        } else {
-            persistDailyPlanningStates()
-        }
+        persistDailyPlanningChange(on: date, cutoff: result.cutoff)
         return result.start
     }
 
@@ -49,24 +33,32 @@ extension WeekflowStore {
         // Delegate computation to PlanningService (P2-2)
         let result = planningService.withCutoffMinutes(minutes, on: date, in: dailyPlanningStates)
         dailyPlanningStates = result.states
-        if dailyPlanningCutoffEvent(on: date) != nil {
-            let eventID = upsertDailyPlanningCutoffEvent(
-                on: date,
-                minutes: result.cutoff,
-                persistImmediately: false
-            )
-            if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }),
-               let event = calendarEvents.first(where: { $0.id == eventID }) {
-                persistDailyPlanAndCalendarEventRecord(state: state, event: event)
-            } else {
-                persistDailyPlanAndCalendarEvents()
-            }
-        } else if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }) {
-            persistDailyPlanningStateRecord(state)
-        } else {
-            persistDailyPlanningStates()
-        }
+        persistDailyPlanningChange(on: date, cutoff: result.cutoff)
         return result.cutoff
+    }
+
+    /// P1-4: persist a single date's daily-planning change with O(1) single-record
+    /// writes (state and/or cutoff calendar event), never a full-array save. Each
+    /// call concerns exactly one date, so other dates persist via their own calls.
+    private func persistDailyPlanningChange(on date: Date, cutoff: Int) {
+        let day = businessCalendar.day(containing: date)
+        let state = dailyPlanningStates.first(where: { $0.day == day })
+        if dailyPlanningCutoffEvent(on: date) != nil {
+            let eventID = upsertDailyPlanningCutoffEvent(on: date, minutes: cutoff, persistImmediately: false)
+            let event = calendarEvents.first(where: { $0.id == eventID })
+            switch (state, event) {
+            case let (state?, event?):
+                persistDailyPlanAndCalendarEventRecord(state: state, event: event)
+            case let (state?, nil):
+                persistDailyPlanningStateRecord(state)
+            case let (nil, event?):
+                persistCalendarEventRecord(event)
+            case (nil, nil):
+                break
+            }
+        } else if let state {
+            persistDailyPlanningStateRecord(state)
+        }
     }
 
     /// Ensures every task in a daily plan has a concrete clock time. A newly
