@@ -36,15 +36,20 @@ extension WeekflowStore {
     func enqueueGoalPersist(kind: PersistenceMutationKind = .userEdit) {
         // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
         let box = GoalSnapshotBox()
+        // Capture the snapshots now, on the MainActor (this method runs there).
+        // Hopping back to the MainActor from inside the async operation would
+        // deadlock when a synchronous write (persistSync) blocks the MainActor in
+        // drainInvalidatedWriteBlocking while waiting for this very writer task.
+        let currentGoals = goals
+        let baselineGoals = persistedGoals
         persistenceCoordinator.enqueue(
             domain: "goals",
             label: "周目标与任务",
             operation: { [weak self] in
                 guard let self else { return }
-                // P1-5 fix: only snapshot capture on MainActor (fast value copy).
-                let (currentGoals, baselineGoals) = await MainActor.run {
-                    (self.goals, self.persistedGoals)
-                }
+                // Validate the complete snapshot before the dictionary-based
+                // diff can collapse duplicate task identities.
+                try PersistenceIdentityValidator.validate(goals: currentGoals)
                 // Expensive diff computed OFF MainActor.
                 let changes = PersistenceGoalChangeSet.difference(
                     before: baselineGoals,
@@ -53,9 +58,7 @@ extension WeekflowStore {
                 guard !changes.isEmpty else { return }
                 try await self.storage.applyGoalChangesAsync(changes, kind: kind)
                 // Store the snapshot on this write's own box for commit (P0-1 + Phase 2-3).
-                await MainActor.run {
-                    box.snapshot = currentGoals
-                }
+                box.snapshot = currentGoals
             },
             commit: { [weak self] in
                 guard let self else { return }
@@ -83,12 +86,34 @@ extension WeekflowStore {
         // Cancel any pending async write for goals and signal that a sync write
         // is starting. In-flight async writers will skip their disk write.
         persistenceCoordinator.cancelPending(for: "goals")
-        persistenceCoordinator.beginSyncWrite()
+        persistenceCoordinator.cancelPending(for: "goalsTimer")
+        persistenceCoordinator.beginSyncWrite(invalidating: ["goals", "goalsTimer"])
+        guard persistenceCoordinator.drainInvalidatedWriteBlocking() else {
+            persistenceCoordinator.endSyncWrite()
+            goals = persistedGoals
+            invalidateGoalIndex()
+            persistenceEnabled = false
+            persistenceIssue = "等待旧持久化写入结束超时，本次会话已暂停保存。"
+            persistenceCoordinator.disable(reason: persistenceIssue)
+            return false
+        }
 
-        let changes = PersistenceGoalChangeSet.difference(
-            before: persistedGoals,
-            after: goals
-        )
+        let changes: PersistenceGoalChangeSet
+        do {
+            try PersistenceIdentityValidator.validate(goals: goals)
+            changes = PersistenceGoalChangeSet.difference(
+                before: persistedGoals,
+                after: goals
+            )
+        } catch {
+            persistenceCoordinator.endSyncWrite()
+            goals = persistedGoals
+            invalidateGoalIndex()
+            persistenceEnabled = false
+            persistenceIssue = "周目标与任务校验失败，本次会话已暂停保存。\n\n\(error.localizedDescription)"
+            persistenceCoordinator.disable(reason: persistenceIssue)
+            return false
+        }
         guard !changes.isEmpty else {
             persistenceCoordinator.endSyncWrite()
             return true
@@ -115,11 +140,13 @@ extension WeekflowStore {
             calendarEvents: calendarEvents,
             dailyPlanningStates: dailyPlanningStates,
             focusRecords: focusRecords,
-            dailySummaries: dailySummaries
+            dailySummaries: dailySummaries,
+            activeTimerSession: activeTaskTimer
         )
-        persistSafely(
-            "启动同步",
-            operation: { try storage.saveApplicationSnapshot(snapshot) },
+        if synchronousPersistence {
+            _ = persistSafely(
+                "启动同步",
+                operation: { try storage.saveApplicationSnapshot(snapshot) },
             commit: {
                 persistedGoals = goals
                 persistedChannels = channels
@@ -128,14 +155,42 @@ extension WeekflowStore {
                 persistedFocusRecords = focusRecords
                 persistedDailySummaries = dailySummaries
             },
-            rollback: {
-                goals = persistedGoals
-                invalidateGoalIndex()
-                channels = persistedChannels
-                calendarEvents = persistedCalendarEvents
-                dailyPlanningStates = persistedDailyPlanningStates
-                focusRecords = persistedFocusRecords
-                dailySummaries = persistedDailySummaries
+                rollback: {
+                    goals = persistedGoals
+                    invalidateGoalIndex()
+                    channels = persistedChannels
+                    calendarEvents = persistedCalendarEvents
+                    dailyPlanningStates = persistedDailyPlanningStates
+                    focusRecords = persistedFocusRecords
+                    dailySummaries = persistedDailySummaries
+                }
+            )
+            return
+        }
+        persistenceCoordinator.enqueue(
+            domain: "applicationSnapshot",
+            label: "启动同步",
+            operation: { [weak self] in
+                try await self?.storage.saveApplicationSnapshotAsync(snapshot)
+            },
+            commit: { [weak self] in
+                guard let self else { return }
+                self.persistedGoals = snapshot.goals
+                self.persistedChannels = snapshot.channels
+                self.persistedCalendarEvents = snapshot.calendarEvents
+                self.persistedDailyPlanningStates = snapshot.dailyPlanningStates
+                self.persistedFocusRecords = snapshot.focusRecords
+                self.persistedDailySummaries = snapshot.dailySummaries
+            },
+            rollback: { [weak self] in
+                guard let self else { return }
+                self.goals = self.persistedGoals
+                self.invalidateGoalIndex()
+                self.channels = self.persistedChannels
+                self.calendarEvents = self.persistedCalendarEvents
+                self.dailyPlanningStates = self.persistedDailyPlanningStates
+                self.focusRecords = self.persistedFocusRecords
+                self.dailySummaries = self.persistedDailySummaries
             }
         )
     }
@@ -340,6 +395,7 @@ extension WeekflowStore {
             _ = persistSafely(
                 "任务与活动计时",
                 operation: {
+                    try PersistenceIdentityValidator.validate(goals: goals)
                     try storage.saveGoalChangesAndActiveTimer(
                         changes: changes,
                         session: session
@@ -355,19 +411,24 @@ extension WeekflowStore {
             return
         }
         // P1-4 fix: non-blocking write via coordinator.
-        // Cancel pending goal writes to avoid conflicts with this combined write.
+        // The combined transaction supersedes pending goal-only and timer-only writes.
         persistenceCoordinator.cancelPending(for: "goals")
+        persistenceCoordinator.cancelPending(for: "timer")
         // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
         let box = GoalSnapshotBox()
-        // Self-check fix: diff computed OFF MainActor (consistent with P1-5).
+        // Capture the snapshots now, on the MainActor (this method runs there).
+        // Hopping back to the MainActor from inside the async operation would
+        // deadlock when a synchronous write blocks the MainActor in
+        // drainInvalidatedWriteBlocking while waiting for this writer task.
+        let currentGoals = goals
+        let baselineGoals = persistedGoals
+        let session = activeTaskTimer
         persistenceCoordinator.enqueue(
-            domain: "goals",
+            domain: "goalsTimer",
             label: "任务与活动计时",
             operation: { [weak self] in
                 guard let self else { return }
-                let (currentGoals, baselineGoals, session) = await MainActor.run {
-                    (self.goals, self.persistedGoals, self.activeTaskTimer)
-                }
+                try PersistenceIdentityValidator.validate(goals: currentGoals)
                 let changes = PersistenceGoalChangeSet.difference(
                     before: baselineGoals,
                     after: currentGoals
@@ -376,9 +437,7 @@ extension WeekflowStore {
                     changes: changes,
                     session: session
                 )
-                await MainActor.run {
-                    box.snapshot = currentGoals
-                }
+                box.snapshot = currentGoals
             },
             commit: { [weak self] in
                 guard let self else { return }
@@ -418,6 +477,7 @@ extension WeekflowStore {
             rollback()
             persistenceEnabled = false
             persistenceIssue = "\(label)保存失败，本次会话已暂停后续保存。原有本地文件不会被主动删除。\n\n\(error.localizedDescription)"
+            persistenceCoordinator.disable(reason: persistenceIssue)
             return false
         }
     }
@@ -446,6 +506,7 @@ extension WeekflowStore {
             rollback()
             persistenceEnabled = false
             persistenceIssue = "\(label)保存失败，本次会话已暂停后续保存。原有本地文件不会被主动删除。\n\n\(error.localizedDescription)"
+            persistenceCoordinator.disable(reason: persistenceIssue)
             return false
         }
     }
@@ -453,17 +514,13 @@ extension WeekflowStore {
     func persistFocusRecordsAsync() {
         let records = focusRecords
         let snapshot = persistedFocusRecords
-        // P0-2 fix: use separate domain so focus writes never overwrite goal writes
-        Task { [weak self] in
-            guard let self else { return }
-            persistenceCoordinator.enqueue(
-                domain: "focusRecords",
-                label: "专注记录",
-                operation: { try await self.storage.saveFocusRecordsAsync(records) },
-                commit: { self.persistedFocusRecords = records },
-                rollback: { self.focusRecords = snapshot }
-            )
-        }
+        persistenceCoordinator.enqueue(
+            domain: "focusRecords",
+            label: "专注记录",
+            operation: { [weak self] in try await self?.storage.saveFocusRecordsAsync(records) },
+            commit: { [weak self] in self?.persistedFocusRecords = records },
+            rollback: { [weak self] in self?.focusRecords = snapshot }
+        )
     }
 }
 

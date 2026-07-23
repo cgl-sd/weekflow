@@ -192,20 +192,45 @@ struct BusinessCalendar: BusinessCalendarProviding, Sendable {
 }
 
 enum SystemBusinessCalendar {
-    /// P1-4 fix: a process-wide override so tests can inject a fixed calendar
-    /// that the model-layer compatibility properties also honour. Without this,
-    /// `current` always built a fresh `.autoupdatingCurrent` calendar that test
-    /// fixtures could not reach, allowing a single operation to mix the Store's
-    /// injected calendar with a different global one. Thread-safe.
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var _override: BusinessCalendar?
+    nonisolated(unsafe) private static var explicitOverride: BusinessCalendar?
+    nonisolated(unsafe) private static var scopedOverrides: [UUID: BusinessCalendar] = [:]
+    nonisolated(unsafe) private static var scopedOrder: [UUID] = []
 
+    /// Explicit test override. Store-owned calendars use scoped leases so they
+    /// cannot leak into later tests or another Store after deallocation.
     static var override: BusinessCalendar? {
-        get { lock.lock(); defer { lock.unlock() }; return _override }
-        set { lock.lock(); defer { lock.unlock() }; _override = newValue }
+        get { lock.lock(); defer { lock.unlock() }; return explicitOverride }
+        set { lock.lock(); defer { lock.unlock() }; explicitOverride = newValue }
     }
 
     static var current: BusinessCalendar {
-        override ?? BusinessCalendar()
+        lock.lock()
+        defer { lock.unlock() }
+        if let explicitOverride { return explicitOverride }
+        if let id = scopedOrder.last, let calendar = scopedOverrides[id] { return calendar }
+        return BusinessCalendar()
+    }
+
+    final class Lease: @unchecked Sendable {
+        fileprivate let id: UUID
+        fileprivate init(id: UUID) { self.id = id }
+        deinit { SystemBusinessCalendar.removeScopedOverride(id: id) }
+    }
+
+    static func installScopedOverride(_ calendar: BusinessCalendar) -> Lease {
+        let id = UUID()
+        lock.lock()
+        scopedOverrides[id] = calendar
+        scopedOrder.append(id)
+        lock.unlock()
+        return Lease(id: id)
+    }
+
+    private static func removeScopedOverride(id: UUID) {
+        lock.lock()
+        scopedOverrides[id] = nil
+        scopedOrder.removeAll { $0 == id }
+        lock.unlock()
     }
 }

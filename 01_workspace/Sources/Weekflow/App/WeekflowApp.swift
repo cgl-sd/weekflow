@@ -14,7 +14,9 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     /// triggered exclusively by the AppDelegate so exit persistence is never split
     /// across View and Delegate. It checkpoints the active timer (flushing elapsed
     /// time into goals) and THEN performs the synchronous full-app persist.
-    private var terminationCheckpoint: (() -> Void)?
+    private var terminationCheckpoint: (@MainActor () async -> Bool)?
+    private var terminationInProgress = false
+    private var didCleanUp = false
     private let defaultWindowSize = NSSize(
         width: WeekflowLayout.windowWidth,
         height: WeekflowLayout.windowHeight
@@ -64,14 +66,35 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 
     /// Phase 2-4 fix: installs the single, fully-ordered termination checkpoint.
-    func installTerminationCheckpoint(_ checkpoint: @escaping () -> Void) {
+    func installTerminationCheckpoint(
+        _ checkpoint: @escaping @MainActor () async -> Bool
+    ) {
         terminationCheckpoint = checkpoint
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let terminationCheckpoint else {
+            cleanUpBeforeTermination()
+            return .terminateNow
+        }
+        guard !terminationInProgress else { return .terminateLater }
+        terminationInProgress = true
+        Task { @MainActor in
+            let shouldTerminate = await terminationCheckpoint()
+            terminationInProgress = false
+            if shouldTerminate { cleanUpBeforeTermination() }
+            sender.reply(toApplicationShouldTerminate: shouldTerminate)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
-        // Phase 2-4 fix: the single termination checkpoint performs the full,
-        // correctly-ordered exit sequence (checkpoint active timer → sync persist).
-        terminationCheckpoint?()
+        cleanUpBeforeTermination()
+    }
+
+    private func cleanUpBeforeTermination() {
+        guard !didCleanUp else { return }
+        didCleanUp = true
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         CommandRouter.shared.globalShortcutRefreshHandler = nil
         globalDateShortcuts.shutdown()
@@ -126,60 +149,74 @@ struct WeekflowApp: App {
     private var appearanceRawValue = AppAppearancePreference.defaultValue
     @AppStorage(AppThemePreferences.colorTokenKey)
     private var themeColorToken = AppThemePreferences.defaultColorToken
-    @State private var store: WeekflowStore
+    @State private var store: WeekflowStore?
+    @State private var isLoadingStore = false
     @State private var focusTimer = FocusTimerService()
-
-    init() {
-        _store = State(initialValue: Self.makeStore())
-    }
-
-    private static func makeStore() -> WeekflowStore {
-#if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
-            return WeekflowStore(
-                storage: .developmentFixtures(),
-                developmentFixture: .stageOne(referenceDate: .now)
-            )
-        }
-#endif
-        return WeekflowStore()
-    }
 
     var body: some Scene {
         WindowGroup("Weekflow") {
-            PersistenceProtectedContentView(store: store, focusTimer: focusTimer)
-                .frame(
-                    minWidth: WeekflowLayout.windowWidth,
-                    idealWidth: WeekflowLayout.windowWidth,
-                    minHeight: WeekflowLayout.windowHeight
-                )
-                .tint(AppThemePreferences.color(for: themeColorToken))
-                .onAppear {
-                    appearancePreference.applyToApplication()
-                    appDelegate.installFocusStatusItem(timer: focusTimer)
-                    appDelegate.installPowerTransitionCheckpoint {
-                        store.checkpointActiveTaskTimer()
-                    }
-                    // Phase 2-4 fix: single, ordered termination checkpoint — checkpoint
-                    // the active timer first (flush elapsed into goals), then persist the
-                    // full app snapshot synchronously. Triggered only by the AppDelegate.
-                    appDelegate.installTerminationCheckpoint {
-                        store.checkpointActiveTaskTimer()
-                        store.persistForTermination()
-                    }
-                    appDelegate.installApplicationMenu {
-                        store.addGoal(
-                            title: "新的周目标",
-                            outcome: "明确本周想达成的结果",
-                            endDate: .now
-                        )
-                    }
+            Group {
+                if let store {
+                    loadedContent(store)
+                } else {
+                    ProgressView("正在安全地载入本地数据…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .task { await loadStoreIfNeeded() }
                 }
-                .onChange(of: appearanceRawValue) { _, _ in
-                    appearancePreference.applyToApplication()
-                }
+            }
+            .frame(
+                minWidth: WeekflowLayout.windowWidth,
+                idealWidth: WeekflowLayout.windowWidth,
+                minHeight: WeekflowLayout.windowHeight
+            )
+            .tint(AppThemePreferences.color(for: themeColorToken))
+            .onChange(of: appearanceRawValue) { _, _ in
+                appearancePreference.applyToApplication()
+            }
         }
         .windowStyle(.hiddenTitleBar)
+    }
+
+    @ViewBuilder
+    private func loadedContent(_ store: WeekflowStore) -> some View {
+        PersistenceProtectedContentView(store: store, focusTimer: focusTimer)
+            .onAppear {
+                appearancePreference.applyToApplication()
+                appDelegate.installFocusStatusItem(timer: focusTimer)
+                appDelegate.installPowerTransitionCheckpoint {
+                    store.checkpointActiveTaskTimer()
+                }
+                appDelegate.installTerminationCheckpoint {
+                    store.checkpointActiveTaskTimer()
+                    return await store.persistForTermination()
+                }
+                appDelegate.installApplicationMenu {
+                    store.addGoal(
+                        title: "新的周目标",
+                        outcome: "明确本周想达成的结果",
+                        endDate: .now
+                    )
+                }
+            }
+    }
+
+    @MainActor
+    private func loadStoreIfNeeded() async {
+        guard store == nil, !isLoadingStore else { return }
+        isLoadingStore = true
+        defer { isLoadingStore = false }
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
+            store = WeekflowStore(
+                storage: .developmentFixtures(),
+                developmentFixture: .stageOne(referenceDate: .now)
+            )
+            return
+        }
+#endif
+        let baseStorage = await Task.detached(priority: .userInitiated) { LocalStorage() }.value
+        let storage = await LocalStoragePreloader.preload(baseStorage)
+        store = WeekflowStore(storage: storage)
     }
 
     private var appearancePreference: AppAppearancePreference {

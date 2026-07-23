@@ -20,10 +20,13 @@ extension WeekflowStore {
     /// a version upgrade. Runs directly on the repository (not through in-memory
     /// state) to guarantee disk consistency regardless of Store mutations.
     func normalizePersistedPayloadsIfNeeded() {
-        let migrationKey = "weekflow.payloadNormalization.v1"
-        guard !legacyPreferences.bool(forKey: migrationKey) else { return }
-        _ = try? storage.normalizeAllPayloads()
-        legacyPreferences.set(true, forKey: migrationKey)
+        do {
+            _ = try storage.normalizeAllPayloadsIfNeeded(marker: "payloadNormalization.v1")
+        } catch {
+            persistenceEnabled = false
+            persistenceIssue = "持久化数据格式规范化失败，本次会话已暂停保存，以免覆盖原文件。\n\n\(error.localizedDescription)"
+            persistenceCoordinator.disable(reason: persistenceIssue)
+        }
     }
 
     func upsertDailyPlanningCutoffEvent(
@@ -38,7 +41,7 @@ extension WeekflowStore {
             calendarEvents[index].startDate = startDate
             calendarEvents[index].durationMinutes = 30
             calendarEvents[index].colorName = "purple"
-            if persistImmediately { persistCalendarEvents() }
+            if persistImmediately { persistCalendarEventRecord(calendarEvents[index]) }
             return calendarEvents[index].id
         }
 
@@ -50,7 +53,7 @@ extension WeekflowStore {
             sourceKey: sourceKey
         )
         calendarEvents.append(event)
-        if persistImmediately { persistCalendarEvents() }
+        if persistImmediately { persistCalendarEventRecord(event) }
         return event.id
     }
 

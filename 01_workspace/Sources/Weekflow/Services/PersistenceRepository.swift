@@ -8,6 +8,7 @@ struct WeekflowPersistenceSnapshot: Equatable {
     var dailyPlanningStates: [DailyPlanningState] = []
     var focusRecords: [FocusRecord] = []
     var dailySummaries: [DailySummary] = []
+    var activeTimerSession: TaskTimerSession? = nil
 
     var isEmpty: Bool {
         goals.isEmpty
@@ -16,6 +17,7 @@ struct WeekflowPersistenceSnapshot: Equatable {
             && dailyPlanningStates.isEmpty
             && focusRecords.isEmpty
             && dailySummaries.isEmpty
+            && activeTimerSession == nil
     }
 
     /// Canonical form used for migration verification. Only documented legacy
@@ -49,7 +51,8 @@ struct WeekflowPersistenceSnapshot: Equatable {
             calendarEvents: calendarEvents.sorted { $0.id.uuidString < $1.id.uuidString },
             dailyPlanningStates: plans,
             focusRecords: focusRecords.sorted { $0.id.uuidString < $1.id.uuidString },
-            dailySummaries: reviews
+            dailySummaries: reviews,
+            activeTimerSession: activeTimerSession
         )
     }
 }
@@ -202,6 +205,12 @@ protocol WeekflowPersistenceRepository: AnyObject {
     func deleteCalendarEvent(id: String, kind: PersistenceMutationKind) throws
     func upsertFocusRecord(_ record: FocusRecord, kind: PersistenceMutationKind) throws
     func upsertDailySummary(_ summary: DailySummary, kind: PersistenceMutationKind) throws
+    func upsertDailyPlanningState(_ state: DailyPlanningState, kind: PersistenceMutationKind) throws
+    func upsertDailyPlanAndCalendarEvent(
+        state: DailyPlanningState,
+        event: CalendarEvent,
+        kind: PersistenceMutationKind
+    ) throws
     func importLegacySnapshot(_ snapshot: WeekflowPersistenceSnapshot) throws
     func saveApplicationSnapshot(
         _ snapshot: WeekflowPersistenceSnapshot,
@@ -223,6 +232,7 @@ protocol WeekflowPersistenceRepository: AnyObject {
     func detachAutomaticDistribution(taskID: UUID, transactionID: UUID) throws
     /// P1-1: Eagerly re-encode all payloads to the current format.
     @discardableResult func normalizeAllPayloads() throws -> Int
+    @discardableResult func normalizeAllPayloadsIfNeeded(marker: String) throws -> Int
     func diagnostics() throws -> PersistenceDiagnostics
 }
 

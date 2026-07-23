@@ -25,12 +25,19 @@ extension WeekflowStore {
         let result = planningService.withStartMinutes(minutes, on: date, in: dailyPlanningStates)
         dailyPlanningStates = result.states
         if dailyPlanningCutoffEvent(on: date) != nil {
-            _ = upsertDailyPlanningCutoffEvent(
+            let eventID = upsertDailyPlanningCutoffEvent(
                 on: date,
                 minutes: result.cutoff,
                 persistImmediately: false
             )
-            persistDailyPlanAndCalendarEvents()
+            if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }),
+               let event = calendarEvents.first(where: { $0.id == eventID }) {
+                persistDailyPlanAndCalendarEventRecord(state: state, event: event)
+            } else {
+                persistDailyPlanAndCalendarEvents()
+            }
+        } else if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }) {
+            persistDailyPlanningStateRecord(state)
         } else {
             persistDailyPlanningStates()
         }
@@ -43,12 +50,19 @@ extension WeekflowStore {
         let result = planningService.withCutoffMinutes(minutes, on: date, in: dailyPlanningStates)
         dailyPlanningStates = result.states
         if dailyPlanningCutoffEvent(on: date) != nil {
-            _ = upsertDailyPlanningCutoffEvent(
+            let eventID = upsertDailyPlanningCutoffEvent(
                 on: date,
                 minutes: result.cutoff,
                 persistImmediately: false
             )
-            persistDailyPlanAndCalendarEvents()
+            if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }),
+               let event = calendarEvents.first(where: { $0.id == eventID }) {
+                persistDailyPlanAndCalendarEventRecord(state: state, event: event)
+            } else {
+                persistDailyPlanAndCalendarEvents()
+            }
+        } else if let state = dailyPlanningStates.first(where: { $0.day == businessCalendar.day(containing: date) }) {
+            persistDailyPlanningStateRecord(state)
         } else {
             persistDailyPlanningStates()
         }

@@ -170,6 +170,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         try saveDailyPlanningStates(snapshot.dailyPlanningStates, kind: .migration)
         try saveFocusRecords(snapshot.focusRecords, kind: .migration)
         try saveDailySummaries(snapshot.dailySummaries, kind: .migration)
+        try saveActiveTimerSession(snapshot.activeTimerSession)
         try setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
         try setMetadata(key: "migrationState", value: "complete")
         try saveContextOrRollback()
@@ -190,6 +191,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             try faultInjector?(.afterDailyPlanWrite)
             try saveFocusRecords(snapshot.focusRecords, kind: kind)
             try saveDailySummaries(snapshot.dailySummaries, kind: kind)
+            try saveActiveTimerSession(snapshot.activeTimerSession)
             try faultInjector?(.beforeFinalSave)
         }
     }
@@ -308,8 +310,24 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     /// Returns the number of records that were rewritten.
     @discardableResult
     func normalizeAllPayloads() throws -> Int {
+        try performTransaction { try normalizeAllPayloadsBody() }
+    }
+
+    @discardableResult
+    func normalizeAllPayloadsIfNeeded(marker: String) throws -> Int {
+        try performTransaction {
+            let metadata = try context.fetch(FetchDescriptor<PersistenceMetadataRecord>())
+            guard !metadata.contains(where: { $0.key == marker && $0.value == "complete" }) else {
+                return 0
+            }
+            let rewritten = try normalizeAllPayloadsBody()
+            try setMetadata(key: marker, value: "complete")
+            return rewritten
+        }
+    }
+
+    private func normalizeAllPayloadsBody() throws -> Int {
         var rewritten = 0
-        // Goal payloads
         let goalRecords = try context.fetch(FetchDescriptor<PersistedGoalRecord>())
         for record in goalRecords {
             let decoded = try CompactPersistenceCoding.decode(WeeklyGoal.self, from: record.payload)
@@ -323,12 +341,12 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                 rewritten += 1
             }
         }
-        // Task payloads
         let taskRecords = try context.fetch(FetchDescriptor<PersistedTaskRecord>())
         for record in taskRecords {
             let decoded = try CompactPersistenceCoding.decode(WeekTask.self, from: record.payload)
             var envelope = decoded
-            envelope.subtasks = []
+            envelope.plannedDay = nil
+            envelope.assignedDays = []
             let normalized = try CompactPersistenceCoding.encode(envelope)
             if normalized != record.payload {
                 record.payload = normalized
@@ -337,11 +355,8 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                 rewritten += 1
             }
         }
-        // Generic payload records (channels, calendar events, etc.)
         let payloadRecords = try context.fetch(FetchDescriptor<PersistedPayloadRecord>())
         for record in payloadRecords {
-            // Re-encode raw plist through the current codec envelope.
-            // If the codec format changed, the wrapper will differ.
             let rawDecoded = try CompactDataCodec.decode(record.payload)
             let reEncoded = CompactDataCodec.encode(rawDecoded)
             if reEncoded != record.payload {
@@ -351,7 +366,6 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                 rewritten += 1
             }
         }
-        if rewritten > 0 { try saveContextOrRollback() }
         return rewritten
     }
 
@@ -404,6 +418,11 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         date: (Value) -> Date?,
         kind: PersistenceMutationKind
     ) throws {
+        try PersistenceIdentityValidator.validatePayloadIDs(
+            values,
+            entityType: entityType,
+            id: id
+        )
         let existing = try context.fetch(FetchDescriptor<PersistedPayloadRecord>(
             predicate: #Predicate { $0.entityType == entityType }
         ))
@@ -547,6 +566,33 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
 
     func upsertDailySummary(_ summary: DailySummary, kind: PersistenceMutationKind = .userEdit) throws {
         try upsertPayload(summary, entityType: PersistenceEntity.dailyReview, entityID: summary.day.persistenceKey, date: businessCalendar.date(for: summary.day), kind: kind)
+    }
+
+    func upsertDailyPlanningState(
+        _ state: DailyPlanningState,
+        kind: PersistenceMutationKind = .userEdit
+    ) throws {
+        try upsertPayload(
+            state,
+            entityType: PersistenceEntity.dailyPlan,
+            entityID: state.day.persistenceKey,
+            date: businessCalendar.date(for: state.day),
+            kind: kind
+        )
+    }
+
+    func upsertDailyPlanAndCalendarEvent(
+        state: DailyPlanningState,
+        event: CalendarEvent,
+        kind: PersistenceMutationKind = .userEdit
+    ) throws {
+        try performTransaction {
+            try upsertDailyPlanningState(state, kind: kind)
+            try faultInjector?(.afterDailyPlanWrite)
+            try upsertCalendarEvent(event, kind: kind)
+            try faultInjector?(.afterCalendarEventWrite)
+            try faultInjector?(.beforeFinalSave)
+        }
     }
 
     func makeTransaction(kind: PersistenceMutationKind) -> PersistedMutationTransactionRecord {
@@ -725,14 +771,16 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         }
     }
 
-    func performTransaction(_ changes: () throws -> Void) throws {
+    @discardableResult
+    func performTransaction<Result>(_ changes: () throws -> Result) throws -> Result {
         transactionNesting += 1
         do {
-            try changes()
+            let result = try changes()
             transactionNesting -= 1
             if transactionNesting == 0 {
                 try context.save()
             }
+            return result
         } catch {
             transactionNesting = max(transactionNesting - 1, 0)
             context.rollback()

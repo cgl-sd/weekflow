@@ -59,6 +59,7 @@ final class WeekflowStore {
     let persistenceCoordinator = PersistenceCoordinator()
     let legacyPreferences: UserDefaults
     let businessCalendar: any BusinessCalendarProviding
+    @ObservationIgnored var systemBusinessCalendarLease: SystemBusinessCalendar.Lease?
     var taskClipboard: (reference: TaskReference, cutsSource: Bool)?
     var goalClipboard: (goalID: UUID, cutsSource: Bool)?
     var automaticDistributionChanges: [AutomaticDistributionChange] = []
@@ -83,6 +84,7 @@ final class WeekflowStore {
     @ObservationIgnored var deletedGoalsCache: [WeeklyGoal]?
     @ObservationIgnored var activeTasksCache: [(goal: WeeklyGoal, task: WeekTask)]?
     @ObservationIgnored var taskPoolCache: [(goal: WeeklyGoal, task: WeekTask)]?
+    @ObservationIgnored var tasksByDayCache: [LocalDay: [(goal: WeeklyGoal, task: WeekTask)]] = [:]
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
     var synchronousPersistence = false
@@ -109,17 +111,11 @@ final class WeekflowStore {
         self.developmentFixture = developmentFixture
         self.legacyPreferences = legacyPreferences
         self.businessCalendar = businessCalendar
-        // Phase 3-4 fix: unify the process-wide calendar that the model/UI
-        // compatibility layer reads (`SystemBusinessCalendar.current`) with the
-        // Store's injected calendar, so views never diverge from the Store's date
-        // computations (e.g. after a timezone change or a fixed-calendar inject).
-        // Guarded on `override == nil` so a test that deliberately installs its own
-        // override before creating a Store keeps precedence. Only concrete
-        // `BusinessCalendar` providers are published; custom test providers install
-        // their own override.
+        // Keep model compatibility properties aligned with this Store without
+        // leaving a process-global calendar behind after the Store is released.
         if SystemBusinessCalendar.override == nil,
            let concrete = businessCalendar as? BusinessCalendar {
-            SystemBusinessCalendar.override = concrete
+            systemBusinessCalendarLease = SystemBusinessCalendar.installScopedOverride(concrete)
         }
         self.taskService = TaskService(businessCalendar: businessCalendar)
         self.archiveService = ArchiveService(businessCalendar: businessCalendar)
@@ -226,6 +222,14 @@ final class WeekflowStore {
         persistedDailyPlanningStates = dailyPlanningStates
         persistedFocusRecords = focusRecords
         persistedDailySummaries = dailySummaries
+        // Install protection-mode propagation before any startup migration can enqueue I/O.
+        persistenceCoordinator.setOnFailure { [weak self] _, message in
+            self?.persistenceEnabled = false
+            self?.persistenceIssue = message
+        }
+        if !persistenceEnabled {
+            persistenceCoordinator.disable(reason: persistenceIssue)
+        }
         let synchronizedSubgoalTasks = synchronizeAllSubgoalTasksIfNeeded()
         if developmentFixture == nil, persistenceIssue == nil {
             var needsPersist = synchronizedSubgoalTasks
@@ -235,16 +239,12 @@ final class WeekflowStore {
             // P1-1: Eagerly normalize all persisted payloads to current format
             // so the database never contains mixed old/new encoding formats.
             normalizePersistedPayloadsIfNeeded()
-            performDailyMaintenance()
-            // Single consolidated startup persist – avoids multiple independent
-            // save calls that could partially commit (P1-3 requirement).
-            if needsPersist { persistStartup() }
-        }
-        // P0-4 fix: install error callback so async persistence failures
-        // propagate to the Store and trigger protection mode.
-        persistenceCoordinator.setOnFailure { [weak self] _, message in
-            self?.persistenceEnabled = false
-            self?.persistenceIssue = message
+            if persistenceIssue == nil {
+                performDailyMaintenance()
+                // Single consolidated startup persist – avoids multiple independent
+                // save calls that could partially commit.
+                if needsPersist { persistStartup() }
+            }
         }
     }
 
@@ -294,6 +294,7 @@ final class WeekflowStore {
         deletedGoalsCache = nil
         activeTasksCache = nil
         taskPoolCache = nil
+        tasksByDayCache.removeAll(keepingCapacity: true)
     }
 
     var activeGoals: [WeeklyGoal] {
@@ -367,13 +368,15 @@ final class WeekflowStore {
                 return primaryTask.map { [(goal, $0)] } ?? []
             }
 
+            let taskPairs: [(UUID, WeekTask)] = goal.tasks.compactMap { task in
+                guard let subgoalID = task.subgoalID,
+                      !task.isArchived,
+                      !task.isDeleted else { return nil }
+                return (subgoalID, task)
+            }
+            let tasksBySubgoal = Dictionary(keepingFirst: taskPairs)
             return goal.subgoals.compactMap { subgoal in
-                guard let task = goal.tasks.first(where: {
-                    $0.subgoalID == subgoal.id
-                        && !$0.isArchived
-                        && !$0.isDeleted
-                }) else { return nil }
-                return (goal, task)
+                tasksBySubgoal[subgoal.id].map { (goal, $0) }
             }
         }
     }
@@ -432,15 +435,22 @@ final class WeekflowStore {
     }
 
     func tasks(on date: Date) -> [(goal: WeeklyGoal, task: WeekTask)] {
-        activeTasks.filter { entry in
-            let calendar = businessCalendar.calendar
-            let directlyPlanned = entry.task.plannedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
-            return directlyPlanned || entry.task.isAssigned(on: date, calendar: calendar)
+        let day = businessCalendar.day(containing: date)
+        if let cached = tasksByDayCache[day] {
+            _ = goals
+            return cached
+        }
+        let computed = activeTasks.filter { entry in
+            let directlyPlanned = entry.task.plannedDay == day
+            return directlyPlanned || entry.task.assignedDays.contains(day)
         }
         .sorted {
             if $0.task.sortOrder != $1.task.sortOrder { return $0.task.sortOrder < $1.task.sortOrder }
-            return ($0.task.startTime ?? $0.task.plannedDate ?? .distantFuture) < ($1.task.startTime ?? $1.task.plannedDate ?? .distantFuture)
+            return ($0.task.startTime ?? $0.task.plannedDate ?? .distantFuture)
+                < ($1.task.startTime ?? $1.task.plannedDate ?? .distantFuture)
         }
+        tasksByDayCache[day] = computed
+        return computed
     }
 
     func tasks(on date: Date, channelID: String) -> [(goal: WeeklyGoal, task: WeekTask)] {

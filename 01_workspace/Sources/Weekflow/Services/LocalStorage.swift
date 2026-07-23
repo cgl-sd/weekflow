@@ -21,6 +21,7 @@ struct LocalStorage: @unchecked Sendable {
     private let legacyDailySummariesURL: URL
     private let persistenceActor: PersistenceActor
     private let initializationError: Error?
+    private var preload: LocalStoragePreloadCache?
 
     init(
         fileManager: FileManager = .default,
@@ -40,6 +41,7 @@ struct LocalStorage: @unchecked Sendable {
         legacyFocusRecordsURL = folder.appendingPathComponent("focus-records.json")
         legacyDailySummariesURL = folder.appendingPathComponent("daily-summaries.json")
         persistenceActor = PersistenceActor(storeURL: databaseURL, faultInjector: faultInjector)
+        preload = nil
         initializationError = Self.validateStorageHealth(
             fileManager: fileManager,
             rootDirectory: folder,
@@ -59,8 +61,20 @@ struct LocalStorage: @unchecked Sendable {
         )
     }
 
+    func preloaded(with preload: LocalStoragePreload) -> LocalStorage {
+        var copy = self
+        copy.preload = LocalStoragePreloadCache(preload)
+        return copy
+    }
+
     func load() throws -> [WeeklyGoal]? {
-        try readOptional { try $0.loadGoals() }
+        if let preload {
+            switch try preload.take(.goals, \.goals) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadGoals() }
     }
 
     func save(
@@ -79,7 +93,13 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadChannels() throws -> [TaskChannel]? {
-        try readOptional { try $0.loadChannels() }
+        if let preload {
+            switch try preload.take(.channels, \.channels) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadChannels() }
     }
 
     func saveChannels(_ channels: [TaskChannel]) throws {
@@ -87,7 +107,13 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadCalendarEvents() throws -> [CalendarEvent]? {
-        try readOptional { try $0.loadCalendarEvents() }
+        if let preload {
+            switch try preload.take(.calendarEvents, \.calendarEvents) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadCalendarEvents() }
     }
 
     func saveCalendarEvents(_ events: [CalendarEvent]) throws {
@@ -95,7 +121,13 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadDailyPlanningStates() throws -> [DailyPlanningState]? {
-        try readOptional { try $0.loadDailyPlanningStates() }
+        if let preload {
+            switch try preload.take(.dailyPlanningStates, \.dailyPlanningStates) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadDailyPlanningStates() }
     }
 
     func saveDailyPlanningStates(_ states: [DailyPlanningState]) throws {
@@ -103,7 +135,13 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadFocusRecords() throws -> [FocusRecord]? {
-        try readOptional { try $0.loadFocusRecords() }
+        if let preload {
+            switch try preload.take(.focusRecords, \.focusRecords) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadFocusRecords() }
     }
 
     func saveFocusRecords(_ records: [FocusRecord]) throws {
@@ -111,11 +149,23 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadDailySummaries() throws -> [DailySummary]? {
-        try readOptional { try $0.loadDailySummaries() }
+        if let preload {
+            switch try preload.take(.dailySummaries, \.dailySummaries) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadDailySummaries() }
     }
 
     func loadActiveTimerSession() throws -> TaskTimerSession? {
-        try readOptional { try $0.loadActiveTimerSession() }
+        if let preload {
+            switch try preload.take(.activeTimer, \.activeTimerSession) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try readOptional { try $0.loadActiveTimerSession() }
     }
 
     func saveDailySummaries(_ summaries: [DailySummary]) throws {
@@ -143,8 +193,34 @@ struct LocalStorage: @unchecked Sendable {
         try write { try $0.upsertDailySummary(summary, kind: .userEdit) }
     }
 
+    func upsertDailyPlanningState(_ state: DailyPlanningState) throws {
+        try write { try $0.upsertDailyPlanningState(state, kind: .userEdit) }
+    }
+
+    func upsertDailyPlanAndCalendarEvent(
+        state: DailyPlanningState,
+        event: CalendarEvent
+    ) throws {
+        try write {
+            try $0.upsertDailyPlanAndCalendarEvent(
+                state: state,
+                event: event,
+                kind: .userEdit
+            )
+        }
+    }
+
     func pendingAutomaticDistributionChanges() throws -> [PersistedAutomaticDistributionChange] {
-        try read { try $0.pendingAutomaticDistributionChanges() } ?? []
+        if let preload {
+            switch try preload.take(
+                .automaticDistribution,
+                \.pendingAutomaticDistributionChanges
+            ) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        return try read { try $0.pendingAutomaticDistributionChanges() } ?? []
     }
 
     func commitAutomaticDistribution(transactionID: UUID) throws {
@@ -166,6 +242,14 @@ struct LocalStorage: @unchecked Sendable {
     @discardableResult
     func normalizeAllPayloads() throws -> Int {
         try write { try $0.normalizeAllPayloads() }
+    }
+
+    @discardableResult
+    func normalizeAllPayloadsIfNeeded(marker: String) throws -> Int {
+        if let preload, try preload.consume(.payloadNormalization) {
+            return 0
+        }
+        return try write { try $0.normalizeAllPayloadsIfNeeded(marker: marker) }
     }
 
     func saveApplicationSnapshot(
@@ -241,6 +325,70 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     // MARK: - Async writes (non-blocking on MainActor)
+    // MARK: - Async startup reads
+
+    func loadAsync() async throws -> [WeeklyGoal]? {
+        try await readOptionalAsync { try $0.loadGoals() }
+    }
+
+    func loadChannelsAsync() async throws -> [TaskChannel]? {
+        try await readOptionalAsync { try $0.loadChannels() }
+    }
+
+    func loadCalendarEventsAsync() async throws -> [CalendarEvent]? {
+        try await readOptionalAsync { try $0.loadCalendarEvents() }
+    }
+
+    func loadDailyPlanningStatesAsync() async throws -> [DailyPlanningState]? {
+        try await readOptionalAsync { try $0.loadDailyPlanningStates() }
+    }
+
+    func loadFocusRecordsAsync() async throws -> [FocusRecord]? {
+        try await readOptionalAsync { try $0.loadFocusRecords() }
+    }
+
+    func loadDailySummariesAsync() async throws -> [DailySummary]? {
+        try await readOptionalAsync { try $0.loadDailySummaries() }
+    }
+
+    func loadActiveTimerSessionAsync() async throws -> TaskTimerSession? {
+        try await readOptionalAsync { try $0.loadActiveTimerSession() }
+    }
+
+    func pendingAutomaticDistributionChangesAsync() async throws
+        -> [PersistedAutomaticDistributionChange] {
+        try await readAsync { try $0.pendingAutomaticDistributionChanges() } ?? []
+    }
+
+    @discardableResult
+    func normalizeAllPayloadsIfNeededAsync(marker: String) async throws -> Int {
+        try await writeAsync { try $0.normalizeAllPayloadsIfNeeded(marker: marker) }
+    }
+
+    private func readAsync<Result: Sendable>(
+        _ operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
+    ) async throws -> Result? {
+        if let initializationError { throw initializationError }
+        if !fileManager.fileExists(atPath: databaseURL.path) {
+            guard legacyFilesExist else { return nil }
+            try migrateLegacyJSON()
+        }
+        try ensurePreMigrationBackup()
+        return try await PersistenceActorBridge.runAsync(on: persistenceActor, operation)
+    }
+
+    private func readOptionalAsync<Result: Sendable>(
+        _ operation: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result?
+    ) async throws -> Result? {
+        if let initializationError { throw initializationError }
+        if !fileManager.fileExists(atPath: databaseURL.path) {
+            guard legacyFilesExist else { return nil }
+            try migrateLegacyJSON()
+        }
+        try ensurePreMigrationBackup()
+        return try await PersistenceActorBridge.runAsync(on: persistenceActor, operation)
+    }
+
 
     /// Async variant of `applyGoalChanges` that suspends instead of blocking.
     func applyGoalChangesAsync(
@@ -289,6 +437,30 @@ struct LocalStorage: @unchecked Sendable {
 
     func upsertDailySummaryAsync(_ summary: DailySummary) async throws {
         try await writeAsync { try $0.upsertDailySummary(summary, kind: .userEdit) }
+    }
+
+    func upsertDailyPlanningStateAsync(_ state: DailyPlanningState) async throws {
+        try await writeAsync { try $0.upsertDailyPlanningState(state, kind: .userEdit) }
+    }
+
+    func upsertDailyPlanAndCalendarEventAsync(
+        state: DailyPlanningState,
+        event: CalendarEvent
+    ) async throws {
+        try await writeAsync {
+            try $0.upsertDailyPlanAndCalendarEvent(
+                state: state,
+                event: event,
+                kind: .userEdit
+            )
+        }
+    }
+
+    func saveApplicationSnapshotAsync(
+        _ snapshot: WeekflowPersistenceSnapshot,
+        kind: PersistenceMutationKind = .userEdit
+    ) async throws {
+        try await writeAsync { try $0.saveApplicationSnapshot(snapshot, kind: kind) }
     }
 
     func saveDailyPlanAndCalendarEventsAsync(

@@ -12,6 +12,7 @@ extension SwiftDataPersistenceRepository {
         _ goals: [WeeklyGoal],
         kind: PersistenceMutationKind
     ) throws {
+        try PersistenceIdentityValidator.validate(goals: goals)
         // Undoable transactions (automatic distribution) store full payloads
         // for rollback; ordinary edits store only entity references (P1-6).
         let needsFullPayload: Bool
@@ -305,6 +306,7 @@ extension SwiftDataPersistenceRepository {
         kind: PersistenceMutationKind = .userEdit
     ) throws {
         guard !changes.isEmpty else { return }
+        try changes.validateForPersistence()
         try performTransaction {
             let transaction = makeTransaction(kind: kind)
             var sequence = 0

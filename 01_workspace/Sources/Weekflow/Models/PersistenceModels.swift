@@ -34,7 +34,17 @@ enum WeekflowSchemaV1: VersionedSchema {
 
     /// Fingerprint of V1 model structure for drift detection.
     /// Update this when intentionally modifying models.
-    static let modelFingerprint = "v1-8models-metadata-goal-task-assignment-payload-lifecycle-transaction-operation"
+    static let modelStructure: Set<String> = [
+        "PersistenceMetadataRecord:key:String[unique],updatedAt:Date,value:String",
+        "PersistedGoalRecord:channelID:String[optional],id:UUID[unique],lifecycleState:String,payload:Data,periodEnd:Date,periodStart:Date,revision:Int,updatedAt:Date",
+        "PersistedTaskRecord:channelID:String[optional],goalID:UUID,id:UUID[unique],lifecycleState:String,payload:Data,revision:Int,subgoalID:UUID[optional],updatedAt:Date",
+        "PersistedTaskAssignmentRecord:day:Date,id:UUID[unique],originTransactionID:UUID[optional],placementMask:Int,revision:Int,source:String,taskID:UUID,uniquenessKey:String[unique]",
+        "PersistedPayloadRecord:dateKey:Date[optional],entityID:String,entityType:String,key:String[unique],payload:Data,revision:Int,updatedAt:Date",
+        "PersistedLifecycleEventRecord:createdAt:Date,entityID:String,entityType:String,fromState:String,id:UUID[unique],toState:String,transactionID:UUID",
+        "PersistedMutationTransactionRecord:committedAt:Date[optional],compensatesTransactionID:UUID[optional],createdAt:Date,id:UUID[unique],kind:String,undoState:String",
+        "PersistedMutationOperationRecord:afterValue:Data[optional],beforeValue:Data[optional],entityID:String,entityType:String,field:String,id:UUID[unique],sequence:Int,transactionID:UUID"
+    ]
+    static let modelFingerprint = modelStructure.sorted().joined(separator: "|")
 
     static var models: [any PersistentModel.Type] {
         [
@@ -58,7 +68,9 @@ enum WeekflowSchemaV2: VersionedSchema {
     static let versionIdentifier = Schema.Version(2, 0, 0)
 
     /// Fingerprint of V2 model structure for drift detection.
-    static let modelFingerprint = "v2-9models-v1-plus-migration-audit"
+    static let migrationAuditStructure = "PersistedMigrationAuditRecord:completedAt:Date,failureReason:String[optional],fromVersion:Int,id:UUID[unique],result:String,toVersion:Int"
+    static let modelStructure = WeekflowSchemaV1.modelStructure.union([migrationAuditStructure])
+    static let modelFingerprint = modelStructure.sorted().joined(separator: "|")
 
     static var models: [any PersistentModel.Type] {
         WeekflowSchemaV1.models + [PersistedMigrationAuditRecord.self]
@@ -74,6 +86,42 @@ enum WeekflowMigrationPlan: SchemaMigrationPlan {
 
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: WeekflowSchemaV1.self, toVersion: WeekflowSchemaV2.self)]
+    }
+}
+
+
+enum WeekflowSchemaDescriptor {
+    static func structure(for versionedSchema: any VersionedSchema.Type) -> Set<String> {
+        let schema = Schema(versionedSchema: versionedSchema)
+        return Set(schema.entities.map { entity in
+            let properties = entity.storedProperties.map(propertyDescriptor).sorted()
+            return "\(entity.name):\(properties.joined(separator: ","))"
+        })
+    }
+
+    private static func propertyDescriptor(_ property: any SchemaProperty) -> String {
+        var flags: [String] = []
+        if property.isOptional { flags.append("optional") }
+        if property.isUnique { flags.append("unique") }
+        if property.isRelationship { flags.append("relationship") }
+        if property.isTransient { flags.append("transient") }
+        let suffix = flags.isEmpty ? "" : "[\(flags.sorted().joined(separator: "+"))]"
+        return "\(property.name):\(stableTypeName(property.valueType))\(suffix)"
+    }
+
+    private static func stableTypeName(_ type: Any.Type) -> String {
+        let identifier = ObjectIdentifier(type)
+        let known: [(Any.Type, String)] = [
+            (String.self, "String"), (Optional<String>.self, "String"),
+            (Int.self, "Int"), (Optional<Int>.self, "Int"),
+            (UUID.self, "UUID"), (Optional<UUID>.self, "UUID"),
+            (Date.self, "Date"), (Optional<Date>.self, "Date"),
+            (Data.self, "Data"), (Optional<Data>.self, "Data")
+        ]
+        if let match = known.first(where: { ObjectIdentifier($0.0) == identifier }) {
+            return match.1
+        }
+        return String(reflecting: type)
     }
 }
 

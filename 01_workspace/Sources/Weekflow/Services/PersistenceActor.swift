@@ -73,6 +73,7 @@ actor PersistenceActor {
     /// Phase 2-5 fix: a re-entrancy guard rejects same-thread nested calls, and a
     /// timeout turns any residual deadlock into `syncBridgeTimedOut` instead of an
     /// infinite hang.
+    @available(*, noasync, message: "Use performTransaction from asynchronous code")
     nonisolated func runSyncBlocking<Result: Sendable>(
         _ body: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result {
@@ -109,14 +110,15 @@ actor PersistenceActor {
         return value
     }
 
-    nonisolated func reset() {
-        // Synchronous reset for tests - blocks until actor processes it
+    @available(*, noasync, message: "Use resetRepository from asynchronous code")
+    @discardableResult
+    nonisolated func reset() -> Bool {
         let semaphore = DispatchSemaphore(value: 0)
         Task {
             await resetRepository()
             semaphore.signal()
         }
-        semaphore.wait()
+        return semaphore.wait(timeout: .now() + Self.syncBridgeTimeoutSeconds) == .success
     }
 
     // MARK: - Error Recording
@@ -184,6 +186,7 @@ private struct PersistenceFailureReport: Codable {
 enum PersistenceActorBridge {
     /// Synchronous – blocks the calling thread until the actor completes.
     /// Uses the SAME repository as async operations (P0-1 fix).
+    @available(*, noasync, message: "Use runAsync from asynchronous code")
     static func run<Result: Sendable>(
         on actor: PersistenceActor,
         _ body: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result

@@ -416,9 +416,12 @@ private func withPersistenceActor<Result: Sendable>(
     #expect(source.contains("NSWorkspace.willSleepNotification"))
     #expect(source.contains("NSWorkspace.didWakeNotification"))
     #expect(source.contains("func applicationWillTerminate"))
-    // Phase 2-4 fix: termination is a single, ordered checkpoint owned by the
-    // AppDelegate (no longer split into separate View-installed callbacks).
-    #expect(source.contains("terminationCheckpoint?()"))
+    // Hardened lifecycle: the AppDelegate owns a single ordered termination
+    // checkpoint and defers termination (.terminateLater) until the final atomic
+    // snapshot — including the active timer — has been saved asynchronously.
+    #expect(source.contains("func applicationShouldTerminate"))
+    #expect(source.contains(".terminateLater"))
+    #expect(source.contains("await terminationCheckpoint()"))
     #expect(source.contains("installTerminationCheckpoint"))
     #expect(source.contains("powerTransitionCheckpoint?()"))
     #expect(source.contains("globalDateShortcuts.shutdown()"))

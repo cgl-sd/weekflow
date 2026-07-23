@@ -314,52 +314,44 @@ extension WeekflowStore {
     /// Uses `saveApplicationSnapshot` (one atomic transaction) instead of multiple
     /// separate saves, ensuring cross-entity consistency even if disk fails mid-write.
     /// Does NOT call `persistSync()` to avoid nested begin/endSyncWrite issues.
-    func persistForTermination() {
+    @discardableResult
+    func persistForTermination() async -> Bool {
         textInputDebouncer.cancelPending()
-        // Cancel ALL pending async writes and raise the sync barrier so in-flight
-        // async writers skip their disk write. Nesting-safe counter.
         persistenceCoordinator.cancelAllPending()
         persistenceCoordinator.beginSyncWrite()
-        // Single atomic snapshot persist (goals + channels + calendar + planning +
-        // focus records + daily summaries in one transaction).
+        // Keep the barrier raised until every already-claimed write has finished
+        // its disk operation. Otherwise a delayed stale operation could land after
+        // the authoritative exit snapshot.
+        await persistenceCoordinator.flush()
+        defer { persistenceCoordinator.endSyncWrite() }
+
         let snapshot = WeekflowPersistenceSnapshot(
             goals: goals,
             channels: channels,
             calendarEvents: calendarEvents,
             dailyPlanningStates: dailyPlanningStates,
             focusRecords: focusRecords,
-            dailySummaries: dailySummaries
+            dailySummaries: dailySummaries,
+            activeTimerSession: activeTaskTimer
         )
-        _ = persistSafely(
+        return await persistSafelyAsync(
             "退出保存",
-            operation: { try storage.saveApplicationSnapshot(snapshot) },
-            commit: {
-                persistedGoals = goals
-                persistedChannels = channels
-                persistedCalendarEvents = calendarEvents
-                persistedDailyPlanningStates = dailyPlanningStates
-                persistedFocusRecords = focusRecords
-                persistedDailySummaries = dailySummaries
+            operation: { [storage] in
+                try await storage.saveApplicationSnapshotAsync(snapshot)
             },
-            rollback: {
-                goals = persistedGoals
-                invalidateGoalIndex()
-                channels = persistedChannels
-                calendarEvents = persistedCalendarEvents
-                dailyPlanningStates = persistedDailyPlanningStates
-                focusRecords = persistedFocusRecords
-                dailySummaries = persistedDailySummaries
-            }
+            commit: {
+                persistedGoals = snapshot.goals
+                persistedChannels = snapshot.channels
+                persistedCalendarEvents = snapshot.calendarEvents
+                persistedDailyPlanningStates = snapshot.dailyPlanningStates
+                persistedFocusRecords = snapshot.focusRecords
+                persistedDailySummaries = snapshot.dailySummaries
+            },
+            // The repository transaction has already rolled back on failure. Keep
+            // the current in-memory edits so cancelling termination does not erase
+            // the user's latest work.
+            rollback: {}
         )
-        // Persist active timer session separately (not part of the snapshot).
-        let session = activeTaskTimer
-        _ = persistSafely(
-            "活动计时",
-            operation: { try storage.saveActiveTimerSession(session) },
-            commit: {},
-            rollback: { if session != nil { activeTaskTimer = nil } }
-        )
-        persistenceCoordinator.endSyncWrite()
     }
 
     func setTaskPriority(

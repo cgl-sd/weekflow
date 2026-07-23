@@ -406,9 +406,13 @@ private func migrationTestFolder(_ name: String) -> URL {
 @Test func schemaFingerprintsRemainStable() {
     // Exact fingerprint locks (a prefix match would not catch appended fields).
     #expect(WeekflowSchemaV1.modelFingerprint
-        == "v1-8models-metadata-goal-task-assignment-payload-lifecycle-transaction-operation")
+        == WeekflowSchemaV1.modelStructure.sorted().joined(separator: "|"))
     #expect(WeekflowSchemaV2.modelFingerprint
-        == "v2-9models-v1-plus-migration-audit")
+        == WeekflowSchemaV2.modelStructure.sorted().joined(separator: "|"))
+    #expect(WeekflowSchemaDescriptor.structure(for: WeekflowSchemaV1.self)
+        == WeekflowSchemaV1.modelStructure)
+    #expect(WeekflowSchemaDescriptor.structure(for: WeekflowSchemaV2.self)
+        == WeekflowSchemaV2.modelStructure)
 
     // V1 must always reference EXACTLY these 8 model types, in this order.
     #expect(WeekflowSchemaV1.models.map { frozenModelTypeName($0) } == [

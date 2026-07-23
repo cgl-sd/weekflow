@@ -213,20 +213,19 @@ extension WeekflowStore {
     func recordFocusSession(mode: FocusMode, seconds: Int, date: Date = .now) {
         guard seconds > 0 else { return }
         let calendar = businessCalendar.calendar
+        let record: FocusRecord
         if let index = focusRecords.firstIndex(where: {
             $0.mode == mode && calendar.isDate($0.date, inSameDayAs: date)
         }) {
             focusRecords[index].seconds += seconds
             focusRecords[index].sessionCount += 1
             focusRecords[index].date = date
+            record = focusRecords[index]
         } else {
-            focusRecords.append(FocusRecord(
-                date: date,
-                mode: mode,
-                seconds: seconds
-            ))
+            record = FocusRecord(date: date, mode: mode, seconds: seconds)
+            focusRecords.append(record)
         }
-        persistFocusRecords()
+        persistFocusRecord(record)
     }
 
     func focusMinutes(on date: Date) -> [FocusMode: Int] {
@@ -242,15 +241,18 @@ extension WeekflowStore {
 
     func saveDailySummary(_ content: String, on date: Date = .now) {
         let day = businessCalendar.calendar.startOfDay(for: date)
+        let summary: DailySummary
         if let index = dailySummaries.firstIndex(where: {
             businessCalendar.calendar.isDate($0.date, inSameDayAs: day)
         }) {
             dailySummaries[index].content = content
             dailySummaries[index].updatedAt = .now
+            summary = dailySummaries[index]
         } else {
-            dailySummaries.append(DailySummary(date: day, content: content))
+            summary = DailySummary(date: day, content: content)
+            dailySummaries.append(summary)
         }
-        persistDailySummaries()
+        persistDailySummaryRecord(summary)
     }
 
 }
