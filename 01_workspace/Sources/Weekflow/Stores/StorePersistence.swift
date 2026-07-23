@@ -76,6 +76,67 @@ extension WeekflowStore {
         )
     }
 
+    /// R13: persist a single interactive task edit in O(1) with respect to the
+    /// total task count. Instead of diffing every goal/task collection (the O(N)
+    /// `PersistenceGoalChangeSet.difference`), this builds a change-set that names
+    /// only the edited task plus its goal envelope and applies it through the same
+    /// transactional `applyGoalChanges` path, whose batch fetches are keyed to the
+    /// single ids. Full-collection diffing remains reserved for startup recovery,
+    /// explicit import, and the exit fallback snapshot.
+    func persistSingleTaskEdit(
+        goalID: UUID,
+        task: WeekTask,
+        envelope: WeeklyGoal,
+        kind: PersistenceMutationKind = .userEdit
+    ) {
+        var changes = PersistenceGoalChangeSet()
+        changes.goalsToUpsert = [envelope]
+        changes.tasksToUpsert = [PersistedTaskUpsert(goalID: goalID, task: task)]
+        let changeSet = changes
+        if synchronousPersistence {
+            _ = persistSafely(
+                "单任务编辑",
+                operation: { try storage.applyGoalChanges(changeSet, kind: kind) },
+                commit: { syncPersistedBaseline(forGoal: envelope) },
+                rollback: {
+                    goals = persistedGoals
+                    invalidateGoalIndex()
+                }
+            )
+            return
+        }
+        // Per-task domain: edits to the same task coalesce to the latest, while
+        // edits to different tasks never supplant one another.
+        persistenceCoordinator.enqueue(
+            domain: "task:\(task.id.uuidString)",
+            label: "单任务编辑",
+            operation: { [storage] in
+                try PersistenceIdentityValidator.validate(goals: [envelope])
+                try await storage.applyGoalChangesAsync(changeSet, kind: kind)
+            },
+            commit: { [weak self] in
+                self?.syncPersistedBaseline(forGoal: envelope)
+            },
+            rollback: { [weak self] in
+                guard let self else { return }
+                self.goals = self.persistedGoals
+                self.invalidateGoalIndex()
+            }
+        )
+    }
+
+    /// Update the persisted baseline for just the edited goal. Locating the goal is
+    /// O(number of goals) and copying it is O(tasks within that goal) — both
+    /// independent of the total task count across all goals, so this never
+    /// reintroduces the O(N) interactive hot path.
+    private func syncPersistedBaseline(forGoal goal: WeeklyGoal) {
+        if let index = persistedGoals.firstIndex(where: { $0.id == goal.id }) {
+            persistedGoals[index] = goal
+        } else {
+            persistedGoals.append(goal)
+        }
+    }
+
     /// Synchronous persist – blocks the calling thread. Use ONLY when the
     /// return value is needed (automatic distribution rollback) or during
     /// startup/tests where blocking is acceptable.

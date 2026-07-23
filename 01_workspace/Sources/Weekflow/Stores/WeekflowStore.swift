@@ -595,7 +595,21 @@ final class WeekflowStore {
         goal.tasks[index].updatedAt = .now
         goal = goalService.applyPrimaryProjectionEdit(goal)
         replace(goal)
-        if persistImmediately { persist(kind: persistenceKind) }
+        if persistImmediately {
+            // R13: O(1) targeted persist of the edited task plus its goal envelope,
+            // independent of the total task count. Falls back to the full diff only
+            // if the edited task cannot be located (should not happen in practice).
+            if let editedTask = goal.tasks.first(where: { $0.id == taskID }) {
+                persistSingleTaskEdit(
+                    goalID: goalID,
+                    task: editedTask,
+                    envelope: goal,
+                    kind: persistenceKind
+                )
+            } else {
+                persist(kind: persistenceKind)
+            }
+        }
         return true
     }
 
