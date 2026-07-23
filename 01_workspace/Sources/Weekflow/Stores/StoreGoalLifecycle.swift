@@ -14,29 +14,16 @@ extension WeekflowStore {
         subgoals: [GoalSubgoal] = [],
         persistImmediately: Bool = true
     ) -> UUID {
-        var newGoal = WeeklyGoal(
+        let sortOrder = (activeGoals.map(\.sortOrder).min() ?? 0) - 1
+        let newGoal = goalService.makeGoal(
             title: title,
             outcome: outcome,
             startDate: startDate,
             endDate: endDate,
             channelID: channelID,
-            subgoals: subgoals
+            subgoals: subgoals,
+            sortOrder: sortOrder
         )
-        newGoal.sortOrder = (activeGoals.map(\.sortOrder).min() ?? 0) - 1
-        if subgoals.isEmpty {
-            let primaryTask = WeekTask(
-                title: title,
-                dueDate: endDate,
-                estimatedMinutes: 60,
-                notes: outcome,
-                description: outcome,
-                channelID: channelID,
-                sourceType: .weeklyObjective
-            )
-            newGoal.primaryTaskID = primaryTask.id
-            newGoal.tasks.append(primaryTask)
-        }
-        newGoal = goalService.project(newGoal)
         goals.insert(newGoal, at: 0)
         invalidateGoalIndex()
         selectedGoalID = newGoal.id

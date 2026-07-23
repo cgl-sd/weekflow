@@ -35,3 +35,22 @@ import Testing
     // The lone unassigned task in the active goal lands in the pool.
     #expect(service.taskPool(in: goals).map(\.task.title) == ["未分配任务"])
 }
+
+@Test func goalServiceMakeGoalBuildsProjectedPrimaryTaskOnlyWhenNoSubgoals() {
+    let service = GoalService()
+    let day = SystemBusinessCalendar.current.date(for: LocalDay(year: 2026, month: 7, day: 20))
+    let goal = service.makeGoal(
+        title: "新目标", outcome: "结果", startDate: day, endDate: day,
+        channelID: nil, subgoals: [], sortOrder: -1
+    )
+    #expect(goal.sortOrder == -1)
+    let primary = try! #require(goal.tasks.first(where: { $0.id == goal.primaryTaskID }))
+    #expect(primary.title == "新目标")
+    #expect(primary.sourceType == .weeklyObjective)
+
+    let withSubgoals = service.makeGoal(
+        title: "带子目标", outcome: "o", startDate: day, endDate: day,
+        channelID: nil, subgoals: [GoalSubgoal(title: "子")], sortOrder: -2
+    )
+    #expect(withSubgoals.primaryTaskID == nil)
+}

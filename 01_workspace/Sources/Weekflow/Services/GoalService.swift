@@ -225,6 +225,44 @@ struct GoalService: GoalServicing {
 // service layer, where they have a single, directly-testable home. The store
 // keeps observation + caching and delegates the computation here.
 extension GoalService {
+    /// R08: build a new weekly goal (with its auto-generated primary task when
+    /// there are no subgoals) and run it through projection. The store keeps the
+    /// coordination (insert / select / persist); the construction rule lives here.
+    func makeGoal(
+        title: String,
+        outcome: String,
+        startDate: Date,
+        endDate: Date,
+        channelID: String?,
+        subgoals: [GoalSubgoal],
+        sortOrder: Int,
+        now: Date = .now
+    ) -> WeeklyGoal {
+        var newGoal = WeeklyGoal(
+            title: title,
+            outcome: outcome,
+            startDate: startDate,
+            endDate: endDate,
+            channelID: channelID,
+            subgoals: subgoals
+        )
+        newGoal.sortOrder = sortOrder
+        if subgoals.isEmpty {
+            let primaryTask = WeekTask(
+                title: title,
+                dueDate: endDate,
+                estimatedMinutes: 60,
+                notes: outcome,
+                description: outcome,
+                channelID: channelID,
+                sourceType: .weeklyObjective
+            )
+            newGoal.primaryTaskID = primaryTask.id
+            newGoal.tasks.append(primaryTask)
+        }
+        return project(newGoal, now: now)
+    }
+
     func activeGoals(in goals: [WeeklyGoal]) -> [WeeklyGoal] {
         goals.filter { !$0.isArchived && !$0.isDeleted }.sorted {
             if $0.isPinned != $1.isPinned { return $0.isPinned }

@@ -87,7 +87,20 @@ final class WeekflowStore {
     @ObservationIgnored var tasksByDayCache: [LocalDay: [(goal: WeeklyGoal, task: WeekTask)]] = [:]
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
-    var synchronousPersistence = false
+    private var _synchronousPersistence = false
+    /// When switched on, cancels any in-flight async startup write so it cannot
+    /// race (and fail, disabling the coordinator) against subsequent synchronous
+    /// writes. Production keeps this false (async bootstrap, R03).
+    var synchronousPersistence: Bool {
+        get { _synchronousPersistence }
+        set {
+            let becameSynchronous = newValue && !_synchronousPersistence
+            _synchronousPersistence = newValue
+            if becameSynchronous {
+                persistenceCoordinator.cancelAllPending()
+            }
+        }
+    }
     var canUndoAutomaticDistribution: Bool { !automaticDistributionChanges.isEmpty }
     var hasTaskClipboard: Bool {
         guard let taskClipboard else { return false }
@@ -109,9 +122,11 @@ final class WeekflowStore {
         synchronousPersistence: Bool = false
     ) {
         self.storage = storage
-        // Set before the startup persist so a synchronous store never races an
-        // async startup snapshot against subsequent synchronous writes.
-        self.synchronousPersistence = synchronousPersistence
+        // Set the backing store directly (bypassing the cancelling setter, which
+        // touches persistenceCoordinator before all stored properties initialize).
+        // The startup persist below reads it, so a synchronous store never races
+        // an async startup snapshot against subsequent synchronous writes.
+        self._synchronousPersistence = synchronousPersistence
         self.developmentFixture = developmentFixture
         self.legacyPreferences = legacyPreferences
         self.businessCalendar = businessCalendar
