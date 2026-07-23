@@ -61,10 +61,39 @@ struct LocalStorage: @unchecked Sendable {
         )
     }
 
+    /// 数据安全：应用启动、打开数据库之前，对上一次会话的库做一次滚动备份。
+    /// 应在创建 Store 之前调用——此时数据库处于静止状态（上一会话关闭时已做 WAL
+    /// 检查点），备份只读取主库文件，不会干扰任何打开中的连接，也不会与并发写入竞争。
+    static func backupDefaultDatabase(fileManager: FileManager = .default) {
+        let folder = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Weekflow", isDirectory: true)
+        let databaseURL = folder
+            .appendingPathComponent("Database", isDirectory: true)
+            .appendingPathComponent("Weekflow.store")
+        let service = DatabaseBackupService(databaseURL: databaseURL, fileManager: fileManager)
+        try? service.makeBackup()
+    }
+
     func preloaded(with preload: LocalStoragePreload) -> LocalStorage {
         var copy = self
         copy.preload = LocalStoragePreloadCache(preload)
         return copy
+    }
+
+    /// 数据安全：滚动备份与恢复服务（备份最近 N 份 SQLite 快照）。
+    var backupService: DatabaseBackupService {
+        DatabaseBackupService(databaseURL: databaseURL)
+    }
+
+    /// 在成功加载后调用，保存一份当前良好状态的备份（轮转保留最近 N 份）。
+    func makeBackup() throws {
+        try backupService.makeBackup()
+    }
+
+    /// 从最近一份良好备份恢复（库损坏时的兜底）。无备份返回 false。
+    @discardableResult
+    func restoreLatestBackup() throws -> Bool {
+        try backupService.restoreLatest()
     }
 
     func load() throws -> [WeeklyGoal]? {

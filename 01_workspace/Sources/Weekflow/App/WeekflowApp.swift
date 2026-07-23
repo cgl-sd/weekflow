@@ -215,6 +215,9 @@ struct WeekflowApp: App {
             return
         }
 #endif
+        // 数据安全：打开数据库前，对上一次会话的库做滚动备份（此时库静止，
+        // 上一会话关闭时已做 WAL 检查点；不干扰任何打开中的连接）。
+        LocalStorage.backupDefaultDatabase()
         let baseStorage = await Task.detached(priority: .userInitiated) { LocalStorage() }.value
         let storage = await LocalStoragePreloader.preload(baseStorage)
         store = WeekflowStore(storage: storage)
