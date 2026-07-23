@@ -57,7 +57,11 @@ extension WeekflowStore {
             task.status = .inProgress
             task.archivedAt = nil
         }
-        persistTaskAndActiveTimer(rollbackSession: rollbackSession)
+        // P1-3: the timer touched the new task's goal and, if a previous timer was
+        // settled, that task's goal too.
+        var affectedGoalIDs: Set<UUID> = [goalID]
+        if let settledGoalID = settled?.settledGoalID { affectedGoalIDs.insert(settledGoalID) }
+        persistTaskAndActiveTimer(rollbackSession: rollbackSession, affectedGoalIDs: affectedGoalIDs)
     }
 
     @discardableResult
@@ -113,7 +117,7 @@ extension WeekflowStore {
             }
         }
         if persistImmediately {
-            persistTaskAndActiveTimer(rollbackSession: rollbackSession)
+            persistTaskAndActiveTimer(rollbackSession: rollbackSession, affectedGoalIDs: [goalID])
         }
         return outcome.elapsedMinutes
     }
@@ -155,7 +159,7 @@ extension WeekflowStore {
             ) { task in
                 if task.status == .inProgress { task.status = .planned }
             }
-            persistTaskAndActiveTimer(rollbackSession: recovery.session)
+            persistTaskAndActiveTimer(rollbackSession: recovery.session, affectedGoalIDs: [recovery.session.goalID])
         }
     }
 
@@ -182,7 +186,7 @@ extension WeekflowStore {
             task.actualMinutes = DurationDisplay.minutes(for: task.actualSeconds)
             task.status = .inProgress
         }
-        persistTaskAndActiveTimer(rollbackSession: result.previous)
+        persistTaskAndActiveTimer(rollbackSession: result.previous, affectedGoalIDs: [result.updated.goalID])
     }
 
     func recordFocusMinutes(for reference: TaskReference, minutes: Int, now: Date = .now) {

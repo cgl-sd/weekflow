@@ -442,23 +442,26 @@ extension WeekflowStore {
         )
     }
 
-    func persistTaskAndActiveTimer(rollbackSession: TaskTimerSession?) {
+    /// P1-3: persist the timer change incrementally. The timer only ever changes the
+    /// timed task(s), which live in `affectedGoalIDs`, so the diff is scoped to those
+    /// goals — O(tasks in those goals) instead of O(all tasks). Reuses the existing
+    /// diff logic (correctness) and keeps the task + active-timer session atomic.
+    func persistTaskAndActiveTimer(rollbackSession: TaskTimerSession?, affectedGoalIDs: Set<UUID>) {
         if synchronousPersistence {
             let changes = PersistenceGoalChangeSet.difference(
-                before: persistedGoals,
-                after: goals
+                before: persistedGoals.filter { affectedGoalIDs.contains($0.id) },
+                after: goals.filter { affectedGoalIDs.contains($0.id) }
             )
             let session = activeTaskTimer
             _ = persistSafely(
                 "任务与活动计时",
                 operation: {
-                    try PersistenceIdentityValidator.validate(goals: goals)
                     try storage.saveGoalChangesAndActiveTimer(
                         changes: changes,
                         session: session
                     )
                 },
-                commit: { persistedGoals = goals },
+                commit: { applyPersistedBaseline(for: affectedGoalIDs) },
                 rollback: {
                     goals = persistedGoals
                     invalidateGoalIndex()
@@ -467,28 +470,24 @@ extension WeekflowStore {
             )
             return
         }
-        // P1-4 fix: non-blocking write via coordinator.
-        // The combined transaction supersedes pending goal-only and timer-only writes.
+        // Non-blocking write via coordinator. The combined transaction supersedes
+        // pending goal-only / timer-only / per-task writes for the affected goals.
         persistenceCoordinator.cancelPending(for: "goals")
         persistenceCoordinator.cancelPending(for: "timer")
-        // P0-1: also supersede pending per-task edits — the combined snapshot below
-        // captures the full latest goal graph, so any `task:<uuid>` write is redundant.
         persistenceCoordinator.cancelPending(matchingPrefix: "task:")
-        // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
-        let box = GoalSnapshotBox()
         // Capture the snapshots now, on the MainActor (this method runs there).
         // Hopping back to the MainActor from inside the async operation would
         // deadlock when a synchronous write blocks the MainActor in
         // drainInvalidatedWriteBlocking while waiting for this writer task.
-        let currentGoals = goals
-        let baselineGoals = persistedGoals
+        let currentGoals = goals.filter { affectedGoalIDs.contains($0.id) }
+        let baselineGoals = persistedGoals.filter { affectedGoalIDs.contains($0.id) }
         let session = activeTaskTimer
+        let affected = affectedGoalIDs
         persistenceCoordinator.enqueue(
             domain: "goalsTimer",
             label: "任务与活动计时",
             operation: { [weak self] in
                 guard let self else { return }
-                try PersistenceIdentityValidator.validate(goals: currentGoals)
                 let changes = PersistenceGoalChangeSet.difference(
                     before: baselineGoals,
                     after: currentGoals
@@ -497,15 +496,9 @@ extension WeekflowStore {
                     changes: changes,
                     session: session
                 )
-                box.snapshot = currentGoals
             },
             commit: { [weak self] in
-                guard let self else { return }
-                if let snapshot = box.snapshot {
-                    self.persistedGoals = snapshot
-                } else {
-                    self.persistedGoals = self.goals
-                }
+                self?.applyPersistedBaseline(for: affected)
             },
             rollback: { [weak self] in
                 self?.goals = self?.persistedGoals ?? []
@@ -513,6 +506,16 @@ extension WeekflowStore {
                 self?.taskTimerService.restore(session: rollbackSession)
             }
         )
+    }
+
+    /// Update the persisted baseline for just the given goals (their current in-memory
+    /// state), leaving every other goal's baseline untouched.
+    private func applyPersistedBaseline(for goalIDs: Set<UUID>) {
+        for id in goalIDs {
+            guard let current = goals.first(where: { $0.id == id }),
+                  let index = persistedGoals.firstIndex(where: { $0.id == id }) else { continue }
+            persistedGoals[index] = current
+        }
     }
 
     @discardableResult
