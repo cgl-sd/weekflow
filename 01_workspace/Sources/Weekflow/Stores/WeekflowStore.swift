@@ -100,6 +100,10 @@ final class WeekflowStore {
     @ObservationIgnored var activeTasksCache: [(goal: WeeklyGoal, task: WeekTask)]?
     @ObservationIgnored var taskPoolCache: [(goal: WeeklyGoal, task: WeekTask)]?
     @ObservationIgnored var tasksByDayCache: [LocalDay: [(goal: WeeklyGoal, task: WeekTask)]] = [:]
+    /// P1-5: the weekly-planning pool and per-day planning tasks are read multiple
+    /// times per SwiftUI render; cache them and invalidate on `goals.didSet`.
+    @ObservationIgnored var weeklyPlanningPoolCache: [(goal: WeeklyGoal, task: WeekTask)]?
+    @ObservationIgnored var weeklyPlanningTasksByDayCache: [LocalDay: [(goal: WeeklyGoal, task: WeekTask)]] = [:]
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
     private var _synchronousPersistence = false
@@ -329,6 +333,8 @@ final class WeekflowStore {
         activeTasksCache = nil
         taskPoolCache = nil
         tasksByDayCache.removeAll(keepingCapacity: true)
+        weeklyPlanningPoolCache = nil
+        weeklyPlanningTasksByDayCache.removeAll(keepingCapacity: true)
     }
 
     var activeGoals: [WeeklyGoal] {
@@ -375,7 +381,11 @@ final class WeekflowStore {
         return computed
     }
     var weeklyPlanningPoolEntries: [(goal: WeeklyGoal, task: WeekTask)] {
-        activeGoals.flatMap { goal in
+        if let cached = weeklyPlanningPoolCache {
+            _ = goals   // register observation on cache hit
+            return cached
+        }
+        let computed = activeGoals.flatMap { goal -> [(goal: WeeklyGoal, task: WeekTask)] in
             if goal.subgoals.isEmpty {
                 let primaryTask = goal.primaryTaskID.flatMap { primaryTaskID in
                     goal.tasks.first(where: {
@@ -403,16 +413,25 @@ final class WeekflowStore {
                 tasksBySubgoal[subgoal.id].map { (goal, $0) }
             }
         }
+        weeklyPlanningPoolCache = computed
+        return computed
     }
     func weeklyPlanningTasks(on date: Date) -> [(goal: WeeklyGoal, task: WeekTask)] {
+        let day = businessCalendar.day(containing: date)
+        if let cached = weeklyPlanningTasksByDayCache[day] {
+            _ = goals   // register observation on cache hit
+            return cached
+        }
         let allowedReferences = Set(
             weeklyPlanningPoolEntries.map {
                 TaskReference(goalID: $0.goal.id, taskID: $0.task.id)
             }
         )
-        return tasks(on: date).filter {
+        let computed = tasks(on: date).filter {
             allowedReferences.contains(TaskReference(goalID: $0.goal.id, taskID: $0.task.id))
         }
+        weeklyPlanningTasksByDayCache[day] = computed
+        return computed
     }
     var archivedTasks: [(goal: WeeklyGoal, task: WeekTask)] {
         goals.filter { !$0.isDeleted }.flatMap { goal in
