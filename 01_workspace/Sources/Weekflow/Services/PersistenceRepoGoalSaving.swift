@@ -22,9 +22,9 @@ extension SwiftDataPersistenceRepository {
         let existingGoals = try context.fetch(FetchDescriptor<PersistedGoalRecord>())
         let existingTasks = try context.fetch(FetchDescriptor<PersistedTaskRecord>())
         let existingAssignments = try context.fetch(FetchDescriptor<PersistedTaskAssignmentRecord>())
-        let goalLookup = Dictionary(uniqueKeysWithValues: existingGoals.map { ($0.id, $0) })
-        let taskLookup = Dictionary(uniqueKeysWithValues: existingTasks.map { ($0.id, $0) })
-        let assignmentLookup = Dictionary(uniqueKeysWithValues: existingAssignments.map { ($0.uniquenessKey, $0) })
+        let goalLookup = Dictionary(keepingFirst: existingGoals.map { ($0.id, $0) })
+        let taskLookup = Dictionary(keepingFirst: existingTasks.map { ($0.id, $0) })
+        let assignmentLookup = Dictionary(keepingFirst: existingAssignments.map { ($0.uniquenessKey, $0) })
 
         var desiredGoalIDs = Set<UUID>()
         var desiredTaskIDs = Set<UUID>()
@@ -43,14 +43,14 @@ extension SwiftDataPersistenceRepository {
                     recordOperation(
                         transactionID: transaction.id,
                         sequence: &sequence,
-                        entityType: "goal",
+                        entityType: PersistenceEntity.goal,
                         entityID: goal.id.uuidString,
                         before: record.payload,
                         after: payload,
                         storeFullPayload: needsFullPayload
                     )
                     recordLifecycleChange(
-                        entityType: "goal",
+                        entityType: PersistenceEntity.goal,
                         entityID: goal.id.uuidString,
                         from: record.lifecycleState,
                         to: lifecycle,
@@ -79,14 +79,14 @@ extension SwiftDataPersistenceRepository {
                 recordOperation(
                     transactionID: transaction.id,
                     sequence: &sequence,
-                    entityType: "goal",
+                    entityType: PersistenceEntity.goal,
                     entityID: goal.id.uuidString,
                     before: nil,
                     after: payload,
                     storeFullPayload: needsFullPayload
                 )
                 recordLifecycleChange(
-                    entityType: "goal",
+                    entityType: PersistenceEntity.goal,
                     entityID: goal.id.uuidString,
                     from: PersistedLifecycleState.purged.rawValue,
                     to: lifecycle,
@@ -106,14 +106,14 @@ extension SwiftDataPersistenceRepository {
                         recordOperation(
                             transactionID: transaction.id,
                             sequence: &sequence,
-                            entityType: "task",
+                            entityType: PersistenceEntity.task,
                             entityID: task.id.uuidString,
                             before: record.payload,
                             after: taskPayload,
                             storeFullPayload: needsFullPayload
                         )
                         recordLifecycleChange(
-                            entityType: "task",
+                            entityType: PersistenceEntity.task,
                             entityID: task.id.uuidString,
                             from: record.lifecycleState,
                             to: taskLifecycle,
@@ -141,7 +141,7 @@ extension SwiftDataPersistenceRepository {
                     recordOperation(
                         transactionID: transaction.id,
                         sequence: &sequence,
-                        entityType: "task",
+                        entityType: PersistenceEntity.task,
                         entityID: task.id.uuidString,
                         before: nil,
                         after: taskPayload,
@@ -184,7 +184,7 @@ extension SwiftDataPersistenceRepository {
                             recordOperation(
                                 transactionID: transaction.id,
                                 sequence: &sequence,
-                                entityType: "taskAssignment",
+                                entityType: PersistenceEntity.taskAssignment,
                                 entityID: record.id.uuidString,
                                 before: before,
                                 after: after,
@@ -220,7 +220,7 @@ extension SwiftDataPersistenceRepository {
                         recordOperation(
                             transactionID: transaction.id,
                             sequence: &sequence,
-                            entityType: "taskAssignment",
+                            entityType: PersistenceEntity.taskAssignment,
                             entityID: record.id.uuidString,
                             before: nil,
                             after: try CompactPersistenceCoding.encode(AssignmentSnapshot(
@@ -242,7 +242,7 @@ extension SwiftDataPersistenceRepository {
             recordOperation(
                 transactionID: transaction.id,
                 sequence: &sequence,
-                entityType: "taskAssignment",
+                entityType: PersistenceEntity.taskAssignment,
                 entityID: record.id.uuidString,
                 before: try CompactPersistenceCoding.encode(assignmentSnapshot(record)),
                 after: nil,
@@ -254,7 +254,7 @@ extension SwiftDataPersistenceRepository {
             recordOperation(
                 transactionID: transaction.id,
                 sequence: &sequence,
-                entityType: "task",
+                entityType: PersistenceEntity.task,
                 entityID: record.id.uuidString,
                 before: record.payload,
                 after: nil,
@@ -262,7 +262,7 @@ extension SwiftDataPersistenceRepository {
             )
             if record.lifecycleState == PersistedLifecycleState.trashed.rawValue {
                 recordLifecycleChange(
-                    entityType: "task",
+                    entityType: PersistenceEntity.task,
                     entityID: record.id.uuidString,
                     from: record.lifecycleState,
                     to: PersistedLifecycleState.purged.rawValue,
@@ -275,7 +275,7 @@ extension SwiftDataPersistenceRepository {
             recordOperation(
                 transactionID: transaction.id,
                 sequence: &sequence,
-                entityType: "goal",
+                entityType: PersistenceEntity.goal,
                 entityID: record.id.uuidString,
                 before: record.payload,
                 after: nil,
@@ -283,7 +283,7 @@ extension SwiftDataPersistenceRepository {
             )
             if record.lifecycleState == PersistedLifecycleState.trashed.rawValue {
                 recordLifecycleChange(
-                    entityType: "goal",
+                    entityType: PersistenceEntity.goal,
                     entityID: record.id.uuidString,
                     from: record.lifecycleState,
                     to: PersistedLifecycleState.purged.rawValue,
@@ -319,7 +319,7 @@ extension SwiftDataPersistenceRepository {
                     predicate: #Predicate { goalIDs.contains($0.id) }
                 ))
             }
-            let goalRecordByID = Dictionary(uniqueKeysWithValues: existingGoals.map { ($0.id, $0) })
+            let goalRecordByID = Dictionary(keepingFirst: existingGoals.map { ($0.id, $0) })
 
             for goal in changes.goalsToUpsert {
                 var envelope = goal
@@ -359,7 +359,7 @@ extension SwiftDataPersistenceRepository {
                     predicate: #Predicate { taskIDs.contains($0.id) }
                 ))
             }
-            let taskRecordByID = Dictionary(uniqueKeysWithValues: existingTasks.map { ($0.id, $0) })
+            let taskRecordByID = Dictionary(keepingFirst: existingTasks.map { ($0.id, $0) })
 
             // P1-8 fix: batch-fetch all assignment records for affected tasks.
             let existingAssignments: [PersistedTaskAssignmentRecord]
@@ -420,11 +420,11 @@ extension SwiftDataPersistenceRepository {
                         originalDescriptor.fetchLimit = 1
                         if let original = try context.fetch(originalDescriptor).first {
                             original.committedAt = .now
-                            original.undoState = "committed"
+                            original.undoState = PersistenceUndoState.committed
                         }
                     }
                 }
-                let lookup = Dictionary(uniqueKeysWithValues: existing.map { ($0.uniquenessKey, $0) })
+                let lookup = Dictionary(keepingFirst: existing.map { ($0.uniquenessKey, $0) })
                 let desired = normalizedAssignments(for: task, kind: kind)
                 let desiredKeys = Set(desired.map(\.key))
                 for assignment in desired {
@@ -443,7 +443,7 @@ extension SwiftDataPersistenceRepository {
                             recordOperation(
                                 transactionID: transaction.id,
                                 sequence: &sequence,
-                                entityType: "taskAssignment",
+                                entityType: PersistenceEntity.taskAssignment,
                                 entityID: record.id.uuidString,
                                 before: try CompactPersistenceCoding.encode(AssignmentSnapshot(
                                     taskID: assignment.taskID,
@@ -479,7 +479,7 @@ extension SwiftDataPersistenceRepository {
                             recordOperation(
                                 transactionID: transaction.id,
                                 sequence: &sequence,
-                                entityType: "taskAssignment",
+                                entityType: PersistenceEntity.taskAssignment,
                                 entityID: record.id.uuidString,
                                 before: nil,
                                 after: try CompactPersistenceCoding.encode(assignmentSnapshot(record)),
@@ -493,7 +493,7 @@ extension SwiftDataPersistenceRepository {
                         recordOperation(
                             transactionID: transaction.id,
                             sequence: &sequence,
-                            entityType: "taskAssignment",
+                            entityType: PersistenceEntity.taskAssignment,
                             entityID: record.id.uuidString,
                             before: try CompactPersistenceCoding.encode(assignmentSnapshot(record)),
                             after: nil,

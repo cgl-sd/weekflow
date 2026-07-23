@@ -278,10 +278,10 @@ extension WeekflowStore {
         let shifted: (Date) -> Date = { date in
             calendar.date(byAdding: .day, value: dayOffset, to: date) ?? date
         }
-        let subgoalIDs = Dictionary(uniqueKeysWithValues: source.subgoals.map { ($0.id, UUID()) })
-        let milestoneIDs = Dictionary(uniqueKeysWithValues: source.milestones.map { ($0.id, UUID()) })
+        let subgoalIDs = Dictionary(keepingFirst: source.subgoals.map { ($0.id, UUID()) })
+        let milestoneIDs = Dictionary(keepingFirst: source.milestones.map { ($0.id, UUID()) })
         let visibleTasks = source.tasks.filter { !$0.isArchived && !$0.isDeleted }
-        let taskIDs = Dictionary(uniqueKeysWithValues: visibleTasks.map { ($0.id, UUID()) })
+        let taskIDs = Dictionary(keepingFirst: visibleTasks.map { ($0.id, UUID()) })
 
         let copiedSubgoals = source.subgoals.map { subgoal in
             GoalSubgoal(

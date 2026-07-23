@@ -105,7 +105,7 @@ struct WeeklyReviewSnapshot {
                 return firstDate < secondDate
             }
 
-        let channelLookup = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
+        let channelLookup = Dictionary(keepingFirst: channels.map { ($0.id, $0) })
         let channelGroups = Dictionary(grouping: weeklyTaskEntries) { $0.task.channelID }
         let weeklyChannelMetrics: [WeeklyReviewChannelMetric] = channelGroups.compactMap { element in
             let (channelID, entries) = element

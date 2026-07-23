@@ -397,18 +397,46 @@ private func migrationTestFolder(_ name: String) -> URL {
 /// Verifies that the VersionedSchema model lists have not been accidentally
 /// modified. If this test fails, someone changed the model types referenced by
 /// a frozen schema version without creating a new schema version.
+///
+/// P1-5 hardening: the fingerprint is matched EXACTLY (not by prefix) and the
+/// full ordered model-type list of each frozen version is locked. Any addition,
+/// removal, reorder, or rename of a frozen model forces a deliberate edit here,
+/// making accidental schema drift impossible to merge silently. When a real V3
+/// change is needed, introduce NEW versioned model types (do not edit these).
 @Test func schemaFingerprintsRemainStable() {
-    // V1 must always reference exactly these 8 model types.
-    #expect(WeekflowSchemaV1.models.count == 8)
-    #expect(WeekflowSchemaV1.modelFingerprint.hasPrefix("v1-8models"))
+    // Exact fingerprint locks (a prefix match would not catch appended fields).
+    #expect(WeekflowSchemaV1.modelFingerprint
+        == "v1-8models-metadata-goal-task-assignment-payload-lifecycle-transaction-operation")
+    #expect(WeekflowSchemaV2.modelFingerprint
+        == "v2-9models-v1-plus-migration-audit")
 
-    // V2 adds exactly 1 model (migration audit) on top of V1.
+    // V1 must always reference EXACTLY these 8 model types, in this order.
+    #expect(WeekflowSchemaV1.models.map { frozenModelTypeName($0) } == [
+        "PersistenceMetadataRecord",
+        "PersistedGoalRecord",
+        "PersistedTaskRecord",
+        "PersistedTaskAssignmentRecord",
+        "PersistedPayloadRecord",
+        "PersistedLifecycleEventRecord",
+        "PersistedMutationTransactionRecord",
+        "PersistedMutationOperationRecord"
+    ])
+
+    // V2 is exactly V1 plus the migration-audit record.
     #expect(WeekflowSchemaV2.models.count == 9)
-    #expect(WeekflowSchemaV2.modelFingerprint.hasPrefix("v2-9models"))
+    #expect(WeekflowSchemaV2.models.map { frozenModelTypeName($0) }
+        == WeekflowSchemaV1.models.map { frozenModelTypeName($0) } + ["PersistedMigrationAuditRecord"])
 
     // Migration plan covers V1 → V2.
     #expect(WeekflowMigrationPlan.schemas.count == 2)
     #expect(WeekflowMigrationPlan.stages.count == 1)
+}
+
+/// Strips any module qualification from a model metatype name so the frozen-list
+/// assertion is stable regardless of how `String(describing:)` renders it.
+private func frozenModelTypeName(_ type: Any.Type) -> String {
+    let raw = String(describing: type)
+    return raw.split(separator: ".").last.map(String.init) ?? raw
 }
 
 /// P1-1: Verifies that eager payload normalization rewrites stale records.

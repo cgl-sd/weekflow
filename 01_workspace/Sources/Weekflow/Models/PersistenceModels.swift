@@ -3,15 +3,29 @@ import SwiftData
 
 // MARK: - Schema Versioning
 //
-// P1-1 Note: SwiftData's VersionedSchema currently shares the same @Model types
-// across versions. This means future modifications to model classes will affect
-// all schema versions. For true schema freezing, each version would need its own
-// model types (e.g., V1GoalRecord, V2GoalRecord).
+// P1-1 / P1-5 Note: SwiftData's VersionedSchema currently shares the same
+// @Model types across versions. This means future modifications to model classes
+// would affect all schema versions. For true schema freezing, each version would
+// need its own model types (e.g., V1GoalRecord, V2GoalRecord).
 //
-// Current mitigation:
-// 1. Model changes require explicit migration stages
-// 2. Schema fingerprint validation detects accidental changes
-// 3. Payload-based storage minimizes model structure dependencies
+// Current mitigation (in place today):
+// 1. Model changes require explicit migration stages.
+// 2. `schemaFingerprintsRemainStable` locks each frozen version's fingerprint
+//    EXACTLY and asserts its full ordered model-type list — any accidental edit
+//    to a frozen model fails CI and must be a deliberate change.
+// 3. Payload-based storage minimizes model structure dependencies.
+//
+// REQUIRED PROCEDURE for the next schema change (V3):
+// 1. Do NOT edit the @Model types referenced by WeekflowSchemaV1 / V2.
+// 2. Introduce NEW versioned model types for V3 (e.g. a V3-specific record set),
+//    or duplicate the affected records into a V3 namespace, so V1/V2 definitions
+//    stay frozen on disk for existing user databases.
+// 3. Add a `WeekflowSchemaV3` VersionedSchema + a migration stage (V2 → V3) to
+//    `WeekflowMigrationPlan`.
+// 4. Bump `SwiftDataPersistenceRepository.schemaVersion` and update the locked
+//    fingerprints / model lists in `schemaFingerprintsRemainStable` deliberately.
+// Full per-version model duplication is tracked as a larger refactor; until it
+// lands, the exact-match fingerprint lock above guards against accidental drift.
 
 /// Schema V1 - Initial release schema.
 /// WARNING: Do not modify the model list without creating a new schema version.
@@ -278,7 +292,7 @@ final class PersistedMutationTransactionRecord {
         id: UUID = UUID(),
         kind: String,
         createdAt: Date = .now,
-        undoState: String = "available",
+        undoState: String = PersistenceUndoState.available,
         committedAt: Date? = nil,
         compensatesTransactionID: UUID? = nil
     ) {

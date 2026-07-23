@@ -81,36 +81,36 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     }
 
     func loadChannels() throws -> [TaskChannel]? {
-        try loadPayloads(entityType: "channel", as: TaskChannel.self)
+        try loadPayloads(entityType: PersistenceEntity.channel, as: TaskChannel.self)
     }
 
     func loadCalendarEvents() throws -> [CalendarEvent]? {
-        try loadPayloads(entityType: "calendarEvent", as: CalendarEvent.self)
+        try loadPayloads(entityType: PersistenceEntity.calendarEvent, as: CalendarEvent.self)
     }
 
     func loadDailyPlanningStates() throws -> [DailyPlanningState]? {
-        let values = try loadPayloads(entityType: "dailyPlan", as: DailyPlanningState.self)
+        let values = try loadPayloads(entityType: PersistenceEntity.dailyPlan, as: DailyPlanningState.self)
         return values?.sorted { $0.date < $1.date }
     }
 
     func loadFocusRecords() throws -> [FocusRecord]? {
-        let values = try loadPayloads(entityType: "focusSession", as: FocusRecord.self)
+        let values = try loadPayloads(entityType: PersistenceEntity.focusSession, as: FocusRecord.self)
         return values?.sorted { $0.date < $1.date }
     }
 
     func loadDailySummaries() throws -> [DailySummary]? {
-        let values = try loadPayloads(entityType: "dailyReview", as: DailySummary.self)
+        let values = try loadPayloads(entityType: PersistenceEntity.dailyReview, as: DailySummary.self)
         return values?.sorted { $0.date < $1.date }
     }
 
     func loadActiveTimerSession() throws -> TaskTimerSession? {
-        try loadPayloads(entityType: "activeTimerSession", as: TaskTimerSession.self)?.first
+        try loadPayloads(entityType: PersistenceEntity.activeTimerSession, as: TaskTimerSession.self)?.first
     }
 
     func saveChannels(_ channels: [TaskChannel], kind: PersistenceMutationKind = .userEdit) throws {
         try savePayloads(
             channels,
-            entityType: "channel",
+            entityType: PersistenceEntity.channel,
             id: { $0.id },
             date: { $0.archivedAt },
             kind: kind
@@ -118,14 +118,14 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     }
 
     func saveCalendarEvents(_ events: [CalendarEvent], kind: PersistenceMutationKind = .userEdit) throws {
-        try savePayloads(events, entityType: "calendarEvent", id: { $0.id.uuidString }, date: { $0.startDate }, kind: kind)
+        try savePayloads(events, entityType: PersistenceEntity.calendarEvent, id: { $0.id.uuidString }, date: { $0.startDate }, kind: kind)
     }
 
     func saveDailyPlanningStates(_ states: [DailyPlanningState], kind: PersistenceMutationKind = .userEdit) throws {
         let unique = Dictionary(grouping: states, by: \.day).compactMap { $0.value.last }
         try savePayloads(
             unique,
-            entityType: "dailyPlan",
+            entityType: PersistenceEntity.dailyPlan,
             id: { $0.day.persistenceKey },
             date: { businessCalendar.date(for: $0.day) },
             kind: kind
@@ -135,7 +135,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     func saveFocusRecords(_ records: [FocusRecord], kind: PersistenceMutationKind = .userEdit) throws {
         try savePayloads(
             records,
-            entityType: "focusSession",
+            entityType: PersistenceEntity.focusSession,
             id: { $0.id.uuidString },
             date: { businessCalendar.date(for: $0.day) },
             kind: kind
@@ -146,7 +146,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         let unique = Dictionary(grouping: summaries, by: \.day).compactMap { $0.value.max { $0.updatedAt < $1.updatedAt } }
         try savePayloads(
             unique,
-            entityType: "dailyReview",
+            entityType: PersistenceEntity.dailyReview,
             id: { $0.day.persistenceKey },
             date: { businessCalendar.date(for: $0.day) },
             kind: kind
@@ -156,7 +156,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
     func saveActiveTimerSession(_ session: TaskTimerSession?) throws {
         try savePayloads(
             session.map { [$0] } ?? [],
-            entityType: "activeTimerSession",
+            entityType: PersistenceEntity.activeTimerSession,
             id: { _ in "current" },
             date: { $0.lastCheckpointAt },
             kind: .userEdit
@@ -170,8 +170,8 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         try saveDailyPlanningStates(snapshot.dailyPlanningStates, kind: .migration)
         try saveFocusRecords(snapshot.focusRecords, kind: .migration)
         try saveDailySummaries(snapshot.dailySummaries, kind: .migration)
-        setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
-        setMetadata(key: "migrationState", value: "complete")
+        try setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
+        try setMetadata(key: "migrationState", value: "complete")
         try saveContextOrRollback()
     }
 
@@ -223,7 +223,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
 
     func pendingAutomaticDistributionChanges() throws -> [PersistedAutomaticDistributionChange] {
         let automaticKind = "automaticDistribution"
-        let availableState = "available"
+        let availableState = PersistenceUndoState.available
         let transactions = try context.fetch(FetchDescriptor<PersistedMutationTransactionRecord>(
             predicate: #Predicate {
                 $0.kind == automaticKind && $0.committedAt == nil && $0.undoState == availableState
@@ -234,7 +234,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         let assignments = try context.fetch(FetchDescriptor<PersistedTaskAssignmentRecord>(
             predicate: #Predicate { $0.originTransactionID == transactionID }
         ))
-        let taskGoalLookup = Dictionary(uniqueKeysWithValues:
+        let taskGoalLookup = Dictionary(keepingFirst:
             try context.fetch(FetchDescriptor<PersistedTaskRecord>()).map { ($0.id, $0.goalID) }
         )
         return assignments.compactMap { assignment in
@@ -255,7 +255,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         descriptor.fetchLimit = 1
         guard let transaction = try context.fetch(descriptor).first else { return }
         transaction.committedAt = .now
-        transaction.undoState = "committed"
+        transaction.undoState = PersistenceUndoState.committed
         try saveContextOrRollback()
     }
 
@@ -278,7 +278,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             recordOperation(
                 transactionID: mutation.id,
                 sequence: &sequence,
-                entityType: "taskAssignment",
+                entityType: PersistenceEntity.taskAssignment,
                 entityID: assignment.id.uuidString,
                 before: before,
                 after: after
@@ -295,7 +295,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             descriptor.fetchLimit = 1
             if let original = try context.fetch(descriptor).first {
                 original.committedAt = .now
-                original.undoState = "committed"
+                original.undoState = PersistenceUndoState.committed
             }
         }
         try finish(transaction: mutation, operationCount: sequence, kind: .userEdit)
@@ -407,7 +407,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         let existing = try context.fetch(FetchDescriptor<PersistedPayloadRecord>(
             predicate: #Predicate { $0.entityType == entityType }
         ))
-        let lookup = Dictionary(uniqueKeysWithValues: existing.map { ($0.entityID, $0) })
+        let lookup = Dictionary(keepingFirst: existing.map { ($0.entityID, $0) })
         let transaction = makeTransaction(kind: kind)
         var sequence = 0
         var desiredIDs = Set<String>()
@@ -461,6 +461,94 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         try finish(transaction: transaction, operationCount: sequence, kind: kind)
     }
 
+    // MARK: - Single-record payload upsert / delete (Phase 3-1)
+    //
+    // Finer-grained than `savePayloads`: fetches only the one record matching
+    // `key` instead of scanning the whole entity type, so a single update is O(1)
+    // in the number of stored records. Intended for large-data paths and single
+    // edits (import/migration/one-record writes).
+    //
+    // NOTE on coalescing safety: the Store's batch-save paths deliberately keep
+    // using `savePayloads`. Because the coordinator coalesces writes per domain,
+    // a whole-array save is what guarantees no intermediate edit is lost when two
+    // writes merge. Single-record upserts are safe where at most one record
+    // changes per enqueued write (or where writes are not coalesced).
+
+    func upsertPayload<Value: Encodable>(
+        _ value: Value,
+        entityType: String,
+        entityID: String,
+        date: Date?,
+        kind: PersistenceMutationKind
+    ) throws {
+        let key = "\(entityType):\(entityID)"
+        let payload = try CompactPersistenceCoding.encode(value)
+        let existing = try context.fetch(FetchDescriptor<PersistedPayloadRecord>(
+            predicate: #Predicate { $0.key == key }
+        ))
+        let transaction = makeTransaction(kind: kind)
+        var sequence = 0
+        if let record = existing.first {
+            guard record.payload != payload else { return }   // unchanged: skip empty txn
+            recordOperation(
+                transactionID: transaction.id, sequence: &sequence,
+                entityType: entityType, entityID: entityID,
+                before: record.payload, after: payload
+            )
+            record.payload = payload
+            record.dateKey = date
+            record.revision += 1
+            record.updatedAt = .now
+        } else {
+            context.insert(PersistedPayloadRecord(
+                key: key, entityType: entityType, entityID: entityID,
+                dateKey: date, payload: payload
+            ))
+            recordOperation(
+                transactionID: transaction.id, sequence: &sequence,
+                entityType: entityType, entityID: entityID, before: nil, after: payload
+            )
+        }
+        try finish(transaction: transaction, operationCount: sequence, kind: kind)
+    }
+
+    func deletePayload(
+        entityType: String,
+        entityID: String,
+        kind: PersistenceMutationKind
+    ) throws {
+        let key = "\(entityType):\(entityID)"
+        let existing = try context.fetch(FetchDescriptor<PersistedPayloadRecord>(
+            predicate: #Predicate { $0.key == key }
+        ))
+        guard let record = existing.first else { return }
+        let transaction = makeTransaction(kind: kind)
+        var sequence = 0
+        recordOperation(
+            transactionID: transaction.id, sequence: &sequence,
+            entityType: entityType, entityID: entityID, before: record.payload, after: nil
+        )
+        context.delete(record)
+        try finish(transaction: transaction, operationCount: sequence, kind: kind)
+    }
+
+    // Typed single-record convenience wrappers.
+    func upsertCalendarEvent(_ event: CalendarEvent, kind: PersistenceMutationKind = .userEdit) throws {
+        try upsertPayload(event, entityType: PersistenceEntity.calendarEvent, entityID: event.id.uuidString, date: event.startDate, kind: kind)
+    }
+
+    func deleteCalendarEvent(id: String, kind: PersistenceMutationKind = .userEdit) throws {
+        try deletePayload(entityType: PersistenceEntity.calendarEvent, entityID: id, kind: kind)
+    }
+
+    func upsertFocusRecord(_ record: FocusRecord, kind: PersistenceMutationKind = .userEdit) throws {
+        try upsertPayload(record, entityType: PersistenceEntity.focusSession, entityID: record.id.uuidString, date: businessCalendar.date(for: record.day), kind: kind)
+    }
+
+    func upsertDailySummary(_ summary: DailySummary, kind: PersistenceMutationKind = .userEdit) throws {
+        try upsertPayload(summary, entityType: PersistenceEntity.dailyReview, entityID: summary.day.persistenceKey, date: businessCalendar.date(for: summary.day), kind: kind)
+    }
+
     func makeTransaction(kind: PersistenceMutationKind) -> PersistedMutationTransactionRecord {
         let transaction = PersistedMutationTransactionRecord(
             id: kind.transactionID ?? UUID(),
@@ -503,11 +591,11 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         if case let .undoAutomaticDistribution(originalID) = kind {
             let transactions = try context.fetch(FetchDescriptor<PersistedMutationTransactionRecord>())
             if let original = transactions.first(where: { $0.id == originalID }) {
-                original.undoState = "undone"
+                original.undoState = PersistenceUndoState.undone
             }
         }
-        setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
-        setMetadata(key: "migrationState", value: "native")
+        try setMetadata(key: "schemaVersion", value: String(Self.schemaVersion))
+        try setMetadata(key: "migrationState", value: "native")
         // P2 fix: throttle prune to at most once every pruneIntervalSeconds.
         let now = Date.now
         if lastPruneAt == nil || now.timeIntervalSince(lastPruneAt!) >= Self.pruneIntervalSeconds {
@@ -564,8 +652,13 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         ))
     }
 
-    private func setMetadata(key: String, value: String) {
-        let records = (try? context.fetch(FetchDescriptor<PersistenceMetadataRecord>())) ?? []
+    /// Reads and updates a metadata record. Throws on fetch failure (Phase 2-1
+    /// fix): previously a failed fetch was coerced to `[]` via `try?`, which turned
+    /// a real database error into a spurious "insert new record" path — masking the
+    /// error and risking a unique-key conflict on save. Propagating the error lets it
+    /// flow into the unified rollback / protection-mode handling.
+    private func setMetadata(key: String, value: String) throws {
+        let records = try context.fetch(FetchDescriptor<PersistenceMetadataRecord>())
         if let record = records.first(where: { $0.key == key }) {
             record.value = value
             record.updatedAt = .now
@@ -610,9 +703,9 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             toVersion: Self.schemaVersion,
             result: "success"
         ))
-        setMetadata(key: versionKey, value: String(Self.schemaVersion))
-        setMetadata(key: "lastMigrationResult", value: "success")
-        setMetadata(key: "lastMigrationFailureReason", value: "")
+        try setMetadata(key: versionKey, value: String(Self.schemaVersion))
+        try setMetadata(key: "lastMigrationResult", value: "success")
+        try setMetadata(key: "lastMigrationFailureReason", value: "")
         try saveContextOrRollback()
     }
 
@@ -658,7 +751,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
                     kind: $0.kind,
                     createdAt: $0.createdAt,
                     isUndoable: $0.kind == PersistenceMutationKind.automaticDistribution(transactionID: $0.id).title
-                        && $0.undoState == "available"
+                        && $0.undoState == PersistenceUndoState.available
                 )
             },
             now: now,
@@ -667,12 +760,21 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         )
         guard !removableIDs.isEmpty else { return }
 
-        for operation in try context.fetch(FetchDescriptor<PersistedMutationOperationRecord>())
-        where removableIDs.contains(operation.transactionID) {
+        // Phase 3-5 fix: push the transactionID filter into the fetch predicate so
+        // we only load the operations/events we will actually delete, instead of
+        // fetching every row of both tables and filtering in memory (which spiked
+        // as the mutation log grew).
+        let removableIDArray = Array(removableIDs)
+        let removableOperations = try context.fetch(FetchDescriptor<PersistedMutationOperationRecord>(
+            predicate: #Predicate { removableIDArray.contains($0.transactionID) }
+        ))
+        for operation in removableOperations {
             context.delete(operation)
         }
-        for event in try context.fetch(FetchDescriptor<PersistedLifecycleEventRecord>())
-        where removableIDs.contains(event.transactionID) {
+        let removableEvents = try context.fetch(FetchDescriptor<PersistedLifecycleEventRecord>(
+            predicate: #Predicate { removableIDArray.contains($0.transactionID) }
+        ))
+        for event in removableEvents {
             context.delete(event)
         }
         for transaction in transactions where removableIDs.contains(transaction.id) {

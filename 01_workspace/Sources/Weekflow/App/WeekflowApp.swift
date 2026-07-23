@@ -7,9 +7,14 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private let globalDateShortcuts = GlobalDateShortcutService()
     private let focusStatusItemController = FocusStatusItemController()
     private let applicationMenu = WeekflowApplicationMenu()
-    private var checkpointActiveTimer: (() -> Void)?
-    /// P0-1 fix: synchronous termination persist callback.
-    private var terminationPersist: (() -> Void)?
+    /// Checkpoint invoked on system power transitions (sleep/wake). Flushes the
+    /// in-flight active-task timer so elapsed work survives low-power states.
+    private var powerTransitionCheckpoint: (() -> Void)?
+    /// Phase 2-4 fix: the SINGLE, fully-ordered termination checkpoint. Owned and
+    /// triggered exclusively by the AppDelegate so exit persistence is never split
+    /// across View and Delegate. It checkpoints the active timer (flushing elapsed
+    /// time into goals) and THEN performs the synchronous full-app persist.
+    private var terminationCheckpoint: (() -> Void)?
     private let defaultWindowSize = NSSize(
         width: WeekflowLayout.windowWidth,
         height: WeekflowLayout.windowHeight
@@ -54,19 +59,19 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         }
     }
 
-    func installActiveTimerCheckpoint(_ checkpoint: @escaping () -> Void) {
-        checkpointActiveTimer = checkpoint
+    func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {
+        powerTransitionCheckpoint = checkpoint
     }
 
-    /// P0-1 fix: installs the synchronous termination persist callback.
-    func installTerminationPersist(_ persist: @escaping () -> Void) {
-        terminationPersist = persist
+    /// Phase 2-4 fix: installs the single, fully-ordered termination checkpoint.
+    func installTerminationCheckpoint(_ checkpoint: @escaping () -> Void) {
+        terminationCheckpoint = checkpoint
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        checkpointActiveTimer?()
-        // P0-1 fix: flush any pending async writes synchronously before exit.
-        terminationPersist?()
+        // Phase 2-4 fix: the single termination checkpoint performs the full,
+        // correctly-ordered exit sequence (checkpoint active timer → sync persist).
+        terminationCheckpoint?()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         CommandRouter.shared.globalShortcutRefreshHandler = nil
         globalDateShortcuts.shutdown()
@@ -74,7 +79,7 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 
     @objc private func checkpointForSystemPowerTransition(_ notification: Notification) {
-        checkpointActiveTimer?()
+        powerTransitionCheckpoint?()
     }
 
     nonisolated func userNotificationCenter(
@@ -152,11 +157,14 @@ struct WeekflowApp: App {
                 .onAppear {
                     appearancePreference.applyToApplication()
                     appDelegate.installFocusStatusItem(timer: focusTimer)
-                    appDelegate.installActiveTimerCheckpoint {
+                    appDelegate.installPowerTransitionCheckpoint {
                         store.checkpointActiveTaskTimer()
                     }
-                    // P0-1 fix: ensure pending writes are flushed on termination.
-                    appDelegate.installTerminationPersist {
+                    // Phase 2-4 fix: single, ordered termination checkpoint — checkpoint
+                    // the active timer first (flush elapsed into goals), then persist the
+                    // full app snapshot synchronously. Triggered only by the AppDelegate.
+                    appDelegate.installTerminationCheckpoint {
+                        store.checkpointActiveTaskTimer()
                         store.persistForTermination()
                     }
                     appDelegate.installApplicationMenu {

@@ -3,6 +3,16 @@ import Observation
 
 // All persistence orchestration: sync, async, debounced, and entity-specific writes.
 
+/// Per-write carrier for the goals snapshot captured at diff-computation time.
+/// Phase 2-3 fix: replaces the shared `WeekflowStore._pendingGoalSnapshot` slot.
+/// Each enqueued goal write owns its own box, so two in-flight writes can never
+/// overwrite each other's baseline. All access is serialized on MainActor — the
+/// operation writes it inside `MainActor.run`, the commit reads it on MainActor —
+/// hence `@unchecked Sendable`.
+final class GoalSnapshotBox: @unchecked Sendable {
+    var snapshot: [WeeklyGoal]?
+}
+
 extension WeekflowStore {
     func persist(kind: PersistenceMutationKind = .userEdit) {
         if synchronousPersistence {
@@ -24,6 +34,8 @@ extension WeekflowStore {
     /// time, ensuring `persistedGoals` reflects exactly what was written to disk,
     /// not the potentially-newer state from edits made during the write.
     func enqueueGoalPersist(kind: PersistenceMutationKind = .userEdit) {
+        // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
+        let box = GoalSnapshotBox()
         persistenceCoordinator.enqueue(
             domain: "goals",
             label: "周目标与任务",
@@ -40,17 +52,16 @@ extension WeekflowStore {
                 )
                 guard !changes.isEmpty else { return }
                 try await self.storage.applyGoalChangesAsync(changes, kind: kind)
-                // Store the snapshot for commit (P0-1 fix)
+                // Store the snapshot on this write's own box for commit (P0-1 + Phase 2-3).
                 await MainActor.run {
-                    self._pendingGoalSnapshot = currentGoals
+                    box.snapshot = currentGoals
                 }
             },
             commit: { [weak self] in
                 guard let self else { return }
-                // P0-1 fix: use the snapshot captured at diff time, not self.goals
-                if let snapshot = self._pendingGoalSnapshot {
+                // P0-1 fix: use the snapshot captured at diff time, not self.goals.
+                if let snapshot = box.snapshot {
                     self.persistedGoals = snapshot
-                    self._pendingGoalSnapshot = nil
                 } else {
                     self.persistedGoals = self.goals
                 }
@@ -346,6 +357,8 @@ extension WeekflowStore {
         // P1-4 fix: non-blocking write via coordinator.
         // Cancel pending goal writes to avoid conflicts with this combined write.
         persistenceCoordinator.cancelPending(for: "goals")
+        // Phase 2-3 fix: per-write snapshot box instead of a shared Store slot.
+        let box = GoalSnapshotBox()
         // Self-check fix: diff computed OFF MainActor (consistent with P1-5).
         persistenceCoordinator.enqueue(
             domain: "goals",
@@ -364,14 +377,13 @@ extension WeekflowStore {
                     session: session
                 )
                 await MainActor.run {
-                    self._pendingGoalSnapshot = currentGoals
+                    box.snapshot = currentGoals
                 }
             },
             commit: { [weak self] in
                 guard let self else { return }
-                if let snapshot = self._pendingGoalSnapshot {
+                if let snapshot = box.snapshot {
                     self.persistedGoals = snapshot
-                    self._pendingGoalSnapshot = nil
                 } else {
                     self.persistedGoals = self.goals
                 }

@@ -126,6 +126,23 @@ struct LocalStorage: @unchecked Sendable {
         try write { try $0.saveActiveTimerSession(session) }
     }
 
+    // Phase 3-1: single-record upsert / delete (O(1) in stored record count).
+    func upsertCalendarEvent(_ event: CalendarEvent) throws {
+        try write { try $0.upsertCalendarEvent(event, kind: .userEdit) }
+    }
+
+    func deleteCalendarEvent(id: String) throws {
+        try write { try $0.deleteCalendarEvent(id: id, kind: .userEdit) }
+    }
+
+    func upsertFocusRecord(_ record: FocusRecord) throws {
+        try write { try $0.upsertFocusRecord(record, kind: .userEdit) }
+    }
+
+    func upsertDailySummary(_ summary: DailySummary) throws {
+        try write { try $0.upsertDailySummary(summary, kind: .userEdit) }
+    }
+
     func pendingAutomaticDistributionChanges() throws -> [PersistedAutomaticDistributionChange] {
         try read { try $0.pendingAutomaticDistributionChanges() } ?? []
     }
@@ -256,6 +273,22 @@ struct LocalStorage: @unchecked Sendable {
 
     func saveActiveTimerSessionAsync(_ session: TaskTimerSession?) async throws {
         try await writeAsync { try $0.saveActiveTimerSession(session) }
+    }
+
+    func upsertCalendarEventAsync(_ event: CalendarEvent) async throws {
+        try await writeAsync { try $0.upsertCalendarEvent(event, kind: .userEdit) }
+    }
+
+    func deleteCalendarEventAsync(id: String) async throws {
+        try await writeAsync { try $0.deleteCalendarEvent(id: id, kind: .userEdit) }
+    }
+
+    func upsertFocusRecordAsync(_ record: FocusRecord) async throws {
+        try await writeAsync { try $0.upsertFocusRecord(record, kind: .userEdit) }
+    }
+
+    func upsertDailySummaryAsync(_ summary: DailySummary) async throws {
+        try await writeAsync { try $0.upsertDailySummary(summary, kind: .userEdit) }
     }
 
     func saveDailyPlanAndCalendarEventsAsync(

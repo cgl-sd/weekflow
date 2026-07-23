@@ -54,15 +54,37 @@ actor PersistenceActor {
 
     // MARK: - Synchronous bridge (startup & tests only)
 
-    /// Synchronous wrapper that blocks the calling thread until the actor
-    /// completes. Uses the SAME repository as the async path, ensuring a
-    /// single ModelContext per database (P0-1 fix).
+    /// Phase 2-5 fix: maximum time the synchronous bridge will block before
+    /// giving up. Converts a potential infinite hang (e.g. a future misuse that
+    /// deadlocks the actor) into a catchable, logged error. 60s is far beyond any
+    /// legitimate startup / synchronous-save / termination persist.
+    private static let syncBridgeTimeoutSeconds: Double = 60
+
+    /// Synchronous, BLOCKING wrapper. Blocks the calling thread until the actor
+    /// completes. Uses the SAME repository as the async path, ensuring a single
+    /// ModelContext per database (P0-1 fix).
     ///
-    /// - Warning: Only call from non-actor contexts (startup, tests).
-    ///   Never call from within the actor's executor.
-    nonisolated func runSync<Result: Sendable>(
+    /// - Warning: ONLY call from non-actor contexts (startup, synchronous saves,
+    ///   termination, tests). NEVER call from within the PersistenceActor's
+    ///   executor or from an async method isolated to it — the semaphore wait
+    ///   would block the very thread the inner Task needs, deadlocking. From async
+    ///   contexts use `performTransaction` instead.
+    ///
+    /// Phase 2-5 fix: a re-entrancy guard rejects same-thread nested calls, and a
+    /// timeout turns any residual deadlock into `syncBridgeTimedOut` instead of an
+    /// infinite hang.
+    nonisolated func runSyncBlocking<Result: Sendable>(
         _ body: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result {
+        let reentryKey = "weekflow.persistence.syncBridge.active"
+        let threadDict = Thread.current.threadDictionary
+        precondition(
+            threadDict[reentryKey] == nil,
+            "PersistenceActor.runSyncBlocking called re-entrantly on the same thread; this would deadlock. Use the async performTransaction from async contexts."
+        )
+        threadDict[reentryKey] = true
+        defer { threadDict[reentryKey] = nil }
+
         let semaphore = DispatchSemaphore(value: 0)
         let box = ResultBox<Result>()
 
@@ -75,7 +97,10 @@ actor PersistenceActor {
             semaphore.signal()
         }
 
-        semaphore.wait()
+        let waitResult = semaphore.wait(timeout: .now() + Self.syncBridgeTimeoutSeconds)
+        guard waitResult == .success else {
+            throw PersistenceActorError.syncBridgeTimedOut
+        }
 
         if let error = box.error { throw error }
         guard let value = box.value else {
@@ -163,7 +188,7 @@ enum PersistenceActorBridge {
         on actor: PersistenceActor,
         _ body: @Sendable @escaping (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result {
-        try actor.runSync(body)
+        try actor.runSyncBlocking(body)
     }
 
     /// Async – suspends the calling task without blocking the thread.
@@ -178,6 +203,17 @@ enum PersistenceActorBridge {
 
 enum PersistenceActorError: LocalizedError {
     case missingResult
+    /// Phase 2-5 fix: the synchronous bridge blocked past its timeout, which
+    /// strongly suggests a deadlock or a severely degraded database. Surfacing an
+    /// error is strictly better than hanging the app forever.
+    case syncBridgeTimedOut
 
-    var errorDescription: String? { "持久化 Actor 未返回事务结果" }
+    var errorDescription: String? {
+        switch self {
+        case .missingResult:
+            return "持久化 Actor 未返回事务结果"
+        case .syncBridgeTimedOut:
+            return "持久化同步桥等待超时（可能存在死锁或数据库严重异常）"
+        }
+    }
 }

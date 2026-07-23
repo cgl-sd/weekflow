@@ -156,8 +156,8 @@ struct PersistenceGoalChangeSet: Equatable {
     }
 
     static func difference(before: [WeeklyGoal], after: [WeeklyGoal]) -> Self {
-        let oldGoals = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
-        let newGoals = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0) })
+        let oldGoals = Dictionary(keepingFirst: before.map { ($0.id, $0) })
+        let newGoals = Dictionary(keepingFirst: after.map { ($0.id, $0) })
         var result = Self()
         result.goalIDsToDelete = oldGoals.keys.filter { newGoals[$0] == nil }
         for goal in after {
@@ -168,10 +168,10 @@ struct PersistenceGoalChangeSet: Equatable {
             if oldEnvelope != envelope { result.goalsToUpsert.append(goal) }
         }
 
-        let oldTasks = Dictionary(uniqueKeysWithValues: before.flatMap { goal in
+        let oldTasks = Dictionary(keepingFirst: before.flatMap { goal in
             goal.tasks.map { ($0.id, PersistedTaskUpsert(goalID: goal.id, task: $0)) }
         })
-        let newTasks = Dictionary(uniqueKeysWithValues: after.flatMap { goal in
+        let newTasks = Dictionary(keepingFirst: after.flatMap { goal in
             goal.tasks.map { ($0.id, PersistedTaskUpsert(goalID: goal.id, task: $0)) }
         })
         result.taskIDsToDelete = oldTasks.keys.filter { newTasks[$0] == nil }
@@ -197,6 +197,11 @@ protocol WeekflowPersistenceRepository: AnyObject {
     func saveFocusRecords(_ records: [FocusRecord], kind: PersistenceMutationKind) throws
     func saveDailySummaries(_ summaries: [DailySummary], kind: PersistenceMutationKind) throws
     func saveActiveTimerSession(_ session: TaskTimerSession?) throws
+    // Phase 3-1: single-record upsert / delete (O(1) in stored record count).
+    func upsertCalendarEvent(_ event: CalendarEvent, kind: PersistenceMutationKind) throws
+    func deleteCalendarEvent(id: String, kind: PersistenceMutationKind) throws
+    func upsertFocusRecord(_ record: FocusRecord, kind: PersistenceMutationKind) throws
+    func upsertDailySummary(_ summary: DailySummary, kind: PersistenceMutationKind) throws
     func importLegacySnapshot(_ snapshot: WeekflowPersistenceSnapshot) throws
     func saveApplicationSnapshot(
         _ snapshot: WeekflowPersistenceSnapshot,

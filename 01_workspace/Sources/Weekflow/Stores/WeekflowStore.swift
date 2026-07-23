@@ -27,7 +27,10 @@ final class WeekflowStore {
     /// P1-3 fix: encapsulates timer settlement domain logic (actual time
     /// computation, change records, completion credits).
     let timerCoordinator: TimerCoordinator
-    var goals: [WeeklyGoal]
+    var goals: [WeeklyGoal] {
+        // Phase 3-2 fix: any mutation invalidates the derived goal-list caches.
+        didSet { invalidateDerivedGoalCaches() }
+    }
     var selectedGoalID: WeeklyGoal.ID?
     var channels: [TaskChannel]
     var calendarEvents: [CalendarEvent]
@@ -71,9 +74,15 @@ final class WeekflowStore {
     /// P2-7 fix: O(1) goal lookup index. Rebuilt lazily after any mutation to
     /// the goals array via `invalidateGoalIndex()`.
     @ObservationIgnored var goalIndexCache: [UUID: Int]?
-    /// P0-1 fix: holds the goals snapshot captured at diff-computation time,
-    /// used by the async commit to set persistedGoals to exactly what was written.
-    @ObservationIgnored var _pendingGoalSnapshot: [WeeklyGoal]?
+    /// Phase 3-2 fix: caches for the derived goal lists, invalidated by
+    /// `goals.didSet`. Reading activeGoals → activeTasks → taskPool within one
+    /// SwiftUI render no longer re-filters/re-sorts the whole goals array each
+    /// time; the first read computes, subsequent reads in the same revision hit.
+    @ObservationIgnored var activeGoalsCache: [WeeklyGoal]?
+    @ObservationIgnored var archivedGoalsCache: [WeeklyGoal]?
+    @ObservationIgnored var deletedGoalsCache: [WeeklyGoal]?
+    @ObservationIgnored var activeTasksCache: [(goal: WeeklyGoal, task: WeekTask)]?
+    @ObservationIgnored var taskPoolCache: [(goal: WeeklyGoal, task: WeekTask)]?
     /// When true, `persist()` blocks synchronously. Tests set this so they can
     /// reload from disk immediately after mutations without awaiting async I/O.
     var synchronousPersistence = false
@@ -100,6 +109,18 @@ final class WeekflowStore {
         self.developmentFixture = developmentFixture
         self.legacyPreferences = legacyPreferences
         self.businessCalendar = businessCalendar
+        // Phase 3-4 fix: unify the process-wide calendar that the model/UI
+        // compatibility layer reads (`SystemBusinessCalendar.current`) with the
+        // Store's injected calendar, so views never diverge from the Store's date
+        // computations (e.g. after a timezone change or a fixed-calendar inject).
+        // Guarded on `override == nil` so a test that deliberately installs its own
+        // override before creating a Store keeps precedence. Only concrete
+        // `BusinessCalendar` providers are published; custom test providers install
+        // their own override.
+        if SystemBusinessCalendar.override == nil,
+           let concrete = businessCalendar as? BusinessCalendar {
+            SystemBusinessCalendar.override = concrete
+        }
         self.taskService = TaskService(businessCalendar: businessCalendar)
         self.archiveService = ArchiveService(businessCalendar: businessCalendar)
         self.planningService = PlanningService(businessCalendar: businessCalendar)
@@ -231,7 +252,7 @@ final class WeekflowStore {
     func migrateLegacyChannelPresentationIfNeeded() -> Bool {
         let migrationKey = "weekflow.channels.presentationMigration.v1"
         guard !legacyPreferences.bool(forKey: migrationKey) else { return false }
-        let defaultsByID = Dictionary(uniqueKeysWithValues: TaskChannel.defaults.map { ($0.id, $0) })
+        let defaultsByID = Dictionary(keepingFirst: TaskChannel.defaults.map { ($0.id, $0) })
         for index in channels.indices {
             guard let defaultChannel = defaultsByID[channels[index].id] else { continue }
             if channels[index].iconName == nil {
@@ -265,32 +286,69 @@ final class WeekflowStore {
     var selectedGoal: WeeklyGoal? {
         selectedGoalID.flatMap { id in goalIndex(for: id).map { goals[$0] } }
     }
+    /// Phase 3-2 fix: clears the derived goal-list caches. Called from
+    /// `goals.didSet` so any goals mutation invalidates every cached projection.
+    private func invalidateDerivedGoalCaches() {
+        activeGoalsCache = nil
+        archivedGoalsCache = nil
+        deletedGoalsCache = nil
+        activeTasksCache = nil
+        taskPoolCache = nil
+    }
+
     var activeGoals: [WeeklyGoal] {
-        goals.filter { !$0.isArchived && !$0.isDeleted }.sorted {
+        // Touch `goals` so @Observable registers the dependency even on a hit.
+        let source = goals
+        if let cached = activeGoalsCache { return cached }
+        let computed = source.filter { !$0.isArchived && !$0.isDeleted }.sorted {
             if $0.isPinned != $1.isPinned { return $0.isPinned }
             if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
             return $0.endDate < $1.endDate
         }
+        activeGoalsCache = computed
+        return computed
     }
     var archivedGoals: [WeeklyGoal] {
-        goals.filter { $0.isArchived && !$0.isDeleted }
+        let source = goals
+        if let cached = archivedGoalsCache { return cached }
+        let computed = source.filter { $0.isArchived && !$0.isDeleted }
             .sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) }
+        archivedGoalsCache = computed
+        return computed
     }
     var deletedGoals: [WeeklyGoal] {
-        goals.filter(\.isDeleted)
+        let source = goals
+        if let cached = deletedGoalsCache { return cached }
+        let computed = source.filter(\.isDeleted)
             .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+        deletedGoalsCache = computed
+        return computed
     }
     var todayTasks: [(goal: WeeklyGoal, task: WeekTask)] {
         tasks(on: .now)
     }
     var activeTasks: [(goal: WeeklyGoal, task: WeekTask)] {
-        activeGoals.flatMap { goal in
+        if let cached = activeTasksCache {
+            _ = goals   // register observation on cache hit
+            return cached
+        }
+        let computed = activeGoals.flatMap { goal in
             goal.tasks
                 .filter { !$0.isArchived && !$0.isDeleted }
                 .map { (goal, $0) }
         }
+        activeTasksCache = computed
+        return computed
     }
-    var taskPool: [(goal: WeeklyGoal, task: WeekTask)] { activeTasks.filter { $0.task.isUnassigned } }
+    var taskPool: [(goal: WeeklyGoal, task: WeekTask)] {
+        if let cached = taskPoolCache {
+            _ = goals   // register observation on cache hit
+            return cached
+        }
+        let computed = activeTasks.filter { $0.task.isUnassigned }
+        taskPoolCache = computed
+        return computed
+    }
     var weeklyPlanningPoolEntries: [(goal: WeeklyGoal, task: WeekTask)] {
         activeGoals.flatMap { goal in
             if goal.subgoals.isEmpty {
@@ -447,7 +505,7 @@ final class WeekflowStore {
 
     func sortTasksByStartTime(on date: Date) {
         let currentEntries = tasks(on: date)
-        let currentPositions = Dictionary(uniqueKeysWithValues: currentEntries.enumerated().map { index, entry in
+        let currentPositions = Dictionary(keepingFirst: currentEntries.enumerated().map { index, entry in
             (TaskReference(goalID: entry.goal.id, taskID: entry.task.id), index)
         })
         var timedEntries = currentEntries
@@ -491,7 +549,7 @@ final class WeekflowStore {
     /// Returns the index of a goal by ID in O(1) amortized time.
     func goalIndex(for id: UUID) -> Int? {
         if let cache = goalIndexCache { return cache[id] }
-        let cache = Dictionary(uniqueKeysWithValues: goals.enumerated().map { ($1.id, $0) })
+        let cache = Dictionary(keepingFirst: goals.enumerated().map { ($1.id, $0) })
         goalIndexCache = cache
         return cache[id]
     }
@@ -536,7 +594,7 @@ final class WeekflowStore {
         promotedTask: TaskReference? = nil
     ) {
         let currentEntries = tasks(on: date)
-        let currentPositions = Dictionary(uniqueKeysWithValues: currentEntries.enumerated().map { index, entry in
+        let currentPositions = Dictionary(keepingFirst: currentEntries.enumerated().map { index, entry in
             (TaskReference(goalID: entry.goal.id, taskID: entry.task.id), index)
         })
         let orderedEntries: [(goal: WeeklyGoal, task: WeekTask)]
