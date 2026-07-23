@@ -218,3 +218,40 @@ struct GoalService: GoalServicing {
         )
     }
 }
+
+// MARK: - R08: pure query projections over a goal collection.
+//
+// These move the goal/task read-model rules out of the store and into the
+// service layer, where they have a single, directly-testable home. The store
+// keeps observation + caching and delegates the computation here.
+extension GoalService {
+    func activeGoals(in goals: [WeeklyGoal]) -> [WeeklyGoal] {
+        goals.filter { !$0.isArchived && !$0.isDeleted }.sorted {
+            if $0.isPinned != $1.isPinned { return $0.isPinned }
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.endDate < $1.endDate
+        }
+    }
+
+    func archivedGoals(in goals: [WeeklyGoal]) -> [WeeklyGoal] {
+        goals.filter { $0.isArchived && !$0.isDeleted }
+            .sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) }
+    }
+
+    func deletedGoals(in goals: [WeeklyGoal]) -> [WeeklyGoal] {
+        goals.filter(\.isDeleted)
+            .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+    }
+
+    func activeTasks(in goals: [WeeklyGoal]) -> [(goal: WeeklyGoal, task: WeekTask)] {
+        activeGoals(in: goals).flatMap { goal in
+            goal.tasks
+                .filter { !$0.isArchived && !$0.isDeleted }
+                .map { (goal, $0) }
+        }
+    }
+
+    func taskPool(in goals: [WeeklyGoal]) -> [(goal: WeeklyGoal, task: WeekTask)] {
+        activeTasks(in: goals).filter { $0.task.isUnassigned }
+    }
+}

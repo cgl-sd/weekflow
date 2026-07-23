@@ -305,27 +305,21 @@ final class WeekflowStore {
         // Touch `goals` so @Observable registers the dependency even on a hit.
         let source = goals
         if let cached = activeGoalsCache { return cached }
-        let computed = source.filter { !$0.isArchived && !$0.isDeleted }.sorted {
-            if $0.isPinned != $1.isPinned { return $0.isPinned }
-            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
-            return $0.endDate < $1.endDate
-        }
+        let computed = goalService.activeGoals(in: source)
         activeGoalsCache = computed
         return computed
     }
     var archivedGoals: [WeeklyGoal] {
         let source = goals
         if let cached = archivedGoalsCache { return cached }
-        let computed = source.filter { $0.isArchived && !$0.isDeleted }
-            .sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) }
+        let computed = goalService.archivedGoals(in: source)
         archivedGoalsCache = computed
         return computed
     }
     var deletedGoals: [WeeklyGoal] {
         let source = goals
         if let cached = deletedGoalsCache { return cached }
-        let computed = source.filter(\.isDeleted)
-            .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+        let computed = goalService.deletedGoals(in: source)
         deletedGoalsCache = computed
         return computed
     }
@@ -337,11 +331,7 @@ final class WeekflowStore {
             _ = goals   // register observation on cache hit
             return cached
         }
-        let computed = activeGoals.flatMap { goal in
-            goal.tasks
-                .filter { !$0.isArchived && !$0.isDeleted }
-                .map { (goal, $0) }
-        }
+        let computed = goalService.activeTasks(in: goals)
         activeTasksCache = computed
         return computed
     }
@@ -350,7 +340,7 @@ final class WeekflowStore {
             _ = goals   // register observation on cache hit
             return cached
         }
-        let computed = activeTasks.filter { $0.task.isUnassigned }
+        let computed = goalService.taskPool(in: goals)
         taskPoolCache = computed
         return computed
     }
