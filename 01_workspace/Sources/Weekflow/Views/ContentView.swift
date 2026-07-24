@@ -543,13 +543,21 @@ struct ContentView: View {
         case .weeklyReview:
             WeeklyReviewView(store: store, referenceDate: weeklyReferenceDate)
         case .archive:
-            ArchiveSummaryView(store: store, selectedChannelID: selectedTaskChannel) { entry in
+            ArchiveSummaryView(store: store, selectedChannelID: selectedTaskChannel, openTask: { entry in
                 presentedTask = TaskDetailTarget(goalID: entry.goal.id, taskID: entry.task.id)
-            }
+            }, openGoal: { goal in
+                if let taskID = goal.primaryTaskID ?? goal.tasks.first?.id {
+                    presentedTask = TaskDetailTarget(goalID: goal.id, taskID: taskID, isWeeklyGoalDetail: true)
+                }
+            })
         case .trash:
-            TrashSummaryView(store: store, selectedChannelID: selectedTaskChannel) { entry in
+            TrashSummaryView(store: store, selectedChannelID: selectedTaskChannel, openTask: { entry in
                 presentedTask = TaskDetailTarget(goalID: entry.goal.id, taskID: entry.task.id)
-            }
+            }, openGoal: { goal in
+                if let taskID = goal.primaryTaskID ?? goal.tasks.first?.id {
+                    presentedTask = TaskDetailTarget(goalID: goal.id, taskID: taskID, isWeeklyGoalDetail: true)
+                }
+            })
         }
     }
 

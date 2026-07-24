@@ -10,25 +10,27 @@ struct ArchiveSummaryView: View {
     @Bindable var store: WeekflowStore
     let selectedChannelID: String
     let openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)?
+    let openGoal: ((WeeklyGoal) -> Void)?
     private let usesScrollContainer: Bool
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
     @State private var plansExpanded = true
     @State private var searchText = ""
     @State private var detailPlan: WeeklyPlan?
-    @State private var detailGoal: WeeklyGoal?
     @FocusState private var isSearchFocused: Bool
 
     init(
         store: WeekflowStore,
         selectedChannelID: String = "all",
         usesScrollContainer: Bool = true,
-        openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)? = nil
+        openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)? = nil,
+        openGoal: ((WeeklyGoal) -> Void)? = nil
     ) {
         self.store = store
         self.selectedChannelID = selectedChannelID
         self.usesScrollContainer = usesScrollContainer
         self.openTask = openTask
+        self.openGoal = openGoal
     }
 
     var body: some View {
@@ -45,9 +47,6 @@ struct ArchiveSummaryView: View {
         .background(WeekflowPalette.appBackground)
         .sheet(item: $detailPlan) { plan in
             PlanDetailView(store: store, plan: plan)
-        }
-        .sheet(item: $detailGoal) { goal in
-            ArchivedGoalDetailView(goal: goal)
         }
     }
 
@@ -226,7 +225,7 @@ struct ArchiveSummaryView: View {
     private func archivedGoalCard(_ goal: WeeklyGoal) -> some View {
         let completed = goal.subgoals.filter(\.isCompleted).count
         return ArchiveItemCard(symbol: "archivebox") {
-            WeekflowButton { detailGoal = goal } label: {
+            WeekflowButton { openGoal?(goal) } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(goal.title)
                         .font(.system(size: 14, weight: .medium))
@@ -471,7 +470,7 @@ struct PlanDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var planGoals: [WeeklyGoal] {
-        store.goals.filter { $0.planID == plan.id || ($0.planID == nil && $0.archivedAt != nil) }
+        store.goals.filter { $0.planID == plan.id }
     }
 
     var body: some View {

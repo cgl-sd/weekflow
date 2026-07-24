@@ -4,6 +4,7 @@ struct TrashSummaryView: View {
     @Bindable var store: WeekflowStore
     let selectedChannelID: String
     let openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)?
+    let openGoal: ((WeeklyGoal) -> Void)?
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
     @State private var plansExpanded = true
@@ -12,17 +13,18 @@ struct TrashSummaryView: View {
     @State private var isConfirmingDeleteAllGoals = false
     @State private var isConfirmingDeleteAllPlans = false
     @State private var detailPlan: WeeklyPlan?
-    @State private var detailGoal: WeeklyGoal?
     @FocusState private var isSearchFocused: Bool
 
     init(
         store: WeekflowStore,
         selectedChannelID: String = "all",
-        openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)? = nil
+        openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)? = nil,
+        openGoal: ((WeeklyGoal) -> Void)? = nil
     ) {
         self.store = store
         self.selectedChannelID = selectedChannelID
         self.openTask = openTask
+        self.openGoal = openGoal
     }
 
     var body: some View {
@@ -74,7 +76,7 @@ struct TrashSummaryView: View {
                     } else {
                         ForEach(filteredGoals) { goal in
                             TrashGoalCard(store: store, goal: goal) {
-                                detailGoal = goal
+                                openGoal?(goal)
                             }
                         }
                     }
@@ -112,9 +114,6 @@ struct TrashSummaryView: View {
         .background(WeekflowPalette.appBackground)
         .sheet(item: $detailPlan) { plan in
             PlanDetailView(store: store, plan: plan)
-        }
-        .sheet(item: $detailGoal) { goal in
-            ArchivedGoalDetailView(goal: goal)
         }
     }
 
