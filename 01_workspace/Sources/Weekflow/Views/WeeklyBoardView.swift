@@ -115,6 +115,25 @@ struct WeeklyBoardView: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $showsNewPlanDialog) {
+            NewPlanDialog(store: store, defaultStart: planningStartDate, defaultEnd: planningEndDate)
+        }
+        .confirmationDialog(
+            "归档本周规划",
+            isPresented: $showsArchivePlanConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("归档规划及其下所有目标", role: .destructive) {
+                if let plan = store.activePlan {
+                    store.archivePlan(id: plan.id)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            if let plan = store.activePlan {
+                Text("将归档「\(plan.title)」及其下 \(store.goalsForPlan(plan.id).count) 个目标")
+            }
+        }
     }
 
     private var header: some View {
@@ -135,22 +154,6 @@ struct WeeklyBoardView: View {
             .modifier(TaskPopoverInteractiveHighlight(cornerRadius: 7))
             .anchorPreference(key: WeeklyPlanningRangeAnchorPreferenceKey.self, value: .bounds) { $0 }
 
-            // Plan lifecycle buttons
-            HStack(spacing: 6) {
-                WeeklyPlanIconButton(
-                    symbol: "plus.calendar",
-                    help: "新建本周规划"
-                ) { showsNewPlanDialog = true }
-
-                if store.activePlan != nil {
-                    WeeklyPlanIconButton(
-                        symbol: "archivebox",
-                        help: "归档本周规划"
-                    ) { showsArchivePlanConfirmation = true }
-                }
-            }
-            .padding(.bottom, 4)
-
             Spacer()
             WeeklyHeaderActionButton(
                 title: "新建周目标",
@@ -166,25 +169,6 @@ struct WeeklyBoardView: View {
                 .disabled(store.weeklyPlanningPoolEntries.isEmpty)
             if store.canUndoAutomaticDistribution {
                 WeeklyHeaderUndoButton(action: store.undoAutomaticDistribution)
-            }
-        }
-        .sheet(isPresented: $showsNewPlanDialog) {
-            NewPlanDialog(store: store, defaultStart: planningStartDate, defaultEnd: planningEndDate)
-        }
-        .confirmationDialog(
-            "归档本周规划",
-            isPresented: $showsArchivePlanConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("归档规划及其下所有目标", role: .destructive) {
-                if let plan = store.activePlan {
-                    store.archivePlan(id: plan.id)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            if let plan = store.activePlan {
-                Text("将归档「\(plan.title)」及其下 \(store.goalsForPlan(plan.id).count) 个目标")
             }
         }
     }
@@ -349,7 +333,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 236, height: 306)
+        let panelSize = CGSize(width: 340, height: 306)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -362,6 +346,16 @@ struct WeeklyBoardView: View {
                 HStack(spacing: 6) {
                     planningBoundaryButton(.start, date: planningStartDate)
                     planningBoundaryButton(.end, date: planningEndDate)
+                    planningActionButton(
+                        title: "新建",
+                        symbol: "plus.calendar"
+                    ) { showsNewPlanDialog = true }
+                    if store.activePlan != nil {
+                        planningActionButton(
+                            title: "归档",
+                            symbol: "archivebox"
+                        ) { showsArchivePlanConfirmation = true }
+                    }
                 }
 
                 CompactTaskMonthCalendar(
@@ -377,8 +371,9 @@ struct WeeklyBoardView: View {
                 )
                 .padding(8)
                 .frame(
-                    width: WeekflowLayout.taskDetailDateMenuWidth,
-                    height: WeekflowLayout.taskDetailCalendarMenuHeight
+                    maxWidth: .infinity,
+                    minHeight: WeekflowLayout.taskDetailCalendarMenuHeight,
+                    maxHeight: WeekflowLayout.taskDetailCalendarMenuHeight
                 )
             }
             .padding(8)
@@ -468,6 +463,35 @@ struct WeeklyBoardView: View {
                             : WeekflowPalette.border,
                         lineWidth: 1
                     )
+            }
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+    }
+
+    private func planningActionButton(
+        title: String,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        WeekflowButton(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.textMuted)
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.textPrimary)
+            }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .background(
+                WeekflowPalette.surfaceHover,
+                in: WeekflowRoundedRectangle(cornerRadius: 6)
+            )
+            .overlay {
+                WeekflowRoundedRectangle(cornerRadius: 6)
+                    .stroke(WeekflowPalette.border, lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -601,33 +625,6 @@ struct WeeklyHeaderUndoButton: View {
         .pointingHandCursor()
         .onHover { isHovering = $0 }
         .help("撤销最近一次自动分配")
-    }
-}
-
-/// Small icon button for plan lifecycle actions (new plan / archive plan).
-struct WeeklyPlanIconButton: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        WeekflowButton(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isHovering ? WeekflowPalette.textPrimary : WeekflowPalette.textMuted)
-                .frame(width: 30, height: 30)
-                .background(
-                    isHovering ? WeekflowPalette.surfaceHover : .clear,
-                    in: WeekflowRoundedRectangle(cornerRadius: 6)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.1), value: isHovering)
-        .help(help)
     }
 }
 
