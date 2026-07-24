@@ -40,6 +40,14 @@ struct TaskDetailView: View {
         store.activeTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
             ?? store.archivedTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
             ?? store.deletedTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
+            ?? directEntry
+    }
+
+    /// Fallback: find task directly in goals (covers archived/deleted goals whose tasks aren't individually archived).
+    private var directEntry: (goal: WeeklyGoal, task: WeekTask)? {
+        guard let goal = store.goals.first(where: { $0.id == target.goalID }),
+              let task = goal.tasks.first(where: { $0.id == target.taskID }) else { return nil }
+        return (goal, task)
     }
 
     init(
@@ -135,7 +143,20 @@ struct TaskDetailView: View {
                         .onTapGesture { activeMenu = nil }
                 }
             } else {
-                ContentUnavailableView("任务不存在", systemImage: "exclamationmark.triangle")
+                VStack(spacing: 16) {
+                    ContentUnavailableView("任务不存在", systemImage: "exclamationmark.triangle")
+                    WeekflowButton { closeDetail() } label: {
+                        Text("关闭")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(WeekflowPalette.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 7)
+                            .background(WeekflowPalette.surfaceHover, in: Capsule())
+                            .overlay(Capsule().stroke(WeekflowPalette.border))
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                }
             }
         }
         .frame(
