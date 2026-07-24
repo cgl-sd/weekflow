@@ -130,17 +130,65 @@ extension WeekflowStore {
         let previousDistributionChanges = automaticDistributionChanges.filter {
             $0.transactionID != transactionID
         }
-        if !persistSync(kind: .automaticDistribution(transactionID: transactionID)) {
-            automaticDistributionChanges = previousDistributionChanges
+        if synchronousPersistence {
+            if !persistSync(kind: .automaticDistribution(transactionID: transactionID)) {
+                automaticDistributionChanges = previousDistributionChanges
+            }
+        } else {
+            // Non-blocking: enqueue on the coordinator. The single writer queue
+            // guarantees ordering after the preceding commit enqueue.
+            let currentGoals = goals
+            let baselineGoals = persistedGoals
+            persistenceCoordinator.enqueue(
+                domain: "goals",
+                label: "自动分配",
+                operation: { [weak self] in
+                    guard let self else { return }
+                    try PersistenceIdentityValidator.validate(goals: currentGoals)
+                    let changes = PersistenceGoalChangeSet.difference(
+                        before: baselineGoals,
+                        after: currentGoals
+                    )
+                    guard !changes.isEmpty else { return }
+                    try await self.storage.applyGoalChangesAsync(
+                        changes,
+                        kind: .automaticDistribution(transactionID: transactionID)
+                    )
+                },
+                commit: { [weak self] in
+                    self?.persistedGoals = currentGoals
+                },
+                rollback: { [weak self] in
+                    guard let self else { return }
+                    self.goals = self.persistedGoals
+                    self.invalidateGoalIndex()
+                    self.automaticDistributionChanges = previousDistributionChanges
+                }
+            )
         }
     }
 
     @discardableResult
     func commitAutomaticDistribution() -> Bool {
         if let transactionID = automaticDistributionChanges.first?.transactionID {
-            guard persistSafely("自动分配", operation: {
-                try storage.commitAutomaticDistribution(transactionID: transactionID)
-            }, commit: {}, rollback: {}) else { return false }
+            if synchronousPersistence {
+                guard persistSafely("自动分配", operation: {
+                    try storage.commitAutomaticDistribution(transactionID: transactionID)
+                }, commit: {}, rollback: {}) else { return false }
+            } else {
+                // Non-blocking: enqueue the metadata commit on the coordinator.
+                // If it fails, protection mode activates and subsequent writes
+                // are dropped automatically by the coordinator.
+                persistenceCoordinator.enqueue(
+                    domain: "distributionCommit",
+                    label: "确认自动分配",
+                    operation: { [weak self] in
+                        try await self?.storage.commitAutomaticDistributionAsync(transactionID: transactionID)
+                    },
+                    commit: {},
+                    rollback: {}
+                )
+            }
         }
         automaticDistributionChanges.removeAll(keepingCapacity: true)
         return true
@@ -173,14 +221,47 @@ extension WeekflowStore {
             guard let goalIndex = goals.firstIndex(where: { $0.id == goalID }) else { continue }
             goals[goalIndex] = goalService.project(goals[goalIndex])
         }
-        if let transactionID {
-            if persistSync(kind: .undoAutomaticDistribution(transactionID: transactionID)) {
-                automaticDistributionChanges = []
+        if synchronousPersistence {
+            if let transactionID {
+                if persistSync(kind: .undoAutomaticDistribution(transactionID: transactionID)) {
+                    automaticDistributionChanges = []
+                }
+            } else {
+                if persistSync() {
+                    automaticDistributionChanges = []
+                }
             }
         } else {
-            if persistSync() {
-                automaticDistributionChanges = []
-            }
+            // Non-blocking: enqueue on the coordinator with the appropriate kind.
+            let kind: PersistenceMutationKind = transactionID.map {
+                .undoAutomaticDistribution(transactionID: $0)
+            } ?? .userEdit
+            let currentGoals = goals
+            let baselineGoals = persistedGoals
+            persistenceCoordinator.enqueue(
+                domain: "goals",
+                label: "撤销自动分配",
+                operation: { [weak self] in
+                    guard let self else { return }
+                    try PersistenceIdentityValidator.validate(goals: currentGoals)
+                    let changes = PersistenceGoalChangeSet.difference(
+                        before: baselineGoals,
+                        after: currentGoals
+                    )
+                    guard !changes.isEmpty else { return }
+                    try await self.storage.applyGoalChangesAsync(changes, kind: kind)
+                },
+                commit: { [weak self] in
+                    guard let self else { return }
+                    self.persistedGoals = currentGoals
+                    self.automaticDistributionChanges = []
+                },
+                rollback: { [weak self] in
+                    guard let self else { return }
+                    self.goals = self.persistedGoals
+                    self.invalidateGoalIndex()
+                }
+            )
         }
     }
 

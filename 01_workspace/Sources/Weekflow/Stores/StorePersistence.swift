@@ -277,142 +277,15 @@ extension WeekflowStore {
         )
     }
 
-    func persistCalendarEvents() {
-        if synchronousPersistence {
-            persistSafely(
-                "日历事件",
-                operation: { try storage.saveCalendarEvents(calendarEvents) },
-                commit: { persistedCalendarEvents = calendarEvents },
-                rollback: { calendarEvents = persistedCalendarEvents }
-            )
-            return
-        }
-        // P1-4 fix: non-blocking write via coordinator.
-        // Self-check fix: dedicated domain prevents coalescing data loss.
-        let snapshot = calendarEvents
-        let rollbackSnapshot = persistedCalendarEvents
-        persistenceCoordinator.enqueue(
-            domain: "calendarEvents",
-            label: "日历事件",
-            operation: { [weak self] in
-                try await self?.storage.saveCalendarEventsAsync(snapshot)
-            },
-            commit: { [weak self] in self?.persistedCalendarEvents = snapshot },
-            rollback: { [weak self] in self?.calendarEvents = rollbackSnapshot }
-        )
-    }
-
-    func persistDailyPlanningStates() {
-        if synchronousPersistence {
-            persistSafely(
-                "每日计划",
-                operation: { try storage.saveDailyPlanningStates(dailyPlanningStates) },
-                commit: { persistedDailyPlanningStates = dailyPlanningStates },
-                rollback: { dailyPlanningStates = persistedDailyPlanningStates }
-            )
-            return
-        }
-        // P1-4 fix: non-blocking write via coordinator.
-        // Self-check fix: dedicated domain prevents coalescing data loss.
-        let snapshot = dailyPlanningStates
-        let rollbackSnapshot = persistedDailyPlanningStates
-        persistenceCoordinator.enqueue(
-            domain: "dailyPlanning",
-            label: "每日计划",
-            operation: { [weak self] in
-                try await self?.storage.saveDailyPlanningStatesAsync(snapshot)
-            },
-            commit: { [weak self] in self?.persistedDailyPlanningStates = snapshot },
-            rollback: { [weak self] in self?.dailyPlanningStates = rollbackSnapshot }
-        )
-    }
-
-    func persistDailyPlanAndCalendarEvents() {
-        if synchronousPersistence {
-            persistSafely(
-                "每日计划与日历事件",
-                operation: {
-                    try storage.saveDailyPlanAndCalendarEvents(
-                        states: dailyPlanningStates,
-                        events: calendarEvents
-                    )
-                },
-                commit: {
-                    persistedDailyPlanningStates = dailyPlanningStates
-                    persistedCalendarEvents = calendarEvents
-                },
-                rollback: {
-                    dailyPlanningStates = persistedDailyPlanningStates
-                    calendarEvents = persistedCalendarEvents
-                }
-            )
-            return
-        }
-        // Atomic async write: both entities in ONE transaction on a dedicated
-        // domain so they always succeed or fail together.
-        let statesSnapshot = dailyPlanningStates
-        let eventsSnapshot = calendarEvents
-        let rollbackStates = persistedDailyPlanningStates
-        let rollbackEvents = persistedCalendarEvents
-        persistenceCoordinator.enqueue(
-            domain: "dailyPlanCalendar",
-            label: "每日计划与日历事件",
-            operation: { [weak self] in
-                try await self?.storage.saveDailyPlanAndCalendarEventsAsync(
-                    states: statesSnapshot,
-                    events: eventsSnapshot
-                )
-            },
-            commit: { [weak self] in
-                self?.persistedDailyPlanningStates = statesSnapshot
-                self?.persistedCalendarEvents = eventsSnapshot
-            },
-            rollback: { [weak self] in
-                self?.dailyPlanningStates = rollbackStates
-                self?.calendarEvents = rollbackEvents
-            }
-        )
-    }
-
-    func persistFocusRecords() {
-        if synchronousPersistence {
-            persistSafely(
-                "专注记录",
-                operation: { try storage.saveFocusRecords(focusRecords) },
-                commit: { persistedFocusRecords = focusRecords },
-                rollback: { focusRecords = persistedFocusRecords }
-            )
-            return
-        }
-        // Non-blocking: focus records are append-only and don't need sync
-        // confirmation for interactive responsiveness (P1-7).
-        persistFocusRecordsAsync()
-    }
-
-    func persistDailySummaries() {
-        if synchronousPersistence {
-            persistSafely(
-                "每日总结",
-                operation: { try storage.saveDailySummaries(dailySummaries) },
-                commit: { persistedDailySummaries = dailySummaries },
-                rollback: { dailySummaries = persistedDailySummaries }
-            )
-            return
-        }
-        // P1-4 fix: non-blocking write via coordinator.
-        // Self-check fix: dedicated domain prevents coalescing data loss.
-        let snapshot = dailySummaries
-        let rollbackSnapshot = persistedDailySummaries
-        persistenceCoordinator.enqueue(
-            domain: "dailySummaries",
-            label: "每日总结",
-            operation: { [weak self] in
-                try await self?.storage.saveDailySummariesAsync(snapshot)
-            },
-            commit: { [weak self] in self?.persistedDailySummaries = snapshot },
-            rollback: { [weak self] in self?.dailySummaries = rollbackSnapshot }
-        )
-    }
+    // MARK: - Full-array persistence (reserved for startup/termination/import)
+    //
+    // Interactive paths use targeted single-entity methods in
+    // StoreTargetedPersistence.swift (persistCalendarEventRecord, etc.).
+    // Full-array writes are only appropriate for:
+    //   - First-time import
+    //   - Schema migration
+    //   - User-initiated full restore
+    //   - Exit snapshot (saveApplicationSnapshot)
 
     func persistActiveTaskTimer() {
         if synchronousPersistence {
@@ -572,18 +445,6 @@ extension WeekflowStore {
             persistenceCoordinator.disable(reason: persistenceIssue)
             return false
         }
-    }
-
-    func persistFocusRecordsAsync() {
-        let records = focusRecords
-        let snapshot = persistedFocusRecords
-        persistenceCoordinator.enqueue(
-            domain: "focusRecords",
-            label: "专注记录",
-            operation: { [weak self] in try await self?.storage.saveFocusRecordsAsync(records) },
-            commit: { [weak self] in self?.persistedFocusRecords = records },
-            rollback: { [weak self] in self?.focusRecords = snapshot }
-        )
     }
 }
 

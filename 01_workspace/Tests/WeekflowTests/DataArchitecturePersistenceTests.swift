@@ -63,6 +63,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
     let now = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: 22, hour: 10)))
     let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    store.synchronousPersistence = true
     _ = store.addGoal(
         title: "可撤销分配",
         outcome: "重启后仍可撤销",
@@ -76,6 +77,7 @@ import Testing
     #expect(store.weeklyPlanningPoolEntries.allSatisfy { !$0.task.assignedDates.isEmpty })
 
     let reloaded = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    reloaded.synchronousPersistence = true
     #expect(reloaded.canUndoAutomaticDistribution)
     reloaded.undoAutomaticDistribution()
     #expect(!reloaded.canUndoAutomaticDistribution)
@@ -110,6 +112,7 @@ import Testing
     store.relocateTask(goalID: goalID, taskID: movedTask.id, from: originalDay, to: movedDay)
 
     let reloaded = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    reloaded.synchronousPersistence = true
     #expect(reloaded.canUndoAutomaticDistribution)
     reloaded.undoAutomaticDistribution()
     let tasks = try #require(reloaded.goals.first(where: { $0.id == goalID })?.tasks)
