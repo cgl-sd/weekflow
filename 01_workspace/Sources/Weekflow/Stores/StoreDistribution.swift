@@ -56,7 +56,16 @@ extension WeekflowStore {
     func autoDistributeTaskPool(now: Date = .now) {
         // Starting another run commits the previous result. From this point
         // onward only assignments created by this run can be undone.
-        guard commitAutomaticDistribution() else { return }
+        // In async mode the previous transaction ID is captured and its DB
+        // commit is merged into the distribution write as one atomic enqueue.
+        let previousTransactionID: UUID?
+        if synchronousPersistence {
+            guard commitAutomaticDistribution() else { return }
+            previousTransactionID = nil
+        } else {
+            previousTransactionID = automaticDistributionChanges.first?.transactionID
+            automaticDistributionChanges.removeAll(keepingCapacity: true)
+        }
         let calendar = businessCalendar.calendar
         let start = calendar.startOfDay(for: now)
         let currentWeekStart = weekStart(containing: start)
@@ -90,7 +99,10 @@ extension WeekflowStore {
                 && !hasArrangementThisWeek
                 && entry.task.executionWeekStart == nil
         }
-        guard !subgoalUnits.isEmpty else { return }
+        guard !subgoalUnits.isEmpty else {
+            enqueueStandaloneDistributionCommit(previousTransactionID)
+            return
+        }
         let transactionID = UUID()
         var changedGoalIDs = Set<WeeklyGoal.ID>()
         for (offset, entry) in subgoalUnits.enumerated() {
@@ -121,7 +133,10 @@ extension WeekflowStore {
             )
             changedGoalIDs.insert(entry.goal.id)
         }
-        guard !changedGoalIDs.isEmpty else { return }
+        guard !changedGoalIDs.isEmpty else {
+            enqueueStandaloneDistributionCommit(previousTransactionID)
+            return
+        }
         for goalID in changedGoalIDs {
             guard let goalIndex = goals.firstIndex(where: { $0.id == goalID }) else { continue }
             goals[goalIndex] = goalService.project(goals[goalIndex])
@@ -135,8 +150,9 @@ extension WeekflowStore {
                 automaticDistributionChanges = previousDistributionChanges
             }
         } else {
-            // Non-blocking: enqueue on the coordinator. The single writer queue
-            // guarantees ordering after the preceding commit enqueue.
+            // Atomic: commit previous transaction + write new distribution in
+            // one enqueue so that a commit failure cannot silently discard the
+            // distribution write (code-review fix).
             let currentGoals = goals
             let baselineGoals = persistedGoals
             persistenceCoordinator.enqueue(
@@ -144,6 +160,10 @@ extension WeekflowStore {
                 label: "自动分配",
                 operation: { [weak self] in
                     guard let self else { return }
+                    if let previousTransactionID {
+                        try await self.storage.commitAutomaticDistributionAsync(
+                            transactionID: previousTransactionID)
+                    }
                     try PersistenceIdentityValidator.validate(goals: currentGoals)
                     let changes = PersistenceGoalChangeSet.difference(
                         before: baselineGoals,
@@ -177,10 +197,10 @@ extension WeekflowStore {
                 }, commit: {}, rollback: {}) else { return false }
             } else {
                 // Non-blocking: enqueue the metadata commit on the coordinator.
-                // If it fails, protection mode activates and subsequent writes
-                // are dropped automatically by the coordinator.
+                // A unique domain per transaction prevents rapid consecutive
+                // commits from coalescing into one (code-review fix).
                 persistenceCoordinator.enqueue(
-                    domain: "distributionCommit",
+                    domain: "distributionCommit:\(transactionID)",
                     label: "确认自动分配",
                     operation: { [weak self] in
                         try await self?.storage.commitAutomaticDistributionAsync(transactionID: transactionID)
@@ -280,6 +300,22 @@ extension WeekflowStore {
         automaticDistributionChanges.removeAll {
             $0.goalID == goalID && $0.taskID == taskID
         }
+    }
+
+    /// Enqueues a standalone commit for a previous distribution transaction.
+    /// Called when `autoDistributeTaskPool` exits early (nothing to distribute)
+    /// but a prior transaction still needs its DB metadata committed.
+    private func enqueueStandaloneDistributionCommit(_ transactionID: UUID?) {
+        guard !synchronousPersistence, let transactionID else { return }
+        persistenceCoordinator.enqueue(
+            domain: "distributionCommit:\(transactionID)",
+            label: "确认自动分配",
+            operation: { [weak self] in
+                try await self?.storage.commitAutomaticDistributionAsync(transactionID: transactionID)
+            },
+            commit: {},
+            rollback: {}
+        )
     }
 
 }
