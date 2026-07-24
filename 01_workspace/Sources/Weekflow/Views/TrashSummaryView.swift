@@ -232,18 +232,20 @@ struct TrashGoalCard: View {
     var body: some View {
         let completed = goal.subgoals.filter(\.isCompleted).count
         ArchiveItemCard(symbol: "trash") {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(goal.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textPrimary)
-                    .lineLimit(1)
-                Text("删除于 \((goal.deletedAt ?? .now).dayLabel) · \(completed) 个子目标已完成")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(WeekflowPalette.textMuted)
+            WeekflowButton { onTap?() } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(goal.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textPrimary)
+                        .lineLimit(1)
+                    Text("删除于 \((goal.deletedAt ?? .now).dayLabel) · \(completed) 个子目标已完成")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { onTap?() }
+            .buttonStyle(.plain)
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",
@@ -337,22 +339,24 @@ struct TrashPlanCard: View {
 
     var body: some View {
         ArchiveItemCard(symbol: "trash") {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(plan.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textPrimary)
-                    .lineLimit(1)
-                HStack(spacing: 7) {
-                    Text("删除于 \((plan.archivedAt ?? .now).dayLabel)")
-                    Text("·")
-                    Text("\(store.goalsForPlan(plan.id).count) 个目标")
+            WeekflowButton { onTap?() } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(plan.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textPrimary)
+                        .lineLimit(1)
+                    HStack(spacing: 7) {
+                        Text("删除于 \((plan.archivedAt ?? .now).dayLabel)")
+                        Text("·")
+                        Text("\(store.goalsForPlan(plan.id).count) 个目标")
+                    }
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(WeekflowPalette.textMuted)
                 }
-                .font(.system(size: 10.5))
-                .foregroundStyle(WeekflowPalette.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { onTap?() }
+            .buttonStyle(.plain)
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",

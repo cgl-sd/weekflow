@@ -186,4 +186,44 @@ struct PlanImportService {
         // Try full format as fallback
         return dateFormatter.date(from: string)
     }
+
+    // MARK: - Export
+
+    /// Exports a plan and its goals to JSON data matching the import format.
+    static func exportPlan(_ plan: WeeklyPlan, goals: [WeeklyGoal]) -> Data? {
+        let calendar = Calendar.current
+        let goalsPayload: [[String: Any]] = goals.map { goal in
+            var dict: [String: Any] = [
+                "title": goal.title
+            ]
+            if !goal.outcome.isEmpty { dict["outcome"] = goal.outcome }
+            if !goal.subgoals.isEmpty {
+                dict["subgoals"] = goal.subgoals.map(\.title)
+            }
+            let tasks: [[String: Any]] = goal.tasks
+                .filter { !$0.isDeleted && !$0.isArchived }
+                .compactMap { task in
+                    var t: [String: Any] = ["title": task.title]
+                    if let planned = task.plannedDate {
+                        t["day"] = String(format: "%02d-%02d",
+                            calendar.component(.month, from: planned),
+                            calendar.component(.day, from: planned))
+                    }
+                    if task.estimatedMinutes > 0 {
+                        t["minutes"] = task.estimatedMinutes
+                    }
+                    return t
+                }
+            if !tasks.isEmpty { dict["tasks"] = tasks }
+            return dict
+        }
+
+        let payload: [String: Any] = [
+            "title": plan.title,
+            "startDate": dateFormatter.string(from: plan.startDate),
+            "endDate": dateFormatter.string(from: plan.endDate),
+            "goals": goalsPayload
+        ]
+        return try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+    }
 }

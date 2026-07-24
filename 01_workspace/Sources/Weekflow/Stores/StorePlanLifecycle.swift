@@ -31,6 +31,8 @@ extension WeekflowStore {
                 && goals[goalIndex].archivedAt == nil
                 && goals[goalIndex].deletedAt == nil {
                 goals[goalIndex].archivedAt = .now
+                // Associate orphan goals with this plan so restore works correctly
+                if isOrphan { goals[goalIndex].planID = id }
             }
         }
         invalidateGoalIndex()

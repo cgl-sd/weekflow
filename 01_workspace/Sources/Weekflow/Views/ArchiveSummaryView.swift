@@ -161,22 +161,24 @@ struct ArchiveSummaryView: View {
 
     private func archivedPlanCard(_ plan: WeeklyPlan) -> some View {
         ArchiveItemCard(symbol: "calendar.badge.checkmark") {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(plan.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textPrimary)
-                    .lineLimit(1)
-                HStack(spacing: 7) {
-                    Text("归档于 \((plan.archivedAt ?? .now).dayLabel)")
-                    Text("·")
-                    Text("\(store.goalsForPlan(plan.id).count) 个目标")
+            WeekflowButton { detailPlan = plan } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(plan.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textPrimary)
+                        .lineLimit(1)
+                    HStack(spacing: 7) {
+                        Text("归档于 \((plan.archivedAt ?? .now).dayLabel)")
+                        Text("·")
+                        Text("\(store.goalsForPlan(plan.id).count) 个目标")
+                    }
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(WeekflowPalette.textMuted)
                 }
-                .font(.system(size: 10.5))
-                .foregroundStyle(WeekflowPalette.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { detailPlan = plan }
+            .buttonStyle(.plain)
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",
@@ -224,18 +226,20 @@ struct ArchiveSummaryView: View {
     private func archivedGoalCard(_ goal: WeeklyGoal) -> some View {
         let completed = goal.subgoals.filter(\.isCompleted).count
         return ArchiveItemCard(symbol: "archivebox") {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(goal.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textPrimary)
-                    .lineLimit(1)
-                Text("归档于 \((goal.archivedAt ?? .now).dayLabel) · \(completed) 个子目标已完成")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(WeekflowPalette.textMuted)
+            WeekflowButton { detailGoal = goal } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(goal.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textPrimary)
+                        .lineLimit(1)
+                    Text("归档于 \((goal.archivedAt ?? .now).dayLabel) · \(completed) 个子目标已完成")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { detailGoal = goal }
+            .buttonStyle(.plain)
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",

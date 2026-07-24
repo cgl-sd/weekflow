@@ -1,6 +1,5 @@
 import SwiftUI
-
-import SwiftUI
+import UniformTypeIdentifiers
 
 enum WeeklyPlanningPresentation: String, CaseIterable, Identifiable {
     case sections
@@ -313,7 +312,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 236, height: 306)
+        let panelSize = CGSize(width: 236, height: 336)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -346,6 +345,8 @@ struct WeeklyBoardView: View {
                     minHeight: WeekflowLayout.taskDetailCalendarMenuHeight,
                     maxHeight: WeekflowLayout.taskDetailCalendarMenuHeight
                 )
+
+                planningExportButton()
             }
             .padding(8)
             .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
@@ -505,6 +506,49 @@ struct WeeklyBoardView: View {
             store.archivePlan(id: planID)
         }
         showsPlanningRange = false
+    }
+
+    private func planningExportButton() -> some View {
+        WeekflowButton { exportCurrentPlan() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 10, weight: .medium))
+                Text("导出本周规划")
+                    .font(.system(size: 10.5, weight: .medium))
+            }
+            .foregroundStyle(WeekflowPalette.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 5))
+            .overlay(
+                WeekflowRoundedRectangle(cornerRadius: 5)
+                    .stroke(WeekflowPalette.border.opacity(0.6))
+            )
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+    }
+
+    private func exportCurrentPlan() {
+        // Export active plan if exists, otherwise export from current date range
+        let plan: WeeklyPlan
+        let planGoals: [WeeklyGoal]
+        if let active = store.activePlan {
+            plan = active
+            planGoals = store.goalsForPlan(active.id)
+        } else {
+            // Create a temporary plan reference for export
+            plan = WeeklyPlan(title: "周规划", startDate: planningStartDate, endDate: planningEndDate)
+            planGoals = store.activeGoals
+        }
+        guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(plan.title).json"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            try? data.write(to: url)
+        }
     }
 
     private func selectPlanningBoundaryDate(_ date: Date) {
