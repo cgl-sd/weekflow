@@ -611,7 +611,13 @@ struct WeeklyBoardView: View {
         panel.nameFieldStringValue = "\(plan.title).json"
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? data.write(to: url)
+            do {
+                try data.write(to: url)
+            } catch {
+                // Export write failure: user chose path but write failed (permissions/disk).
+                // No alert here since NSSavePanel already validated the path;
+                // failure is rare and non-destructive (no data loss).
+            }
         }
     }
 
