@@ -45,6 +45,7 @@ struct WeeklyBoardView: View {
     @Binding private var presentation: WeeklyPlanningPresentation
     private let usesScrollContainer: Bool
     private let referenceDate: Date
+    private let onImport: (() -> Void)?
     @State private var draggedTaskToken: TaskDragToken?
     @State private var planningStartDate: Date
     @State private var planningEndDate: Date
@@ -61,13 +62,15 @@ struct WeeklyBoardView: View {
         presentedTask: Binding<TaskDetailTarget?>,
         usesScrollContainer: Bool = true,
         referenceDate: Date = .now,
-        presentation: Binding<WeeklyPlanningPresentation> = .constant(.sections)
+        presentation: Binding<WeeklyPlanningPresentation> = .constant(.sections),
+        onImport: (() -> Void)? = nil
     ) {
         self.store = store
         _presentedTask = presentedTask
         self.usesScrollContainer = usesScrollContainer
         self.referenceDate = referenceDate
         _presentation = presentation
+        self.onImport = onImport
         let range = WeeklyPlanningRangePreferences.range(for: referenceDate)
         _planningStartDate = State(initialValue: range.start)
         _planningEndDate = State(initialValue: range.end)
@@ -77,13 +80,22 @@ struct WeeklyBoardView: View {
     }
 
     var body: some View {
-        Group {
-            if usesScrollContainer {
-                ScrollView { boardContent }
-            } else {
-                boardContent
+        VStack(alignment: .leading, spacing: 0) {
+            if presentation == .sections {
+                header
+                    .padding(.horizontal, 28)
+                    .padding(.top, 28)
+                    .padding(.bottom, 4)
+            }
+            Group {
+                if usesScrollContainer {
+                    ScrollView { scrollableContent }
+                } else {
+                    scrollableContent
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlayPreferenceValue(WeeklyPlanningRangeAnchorPreferenceKey.self) { anchor in
             GeometryReader { proxy in
                 if showsPlanningRange, let anchor {
@@ -93,10 +105,9 @@ struct WeeklyBoardView: View {
         }
     }
 
-    private var boardContent: some View {
+    private var scrollableContent: some View {
         VStack(alignment: .leading, spacing: 24) {
             if presentation == .sections {
-                header
                 goals
                 taskPool
                 weekBoard
@@ -312,7 +323,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 236, height: 336)
+        let panelSize = CGSize(width: 236, height: 366)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -347,6 +358,7 @@ struct WeeklyBoardView: View {
                 )
 
                 planningExportButton()
+                planningImportButton()
             }
             .padding(8)
             .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
@@ -514,6 +526,27 @@ struct WeeklyBoardView: View {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 10, weight: .medium))
                 Text("导出本周规划")
+                    .font(.system(size: 10.5, weight: .medium))
+            }
+            .foregroundStyle(WeekflowPalette.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 5))
+            .overlay(
+                WeekflowRoundedRectangle(cornerRadius: 5)
+                    .stroke(WeekflowPalette.border.opacity(0.6))
+            )
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+    }
+
+    private func planningImportButton() -> some View {
+        WeekflowButton { onImport?() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 10, weight: .medium))
+                Text("导入周规划")
                     .font(.system(size: 10.5, weight: .medium))
             }
             .foregroundStyle(WeekflowPalette.textSecondary)

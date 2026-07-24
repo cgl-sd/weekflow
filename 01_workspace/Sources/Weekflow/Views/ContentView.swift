@@ -537,7 +537,8 @@ struct ContentView: View {
                 store: store,
                 presentedTask: $presentedTask,
                 referenceDate: weeklyReferenceDate,
-                presentation: $weeklyPlanningPresentation
+                presentation: $weeklyPlanningPresentation,
+                onImport: { showsPlanImporter = true }
             )
             .id(WeeklyDateNavigation.weekStart(for: weeklyReferenceDate))
         case .weeklyReview:
