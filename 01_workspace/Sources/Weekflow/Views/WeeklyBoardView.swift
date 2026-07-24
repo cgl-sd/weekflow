@@ -420,9 +420,8 @@ struct WeeklyBoardView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(WeekflowPalette.textPrimary)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .fixedSize()
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
                 isActive ? WeekflowPalette.objective.opacity(0.10) : WeekflowPalette.surfaceHover,
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
@@ -458,12 +457,11 @@ struct WeeklyBoardView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textPrimary)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .fixedSize()
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
                 isConfirmingArchive
-                    ? WeekflowPalette.danger.opacity(0.1)
+                    ? WeekflowPalette.danger.opacity(0.10)
                     : WeekflowPalette.surfaceHover,
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
             )
@@ -471,7 +469,7 @@ struct WeeklyBoardView: View {
                 WeekflowRoundedRectangle(cornerRadius: 6)
                     .stroke(
                         isConfirmingArchive
-                            ? WeekflowPalette.danger.opacity(0.4)
+                            ? WeekflowPalette.danger.opacity(0.65)
                             : WeekflowPalette.border,
                         lineWidth: 1
                     )
