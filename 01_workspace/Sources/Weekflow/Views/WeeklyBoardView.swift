@@ -313,7 +313,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 270, height: 306)
+        let panelSize = CGSize(width: 236, height: 306)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -420,8 +420,9 @@ struct WeeklyBoardView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(WeekflowPalette.textPrimary)
             }
-            .padding(.horizontal, 7)
-            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .fixedSize()
             .background(
                 isActive ? WeekflowPalette.objective.opacity(0.10) : WeekflowPalette.surfaceHover,
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
@@ -441,13 +442,9 @@ struct WeeklyBoardView: View {
     }
 
     private func planningArchiveButton() -> some View {
-        let hasActivePlan = store.activePlan != nil
-        return WeekflowButton {
-            guard hasActivePlan else { return }
+        WeekflowButton {
             if isConfirmingArchive {
-                if let plan = store.activePlan {
-                    store.archivePlan(id: plan.id)
-                }
+                performArchive()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirmingArchive = false }
             } else {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirmingArchive = true }
@@ -456,21 +453,14 @@ struct WeeklyBoardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isConfirmingArchive ? "确认" : "归档")
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(
-                        !hasActivePlan ? WeekflowPalette.textMuted.opacity(0.4)
-                        : isConfirmingArchive ? WeekflowPalette.danger
-                        : WeekflowPalette.textMuted
-                    )
+                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textMuted)
                 Image(systemName: isConfirmingArchive ? "exclamationmark.triangle.fill" : "archivebox")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(
-                        !hasActivePlan ? WeekflowPalette.textPrimary.opacity(0.3)
-                        : isConfirmingArchive ? WeekflowPalette.danger
-                        : WeekflowPalette.textPrimary
-                    )
+                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textPrimary)
             }
-            .padding(.horizontal, 7)
-            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .fixedSize()
             .background(
                 isConfirmingArchive
                     ? WeekflowPalette.danger.opacity(0.1)
@@ -486,7 +476,6 @@ struct WeeklyBoardView: View {
                         lineWidth: 1
                     )
             }
-            .opacity(hasActivePlan ? 1 : 0.5)
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
@@ -506,6 +495,18 @@ struct WeeklyBoardView: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isConfirmingArchive)
+    }
+
+    private func performArchive() {
+        if let plan = store.activePlan {
+            store.archivePlan(id: plan.id)
+        } else {
+            // No active plan: create one from current date range, then archive it
+            let title = "\(planningStartDate.formatted(.dateTime.locale(Locale(identifier: "zh_CN")).month().day()))–\(planningEndDate.formatted(.dateTime.locale(Locale(identifier: "zh_CN")).month().day())) 规划"
+            let planID = store.addPlan(title: title, startDate: planningStartDate, endDate: planningEndDate)
+            store.archivePlan(id: planID)
+        }
+        showsPlanningRange = false
     }
 
     private func selectPlanningBoundaryDate(_ date: Date) {

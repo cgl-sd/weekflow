@@ -28,6 +28,8 @@ struct ContentView: View {
     @State private var dailyPlanningStep = 0
     @State private var showsPlanImporter = false
     @State private var planImportError: String?
+    @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
+    @State private var showsImportOverwriteConfirm = false
 
     init(
         store: WeekflowStore,
@@ -89,6 +91,20 @@ struct ContentView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(planImportError ?? "")
+        }
+        .confirmationDialog(
+            "当前已存在周规划",
+            isPresented: $showsImportOverwriteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("覆盖并导入", role: .destructive) {
+                confirmImportOverwrite()
+            }
+            Button("取消", role: .cancel) {
+                pendingImportPayload = nil
+            }
+        } message: {
+            Text("导入将归档当前活跃的周规划，是否继续？")
         }
         .alert(
             "发现异常中断的计时",
@@ -428,17 +444,14 @@ struct ContentView: View {
                         endDate: PlanImportService.parseDatePublic(payload.endDate) ?? .now,
                         activePlan: store.activePlan
                     )
-                    let archiveExisting: Bool
                     switch conflict {
                     case .none:
-                        archiveExisting = false
-                    case .partialOverlap(let title), .fullOverlap(let title):
-                        // For now, auto-archive on conflict; a dialog could be added later
-                        archiveExisting = true
-                        _ = title
-                    }
-                    if PlanImportService.importIntoStore(payload, store: store, archiveExisting: archiveExisting) == nil {
-                        planImportError = "导入过程中日期解析失败"
+                        if PlanImportService.importIntoStore(payload, store: store, archiveExisting: false) == nil {
+                            planImportError = "导入过程中日期解析失败"
+                        }
+                    case .partialOverlap, .fullOverlap:
+                        pendingImportPayload = payload
+                        showsImportOverwriteConfirm = true
                     }
                 case .failure(let error):
                     planImportError = error.localizedDescription
@@ -449,6 +462,14 @@ struct ContentView: View {
         case .failure(let error):
             planImportError = "选择文件失败：\(error.localizedDescription)"
         }
+    }
+
+    private func confirmImportOverwrite() {
+        guard let payload = pendingImportPayload else { return }
+        if PlanImportService.importIntoStore(payload, store: store, archiveExisting: true) == nil {
+            planImportError = "导入过程中日期解析失败"
+        }
+        pendingImportPayload = nil
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {
