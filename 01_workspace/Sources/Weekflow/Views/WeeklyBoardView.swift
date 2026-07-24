@@ -54,6 +54,8 @@ struct WeeklyBoardView: View {
     @State private var isPlanningRangeInteractionActive = false
     @State private var showsPlanningRange = false
     @State private var isConfirmingArchive = false
+    @State private var isExportHovering = false
+    @State private var isImportHovering = false
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
 
@@ -528,17 +530,22 @@ struct WeeklyBoardView: View {
                 Text("导出本周规划")
                     .font(.system(size: 10.5, weight: .medium))
             }
-            .foregroundStyle(WeekflowPalette.textSecondary)
+            .foregroundStyle(isExportHovering ? WeekflowPalette.textPrimary : WeekflowPalette.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 5))
+            .background(
+                isExportHovering ? WeekflowPalette.surfaceHover.opacity(1) : WeekflowPalette.surfaceHover.opacity(0.5),
+                in: WeekflowRoundedRectangle(cornerRadius: 5)
+            )
             .overlay(
                 WeekflowRoundedRectangle(cornerRadius: 5)
-                    .stroke(WeekflowPalette.border.opacity(0.6))
+                    .stroke(isExportHovering ? WeekflowPalette.borderStrong : WeekflowPalette.border.opacity(0.6))
             )
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+        .onHover { isExportHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isExportHovering)
     }
 
     private func planningImportButton() -> some View {
@@ -549,17 +556,22 @@ struct WeeklyBoardView: View {
                 Text("导入周规划")
                     .font(.system(size: 10.5, weight: .medium))
             }
-            .foregroundStyle(WeekflowPalette.textSecondary)
+            .foregroundStyle(isImportHovering ? WeekflowPalette.textPrimary : WeekflowPalette.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 5))
+            .background(
+                isImportHovering ? WeekflowPalette.surfaceHover.opacity(1) : WeekflowPalette.surfaceHover.opacity(0.5),
+                in: WeekflowRoundedRectangle(cornerRadius: 5)
+            )
             .overlay(
                 WeekflowRoundedRectangle(cornerRadius: 5)
-                    .stroke(WeekflowPalette.border.opacity(0.6))
+                    .stroke(isImportHovering ? WeekflowPalette.borderStrong : WeekflowPalette.border.opacity(0.6))
             )
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+        .onHover { isImportHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isImportHovering)
     }
 
     private func exportCurrentPlan() {
