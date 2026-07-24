@@ -326,9 +326,7 @@ struct WeeklyBoardView: View {
                 HStack(spacing: 6) {
                     planningBoundaryButton(.start, date: planningStartDate)
                     planningBoundaryButton(.end, date: planningEndDate)
-                    if store.activePlan != nil {
-                        planningArchiveButton()
-                    }
+                    planningArchiveButton()
                 }
 
                 CompactTaskMonthCalendar(
@@ -422,7 +420,7 @@ struct WeeklyBoardView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(WeekflowPalette.textPrimary)
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
                 isActive ? WeekflowPalette.objective.opacity(0.10) : WeekflowPalette.surfaceHover,
@@ -443,7 +441,9 @@ struct WeeklyBoardView: View {
     }
 
     private func planningArchiveButton() -> some View {
-        WeekflowButton {
+        let hasActivePlan = store.activePlan != nil
+        return WeekflowButton {
+            guard hasActivePlan else { return }
             if isConfirmingArchive {
                 if let plan = store.activePlan {
                     store.archivePlan(id: plan.id)
@@ -456,12 +456,20 @@ struct WeeklyBoardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isConfirmingArchive ? "确认" : "归档")
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textMuted)
+                    .foregroundStyle(
+                        !hasActivePlan ? WeekflowPalette.textMuted.opacity(0.4)
+                        : isConfirmingArchive ? WeekflowPalette.danger
+                        : WeekflowPalette.textMuted
+                    )
                 Image(systemName: isConfirmingArchive ? "exclamationmark.triangle.fill" : "archivebox")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textPrimary)
+                    .foregroundStyle(
+                        !hasActivePlan ? WeekflowPalette.textPrimary.opacity(0.3)
+                        : isConfirmingArchive ? WeekflowPalette.danger
+                        : WeekflowPalette.textPrimary
+                    )
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
                 isConfirmingArchive
@@ -478,6 +486,7 @@ struct WeeklyBoardView: View {
                         lineWidth: 1
                     )
             }
+            .opacity(hasActivePlan ? 1 : 0.5)
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
