@@ -54,7 +54,6 @@ struct WeeklyBoardView: View {
     @State private var isPlanningRangeInteractionActive = false
     @State private var showsPlanningRange = false
     @State private var isConfirmingArchive = false
-    @State private var isExportHovering = false
     @State private var isImportHovering = false
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
@@ -147,6 +146,7 @@ struct WeeklyBoardView: View {
             .anchorPreference(key: WeeklyPlanningRangeAnchorPreferenceKey.self, value: .bounds) { $0 }
 
             Spacer()
+            exportMenu
             WeeklyHeaderActionButton(
                 title: "新建周目标",
                 symbol: "plus",
@@ -178,6 +178,43 @@ struct WeeklyBoardView: View {
                 )
             }
         }
+    }
+
+    private var exportMenu: some View {
+        Menu {
+            if store.activePlan != nil || !store.activeGoals.isEmpty {
+                Button("当前规划（\(weekRangeLabel)）") {
+                    exportPlan(nil)
+                }
+            }
+            if !store.archivedPlans.isEmpty {
+                Divider()
+                ForEach(store.archivedPlans) { plan in
+                    Button("\(plan.title)") {
+                        exportPlan(plan)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                Text("导出")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(WeekflowPalette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 7))
+            .overlay(
+                WeekflowRoundedRectangle(cornerRadius: 7)
+                    .stroke(WeekflowPalette.border, lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .pointingHandCursor()
     }
 
     private var taskPool: some View {
@@ -325,7 +362,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 236, height: 366)
+        let panelSize = CGSize(width: 236, height: 336)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -359,7 +396,6 @@ struct WeeklyBoardView: View {
                     maxHeight: WeekflowLayout.taskDetailCalendarMenuHeight
                 )
 
-                planningExportButton()
                 planningImportButton()
             }
             .padding(8)
@@ -522,32 +558,6 @@ struct WeeklyBoardView: View {
         showsPlanningRange = false
     }
 
-    private func planningExportButton() -> some View {
-        WeekflowButton { exportCurrentPlan() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 10, weight: .medium))
-                Text("导出本周规划")
-                    .font(.system(size: 10.5, weight: .medium))
-            }
-            .foregroundStyle(isExportHovering ? WeekflowPalette.textPrimary : WeekflowPalette.textSecondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background(
-                isExportHovering ? WeekflowPalette.surfaceHover.opacity(1) : WeekflowPalette.surfaceHover.opacity(0.5),
-                in: WeekflowRoundedRectangle(cornerRadius: 5)
-            )
-            .overlay(
-                WeekflowRoundedRectangle(cornerRadius: 5)
-                    .stroke(isExportHovering ? WeekflowPalette.borderStrong : WeekflowPalette.border.opacity(0.6))
-            )
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .onHover { isExportHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isExportHovering)
-    }
-
     private func planningImportButton() -> some View {
         WeekflowButton { onImport?() } label: {
             HStack(spacing: 5) {
@@ -574,15 +584,16 @@ struct WeeklyBoardView: View {
         .animation(.easeOut(duration: 0.12), value: isImportHovering)
     }
 
-    private func exportCurrentPlan() {
-        // Export active plan if exists, otherwise export from current date range
+    private func exportPlan(_ archivedPlan: WeeklyPlan?) {
         let plan: WeeklyPlan
         let planGoals: [WeeklyGoal]
-        if let active = store.activePlan {
+        if let archived = archivedPlan {
+            plan = archived
+            planGoals = store.goalsForPlan(archived.id)
+        } else if let active = store.activePlan {
             plan = active
             planGoals = store.goalsForPlan(active.id)
         } else {
-            // Create a temporary plan reference for export
             plan = WeeklyPlan(title: "周规划", startDate: planningStartDate, endDate: planningEndDate)
             planGoals = store.activeGoals
         }

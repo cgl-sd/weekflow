@@ -66,7 +66,7 @@ struct WeekDayColumn: View {
             Spacer(minLength: 70)
         }
         .padding(12)
-        .frame(width: 190, alignment: .topLeading)
+        .frame(width: 172, alignment: .topLeading)
         .frame(minHeight: 230, alignment: .topLeading)
         .background(
             isDropTarget ? WeekflowPalette.surfaceSelected : WeekflowPalette.surfaceHover,
@@ -206,7 +206,7 @@ struct WeeklyAssignedTaskCard: View {
             }
             .padding(7)
             .frame(
-                width: 166,
+                width: 148,
                 height: WeekflowLayout.weeklyAssignedTaskCardMinimumHeight,
                 alignment: .topLeading
             )
