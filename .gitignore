@@ -18,8 +18,10 @@ DerivedData/
 
 # Local Codex and developer state
 .codex/
+.qoder/
 .local/
 /AGENTS.md
+/REVIEW_GAP_ANALYSIS.md
 .env
 .env.*
 !.env.example
