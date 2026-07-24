@@ -71,7 +71,13 @@ struct LocalStorage: @unchecked Sendable {
             .appendingPathComponent("Database", isDirectory: true)
             .appendingPathComponent("Weekflow.store")
         let service = DatabaseBackupService(databaseURL: databaseURL, fileManager: fileManager)
-        try? service.makeBackup()
+        do {
+            try service.makeBackup()
+        } catch {
+            // C-1 fix: log backup failure instead of silent swallow.
+            // Backup is best-effort; failure does not block startup.
+            NSLog("[Weekflow] 数据库滚动备份失败: \(error.localizedDescription)")
+        }
     }
 
     func preloaded(with preload: LocalStoragePreload) -> LocalStorage {

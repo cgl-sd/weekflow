@@ -367,7 +367,11 @@ final class FocusTimerService {
             linkedTaskTitle: linkedTaskTitle,
             lastCheckpointAt: date
         )
-        guard let data = try? JSONEncoder().encode(session) else { return }
+        guard let data = try? JSONEncoder().encode(session) else {
+            // C-1 fix: log encoding failure (session won't survive restart).
+            NSLog("[Weekflow] 专注计时器会话编码失败，重启后无法恢复")
+            return
+        }
         defaults.set(data, forKey: Self.sessionKey)
     }
 

@@ -225,9 +225,10 @@ extension WeekflowStore {
         guard let highlightedTask, let task = task(goalID: highlightedTask.goalID, taskID: highlightedTask.taskID) else { return }
         let date = activeDay
         let calendar = businessCalendar.calendar
-        let startHour = 14
+        // E-6 fix: named constant instead of magic number.
+        let defaultAutoScheduleHour = 14
         var components = calendar.dateComponents([.year, .month, .day], from: date)
-        components.hour = startHour
+        components.hour = defaultAutoScheduleHour
         components.minute = 0
         setTaskSchedule(goalID: highlightedTask.goalID, taskID: highlightedTask.taskID, date: date, startTime: calendar.date(from: components), minutes: task.estimatedMinutes)
         setTaskCalendarPlacement(

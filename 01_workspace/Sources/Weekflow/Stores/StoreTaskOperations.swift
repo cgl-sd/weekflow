@@ -24,7 +24,9 @@ extension WeekflowStore {
         description: String = "",
         recurringRule: RecurringRule? = nil
     ) -> UUID? {
-        guard var goal = goals.first(where: { $0.id == goalID }) else { return nil }
+        // D-6 fix: O(1) goal lookup.
+        guard let goalIdx = goalIndex(for: goalID) else { return nil }
+        var goal = goals[goalIdx]
         // Delegate task creation to TaskService (P2-2)
         let task = taskService.makeTask(
             title: title,
@@ -105,7 +107,10 @@ extension WeekflowStore {
     }
 
     func toggleTask(goalID: UUID, taskID: UUID, persistImmediately: Bool = true) {
-        guard var goal = goals.first(where: { $0.id == goalID }), let index = goal.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        // D-6 fix: O(1) goal lookup.
+        guard let goalIdx = goalIndex(for: goalID) else { return }
+        var goal = goals[goalIdx]
+        guard let index = goal.tasks.firstIndex(where: { $0.id == taskID }) else { return }
         let completesTask = goal.tasks[index].status != .completed
         goal.tasks[index].status = completesTask ? .completed : .planned
         goal.tasks[index].archivedAt = completesTask ? .now : nil
@@ -414,7 +419,9 @@ extension WeekflowStore {
     }
 
     func deleteTask(goalID: UUID, taskID: UUID) {
-        guard var goal = goals.first(where: { $0.id == goalID }) else { return }
+        // D-6 fix: O(1) goal lookup.
+        guard let goalIdx = goalIndex(for: goalID) else { return }
+        var goal = goals[goalIdx]
         let now = Date.now
         if goal.primaryTaskID == taskID {
             goal.deletedAt = now
