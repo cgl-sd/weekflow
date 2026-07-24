@@ -19,6 +19,7 @@ final class WeekflowStore {
     func makeApplicationSnapshot() -> WeekflowPersistenceSnapshot {
         applicationSnapshotService.makeSnapshot(
             goals: goals,
+            plans: plans,
             channels: channels,
             calendarEvents: calendarEvents,
             dailyPlanningStates: dailyPlanningStates,
@@ -46,6 +47,7 @@ final class WeekflowStore {
         // Phase 3-2 fix: any mutation invalidates the derived goal-list caches.
         didSet { invalidateDerivedGoalCaches() }
     }
+    var plans: [WeeklyPlan]
     var selectedGoalID: WeeklyGoal.ID?
     var channels: [TaskChannel]
     var calendarEvents: [CalendarEvent]
@@ -167,6 +169,7 @@ final class WeekflowStore {
         self.persistenceEnabled = false
         if let developmentFixture {
             self.goals = developmentFixture.goals
+            self.plans = []
             self.channels = developmentFixture.channels
             self.calendarEvents = developmentFixture.calendarEvents
             self.dailyPlanningStates = []
@@ -186,6 +189,7 @@ final class WeekflowStore {
                 }
             }
             self.goals = load("周目标与任务", storage.load) ?? []
+            self.plans = load("周规划", storage.loadPlans) ?? []
             self.channels = load("频道", storage.loadChannels) ?? TaskChannel.defaults
             self.calendarEvents = load("日历事件", storage.loadCalendarEvents) ?? []
             self.dailyPlanningStates = load("每日计划", storage.loadDailyPlanningStates) ?? []

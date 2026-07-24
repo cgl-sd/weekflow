@@ -137,6 +137,25 @@ struct LocalStorage: @unchecked Sendable {
         return try readOptional { try $0.loadChannels() }
     }
 
+    func loadPlans() throws -> [WeeklyPlan]? {
+        if let initializationError { throw initializationError }
+        let url = plansURL
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder.weekflow.decode([WeeklyPlan].self, from: data)
+    }
+
+    func savePlans(_ plans: [WeeklyPlan]) throws {
+        if let initializationError { throw initializationError }
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let data = try JSONEncoder.weekflow.encode(plans)
+        try data.write(to: plansURL, options: .atomic)
+    }
+
+    private var plansURL: URL {
+        directoryURL.appendingPathComponent("plans.json")
+    }
+
     func saveChannels(_ channels: [TaskChannel]) throws {
         try write { try $0.saveChannels(channels, kind: .userEdit) }
     }

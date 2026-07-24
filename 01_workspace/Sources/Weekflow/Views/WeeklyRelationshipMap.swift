@@ -240,7 +240,7 @@ struct WeeklyPlanningRelationshipMap: View {
             }
         }
         .frame(width: canvasWidth, height: relationshipCanvasHeight, alignment: .topLeading)
-        .animation(.easeOut(duration: 0.12), value: hoveredNode)
+        .animation(.easeOut(duration: 0.1), value: dropTargetDate)
     }
 
     private func drawRelationshipLines(in context: inout GraphicsContext) {
@@ -375,6 +375,7 @@ struct WeeklyPlanningRelationshipMap: View {
                 WeekflowRoundedRectangle(cornerRadius: 9)
                     .stroke(tint.opacity(isHovered ? 0.7 : 0.3), lineWidth: isHovered ? 1.5 : 1)
             }
+            .animation(.easeOut(duration: 0.1), value: isHovered)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -421,6 +422,7 @@ struct WeeklyPlanningRelationshipMap: View {
             WeekflowRoundedRectangle(cornerRadius: 8)
                 .stroke(tint.opacity(isHovered ? 0.7 : 0.28), lineWidth: isHovered ? 1.5 : 1)
         }
+        .animation(.easeOut(duration: 0.1), value: isHovered)
         .contentShape(Rectangle())
         .pointingHandCursor()
         .onTapGesture { openTask(entry) }
@@ -486,6 +488,7 @@ struct WeeklyPlanningRelationshipMap: View {
                     )
                 )
         }
+        .animation(.easeOut(duration: 0.1), value: isHovered)
         .contentShape(Rectangle())
         .pointingHandCursor()
         .onHover { hovering in

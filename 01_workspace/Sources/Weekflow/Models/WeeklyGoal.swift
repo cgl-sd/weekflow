@@ -562,6 +562,8 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
     var completedAt: Date?
     /// New flat weekly goals own one pool task without requiring a subgoal.
     var primaryTaskID: WeekTask.ID?
+    /// Associates this goal with a planning period. Nil for legacy/standalone goals.
+    var planID: UUID?
     var sortOrder: Int
 
     var startDate: Date {
@@ -608,6 +610,7 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
         isPinned: Bool = false,
         completedAt: Date? = nil,
         primaryTaskID: WeekTask.ID? = nil,
+        planID: UUID? = nil,
         sortOrder: Int = 0
     ) {
         self.id = id
@@ -625,11 +628,12 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
         self.isPinned = isPinned
         self.completedAt = completedAt
         self.primaryTaskID = primaryTaskID
+        self.planID = planID
         self.sortOrder = sortOrder
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, outcome, startDay, startDate, endDay, endDate, channelID, subgoals, carriedFromGoalID, tasks, milestones, archivedAt, deletedAt, isPinned, completedAt, primaryTaskID, sortOrder
+        case id, title, outcome, startDay, startDate, endDay, endDate, channelID, subgoals, carriedFromGoalID, tasks, milestones, archivedAt, deletedAt, isPinned, completedAt, primaryTaskID, planID, sortOrder
     }
 
     init(from decoder: Decoder) throws {
@@ -655,6 +659,7 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
         primaryTaskID = try container.decodeIfPresent(WeekTask.ID.self, forKey: .primaryTaskID)
+        planID = try container.decodeIfPresent(UUID.self, forKey: .planID)
         sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
     }
 
@@ -675,6 +680,7 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
         try container.encode(isPinned, forKey: .isPinned)
         try container.encodeIfPresent(completedAt, forKey: .completedAt)
         try container.encodeIfPresent(primaryTaskID, forKey: .primaryTaskID)
+        try container.encodeIfPresent(planID, forKey: .planID)
         try container.encode(sortOrder, forKey: .sortOrder)
     }
 }

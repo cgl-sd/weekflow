@@ -4,6 +4,18 @@ import Observation
 // Computed properties, task queries, channel operations, and sorting.
 
 extension WeekflowStore {
+    /// The currently active (non-archived) plan, if any.
+    var activePlan: WeeklyPlan? {
+        plans.first(where: { $0.isActive })
+    }
+
+    /// All archived plans, sorted by archive date descending.
+    var archivedPlans: [WeeklyPlan] {
+        plans.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
+        }
+    }
+
     var selectedGoal: WeeklyGoal? {
         selectedGoalID.flatMap { id in goalIndex(for: id).map { goals[$0] } }
     }

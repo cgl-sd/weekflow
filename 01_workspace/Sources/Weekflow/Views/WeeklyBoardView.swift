@@ -53,6 +53,8 @@ struct WeeklyBoardView: View {
     @State private var planningRangeBoundary: WeeklyPlanningRangeBoundary = .start
     @State private var isPlanningRangeInteractionActive = false
     @State private var showsPlanningRange = false
+    @State private var showsNewPlanDialog = false
+    @State private var showsArchivePlanConfirmation = false
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
 
@@ -132,6 +134,23 @@ struct WeeklyBoardView: View {
             .buttonStyle(.plain)
             .modifier(TaskPopoverInteractiveHighlight(cornerRadius: 7))
             .anchorPreference(key: WeeklyPlanningRangeAnchorPreferenceKey.self, value: .bounds) { $0 }
+
+            // Plan lifecycle buttons
+            HStack(spacing: 6) {
+                WeeklyPlanIconButton(
+                    symbol: "plus.calendar",
+                    help: "新建本周规划"
+                ) { showsNewPlanDialog = true }
+
+                if store.activePlan != nil {
+                    WeeklyPlanIconButton(
+                        symbol: "archivebox",
+                        help: "归档本周规划"
+                    ) { showsArchivePlanConfirmation = true }
+                }
+            }
+            .padding(.bottom, 4)
+
             Spacer()
             WeeklyHeaderActionButton(
                 title: "新建周目标",
@@ -147,6 +166,25 @@ struct WeeklyBoardView: View {
                 .disabled(store.weeklyPlanningPoolEntries.isEmpty)
             if store.canUndoAutomaticDistribution {
                 WeeklyHeaderUndoButton(action: store.undoAutomaticDistribution)
+            }
+        }
+        .sheet(isPresented: $showsNewPlanDialog) {
+            NewPlanDialog(store: store, defaultStart: planningStartDate, defaultEnd: planningEndDate)
+        }
+        .confirmationDialog(
+            "归档本周规划",
+            isPresented: $showsArchivePlanConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("归档规划及其下所有目标", role: .destructive) {
+                if let plan = store.activePlan {
+                    store.archivePlan(id: plan.id)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            if let plan = store.activePlan {
+                Text("将归档「\(plan.title)」及其下 \(store.goalsForPlan(plan.id).count) 个目标")
             }
         }
     }
@@ -563,6 +601,91 @@ struct WeeklyHeaderUndoButton: View {
         .pointingHandCursor()
         .onHover { isHovering = $0 }
         .help("撤销最近一次自动分配")
+    }
+}
+
+/// Small icon button for plan lifecycle actions (new plan / archive plan).
+struct WeeklyPlanIconButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        WeekflowButton(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isHovering ? WeekflowPalette.textPrimary : WeekflowPalette.textMuted)
+                .frame(width: 30, height: 30)
+                .background(
+                    isHovering ? WeekflowPalette.surfaceHover : .clear,
+                    in: WeekflowRoundedRectangle(cornerRadius: 6)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.1), value: isHovering)
+        .help(help)
+    }
+}
+
+/// Dialog for creating a new weekly plan with title and date range.
+struct NewPlanDialog: View {
+    @Bindable var store: WeekflowStore
+    let defaultStart: Date
+    let defaultEnd: Date
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var startDate: Date
+    @State private var endDate: Date
+
+    init(store: WeekflowStore, defaultStart: Date, defaultEnd: Date) {
+        self.store = store
+        self.defaultStart = defaultStart
+        self.defaultEnd = defaultEnd
+        _startDate = State(initialValue: defaultStart)
+        _endDate = State(initialValue: defaultEnd)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("新建本周规划")
+                .font(.system(size: 15, weight: .semibold))
+
+            TextField("规划名称（如：第30周）", text: $title)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13))
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("开始日期").font(.system(size: 11)).foregroundStyle(.secondary)
+                    DatePicker("", selection: $startDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("截止日期").font(.system(size: 11)).foregroundStyle(.secondary)
+                    DatePicker("", selection: $endDate, in: startDate..., displayedComponents: .date)
+                        .labelsHidden()
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("创建") {
+                    let planTitle = title.isEmpty ? "本周规划" : title
+                    store.addPlan(title: planTitle, startDate: startDate, endDate: endDate)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
     }
 }
 

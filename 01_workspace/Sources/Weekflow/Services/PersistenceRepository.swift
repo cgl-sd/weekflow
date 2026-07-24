@@ -3,6 +3,7 @@ import Compression
 
 struct WeekflowPersistenceSnapshot: Equatable {
     var goals: [WeeklyGoal] = []
+    var plans: [WeeklyPlan] = []
     var channels: [TaskChannel] = []
     var calendarEvents: [CalendarEvent] = []
     var dailyPlanningStates: [DailyPlanningState] = []
@@ -12,6 +13,7 @@ struct WeekflowPersistenceSnapshot: Equatable {
 
     var isEmpty: Bool {
         goals.isEmpty
+            && plans.isEmpty
             && channels.isEmpty
             && calendarEvents.isEmpty
             && dailyPlanningStates.isEmpty
@@ -40,16 +42,17 @@ struct WeekflowPersistenceSnapshot: Equatable {
             if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
             return $0.id.uuidString < $1.id.uuidString
         }
-        let plans = Dictionary(grouping: dailyPlanningStates, by: \.day)
+        let normalizedPlanningStates = Dictionary(grouping: dailyPlanningStates, by: \.day)
             .compactMap(\.value.last).sorted { $0.day < $1.day }
         let reviews = Dictionary(grouping: dailySummaries, by: \.day)
             .compactMap { $0.value.max { $0.updatedAt < $1.updatedAt } }
             .sorted { $0.day < $1.day }
         return WeekflowPersistenceSnapshot(
             goals: normalizedGoals,
+            plans: plans.sorted { $0.sortOrder < $1.sortOrder },
             channels: channels.sorted { $0.id < $1.id },
             calendarEvents: calendarEvents.sorted { $0.id.uuidString < $1.id.uuidString },
-            dailyPlanningStates: plans,
+            dailyPlanningStates: normalizedPlanningStates,
             focusRecords: focusRecords.sorted { $0.id.uuidString < $1.id.uuidString },
             dailySummaries: reviews,
             activeTimerSession: activeTimerSession

@@ -17,6 +17,7 @@ struct ContentCommandHandler {
     var setPresentedTask: (TaskDetailTarget?) -> Void
     var setDestination: (AppDestination) -> Void
     var navigateDate: (GlobalDateNavigation) -> Void
+    var setShowPlanImporter: (Bool) -> Void
 
     enum GlobalDateNavigation { case today, previous, next }
 
@@ -61,6 +62,8 @@ struct ContentCommandHandler {
             navigateDate(.next)
         case .refreshGlobalShortcuts:
             break
+        case .importPlan:
+            setShowPlanImporter(true)
         }
     }
 

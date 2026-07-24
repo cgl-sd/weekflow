@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Bindable var store: WeekflowStore
@@ -25,6 +26,8 @@ struct ContentView: View {
     @State private var showingShortcutHelp = false
     @State private var presentedSettingsSection: WorkspaceSettingsSection?
     @State private var dailyPlanningStep = 0
+    @State private var showsPlanImporter = false
+    @State private var planImportError: String?
 
     init(
         store: WeekflowStore,
@@ -72,6 +75,20 @@ struct ContentView: View {
         .sheet(isPresented: $showingShortcutHelp) { ShortcutHelpView() }
         .sheet(item: $presentedSettingsSection) { section in
             ChannelSettingsView(store: store, initialSection: section)
+        }
+        .fileImporter(
+            isPresented: $showsPlanImporter,
+            allowedContentTypes: [.json]
+        ) { result in
+            handlePlanImportResult(result)
+        }
+        .alert("导入失败", isPresented: Binding(
+            get: { planImportError != nil },
+            set: { if !$0 { planImportError = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(planImportError ?? "")
         }
         .alert(
             "发现异常中断的计时",
@@ -388,9 +405,50 @@ struct ContentView: View {
             setPresentedSettings: { presentedSettingsSection = $0 },
             setPresentedTask: { presentedTask = $0 },
             setDestination: { destination = $0 },
-            navigateDate: { routeDateNavigation($0) }
+            navigateDate: { routeDateNavigation($0) },
+            setShowPlanImporter: { showsPlanImporter = $0 }
         )
         handler.handle(command)
+    }
+
+    private func handlePlanImportResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            guard url.startAccessingSecurityScopedResource() else {
+                planImportError = "无法访问所选文件"
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            do {
+                let data = try Data(contentsOf: url)
+                switch PlanImportService.parse(data: data) {
+                case .success(let payload):
+                    let conflict = PlanImportService.detectConflict(
+                        startDate: PlanImportService.parseDatePublic(payload.startDate) ?? .now,
+                        endDate: PlanImportService.parseDatePublic(payload.endDate) ?? .now,
+                        activePlan: store.activePlan
+                    )
+                    let archiveExisting: Bool
+                    switch conflict {
+                    case .none:
+                        archiveExisting = false
+                    case .partialOverlap(let title), .fullOverlap(let title):
+                        // For now, auto-archive on conflict; a dialog could be added later
+                        archiveExisting = true
+                        _ = title
+                    }
+                    if PlanImportService.importIntoStore(payload, store: store, archiveExisting: archiveExisting) == nil {
+                        planImportError = "导入过程中日期解析失败"
+                    }
+                case .failure(let error):
+                    planImportError = error.localizedDescription
+                }
+            } catch {
+                planImportError = "读取文件失败：\(error.localizedDescription)"
+            }
+        case .failure(let error):
+            planImportError = "选择文件失败：\(error.localizedDescription)"
+        }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {

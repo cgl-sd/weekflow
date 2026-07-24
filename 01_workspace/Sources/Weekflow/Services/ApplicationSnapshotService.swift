@@ -6,6 +6,7 @@ import Foundation
 struct ApplicationSnapshotService {
     func makeSnapshot(
         goals: [WeeklyGoal],
+        plans: [WeeklyPlan],
         channels: [TaskChannel],
         calendarEvents: [CalendarEvent],
         dailyPlanningStates: [DailyPlanningState],
@@ -15,6 +16,7 @@ struct ApplicationSnapshotService {
     ) -> WeekflowPersistenceSnapshot {
         WeekflowPersistenceSnapshot(
             goals: goals,
+            plans: plans,
             channels: channels,
             calendarEvents: calendarEvents,
             dailyPlanningStates: dailyPlanningStates,
