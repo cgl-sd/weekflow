@@ -689,7 +689,7 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
             .joined(separator: "\n")
     let storeSource = try String(
         contentsOf: weeklyRefinementPackageRoot.appendingPathComponent(
-            "Sources/Weekflow/Stores/WeekflowStore.swift"
+            "Sources/Weekflow/Stores/WeekflowStore+Queries.swift"
         ),
         encoding: .utf8
     )
