@@ -6,9 +6,11 @@ struct TrashSummaryView: View {
     let openTask: (((goal: WeeklyGoal, task: WeekTask)) -> Void)?
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
+    @State private var plansExpanded = true
     @State private var searchText = ""
     @State private var isConfirmingDeleteAllTasks = false
     @State private var isConfirmingDeleteAllGoals = false
+    @State private var isConfirmingDeleteAllPlans = false
     @FocusState private var isSearchFocused: Bool
 
     init(
@@ -70,6 +72,28 @@ struct TrashSummaryView: View {
                     } else {
                         ForEach(filteredGoals) { goal in
                             TrashGoalCard(store: store, goal: goal)
+                        }
+                    }
+                }
+
+                ArchiveDisclosureSection(
+                    title: "已删除周规划",
+                    count: filteredDeletedPlans.count,
+                    isExpanded: $plansExpanded,
+                    trailingAction: {
+                        if !filteredDeletedPlans.isEmpty {
+                            deleteAllButton(
+                                isConfirming: $isConfirmingDeleteAllPlans,
+                                action: { store.permanentlyDeleteAllDeletedPlans() }
+                            )
+                        }
+                    }
+                ) {
+                    if filteredDeletedPlans.isEmpty {
+                        ArchiveEmptyRow(text: searchText.isEmpty ? "当前没有已删除周规划" : "没有匹配的规划")
+                    } else {
+                        ForEach(filteredDeletedPlans) { plan in
+                            TrashPlanCard(store: store, plan: plan)
                         }
                     }
                 }
@@ -137,6 +161,12 @@ struct TrashSummaryView: View {
 
     private func matchesSearch(_ title: String) -> Bool {
         searchText.isEmpty || title.localizedCaseInsensitiveContains(searchText)
+    }
+
+    private var filteredDeletedPlans: [WeeklyPlan] {
+        store.deletedPlans.filter { plan in
+            matchesSearch(plan.title)
+        }
     }
 }
 
@@ -282,5 +312,36 @@ struct DeleteAllCapsuleButton: View {
     private func cancelConfirmation() {
         guard isConfirming else { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirming = false }
+    }
+}
+
+struct TrashPlanCard: View {
+    @Bindable var store: WeekflowStore
+    let plan: WeeklyPlan
+
+    var body: some View {
+        ArchiveItemCard(symbol: "trash") {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(plan.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.textPrimary)
+                    .lineLimit(1)
+                HStack(spacing: 7) {
+                    Text("删除于 \((plan.archivedAt ?? .now).dayLabel)")
+                    Text("·")
+                    Text("\(store.goalsForPlan(plan.id).count) 个目标")
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(WeekflowPalette.textMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } actions: {
+            ArchiveCapsuleActions(
+                destructiveTitle: "删除",
+                requiresDestructiveConfirmation: true,
+                restore: { store.restorePlan(id: plan.id) },
+                destructive: { store.deletePlan(id: plan.id) }
+            )
+        }
     }
 }

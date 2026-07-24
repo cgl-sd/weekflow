@@ -13,6 +13,7 @@ struct ArchiveSummaryView: View {
     private let usesScrollContainer: Bool
     @State private var tasksExpanded = true
     @State private var goalsExpanded = true
+    @State private var plansExpanded = true
     @State private var searchText = ""
     @FocusState private var isSearchFocused: Bool
 
@@ -75,6 +76,18 @@ struct ArchiveSummaryView: View {
                     ForEach(filteredGoals) { goal in archivedGoalCard(goal) }
                 }
             }
+
+            ArchiveDisclosureSection(
+                title: "已归档周规划",
+                count: filteredPlans.count,
+                isExpanded: $plansExpanded
+            ) {
+                if filteredPlans.isEmpty {
+                    ArchiveEmptyRow(text: searchText.isEmpty ? "当前没有归档周规划" : "没有匹配的规划")
+                } else {
+                    ForEach(filteredPlans) { plan in archivedPlanCard(plan) }
+                }
+            }
         }
         .padding(28)
         .frame(maxWidth: 1_040, alignment: .topLeading)
@@ -130,6 +143,37 @@ struct ArchiveSummaryView: View {
 
     private func matchesSearch(_ title: String) -> Bool {
         searchText.isEmpty || title.localizedCaseInsensitiveContains(searchText)
+    }
+
+    private var filteredPlans: [WeeklyPlan] {
+        store.archivedPlans.filter { plan in
+            matchesSearch(plan.title)
+        }
+    }
+
+    private func archivedPlanCard(_ plan: WeeklyPlan) -> some View {
+        ArchiveItemCard(symbol: "calendar.badge.checkmark") {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(plan.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.textPrimary)
+                    .lineLimit(1)
+                HStack(spacing: 7) {
+                    Text("归档于 \((plan.archivedAt ?? .now).dayLabel)")
+                    Text("·")
+                    Text("\(store.goalsForPlan(plan.id).count) 个目标")
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(WeekflowPalette.textMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } actions: {
+            ArchiveCapsuleActions(
+                destructiveTitle: "删除",
+                restore: { store.restorePlan(id: plan.id) },
+                destructive: { store.deletePlan(id: plan.id) }
+            )
+        }
     }
 
     private func archivedTaskCard(_ entry: (goal: WeeklyGoal, task: WeekTask)) -> some View {

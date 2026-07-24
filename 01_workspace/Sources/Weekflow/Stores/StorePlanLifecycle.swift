@@ -49,4 +49,38 @@ extension WeekflowStore {
             persistenceIssue = "规划保存失败：\(error.localizedDescription)"
         }
     }
+
+    /// Restores an archived plan (un-archives it and its goals).
+    func restorePlan(id: UUID) {
+        guard let index = plans.firstIndex(where: { $0.id == id }) else { return }
+        plans[index].archivedAt = nil
+        // Also restore goals that were archived with this plan
+        for goalIndex in goals.indices where goals[goalIndex].planID == id {
+            if goals[goalIndex].archivedAt != nil && goals[goalIndex].deletedAt == nil {
+                goals[goalIndex].archivedAt = nil
+            }
+        }
+        invalidateGoalIndex()
+        persistPlans()
+        persist()
+    }
+
+    /// Soft-deletes a plan (moves to trash).
+    func deletePlan(id: UUID) {
+        guard let index = plans.firstIndex(where: { $0.id == id }) else { return }
+        plans[index].deletedAt = .now
+        persistPlans()
+    }
+
+    /// Permanently removes a plan from the store.
+    func permanentlyDeletePlan(id: UUID) {
+        plans.removeAll { $0.id == id }
+        persistPlans()
+    }
+
+    /// Permanently deletes all plans in trash.
+    func permanentlyDeleteAllDeletedPlans() {
+        plans.removeAll { $0.isDeleted }
+        persistPlans()
+    }
 }

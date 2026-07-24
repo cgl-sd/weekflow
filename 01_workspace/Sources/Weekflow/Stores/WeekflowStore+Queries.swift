@@ -16,6 +16,13 @@ extension WeekflowStore {
         }
     }
 
+    /// All deleted (trashed) plans.
+    var deletedPlans: [WeeklyPlan] {
+        plans.filter(\.isDeleted).sorted {
+            ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast)
+        }
+    }
+
     var selectedGoal: WeeklyGoal? {
         selectedGoalID.flatMap { id in goalIndex(for: id).map { goals[$0] } }
     }

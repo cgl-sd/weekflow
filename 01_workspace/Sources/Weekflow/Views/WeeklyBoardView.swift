@@ -53,8 +53,7 @@ struct WeeklyBoardView: View {
     @State private var planningRangeBoundary: WeeklyPlanningRangeBoundary = .start
     @State private var isPlanningRangeInteractionActive = false
     @State private var showsPlanningRange = false
-    @State private var showsNewPlanDialog = false
-    @State private var showsArchivePlanConfirmation = false
+    @State private var isConfirmingArchive = false
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
 
@@ -115,25 +114,6 @@ struct WeeklyBoardView: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .sheet(isPresented: $showsNewPlanDialog) {
-            NewPlanDialog(store: store, defaultStart: planningStartDate, defaultEnd: planningEndDate)
-        }
-        .confirmationDialog(
-            "归档本周规划",
-            isPresented: $showsArchivePlanConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("归档规划及其下所有目标", role: .destructive) {
-                if let plan = store.activePlan {
-                    store.archivePlan(id: plan.id)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            if let plan = store.activePlan {
-                Text("将归档「\(plan.title)」及其下 \(store.goalsForPlan(plan.id).count) 个目标")
-            }
-        }
     }
 
     private var header: some View {
@@ -333,7 +313,7 @@ struct WeeklyBoardView: View {
     }
 
     private func planningRangeOverlay(anchorFrame: CGRect, containerSize: CGSize) -> some View {
-        let panelSize = CGSize(width: 340, height: 306)
+        let panelSize = CGSize(width: 270, height: 306)
         let inset: CGFloat = 8
         let proposedX = anchorFrame.minX
         let maximumX = max(containerSize.width - panelSize.width - inset, inset)
@@ -346,15 +326,8 @@ struct WeeklyBoardView: View {
                 HStack(spacing: 6) {
                     planningBoundaryButton(.start, date: planningStartDate)
                     planningBoundaryButton(.end, date: planningEndDate)
-                    planningActionButton(
-                        title: "新建",
-                        symbol: "plus.calendar"
-                    ) { showsNewPlanDialog = true }
                     if store.activePlan != nil {
-                        planningActionButton(
-                            title: "归档",
-                            symbol: "archivebox"
-                        ) { showsArchivePlanConfirmation = true }
+                        planningArchiveButton()
                     }
                 }
 
@@ -469,33 +442,61 @@ struct WeeklyBoardView: View {
         .pointingHandCursor()
     }
 
-    private func planningActionButton(
-        title: String,
-        symbol: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        WeekflowButton(action: action) {
+    private func planningArchiveButton() -> some View {
+        WeekflowButton {
+            if isConfirmingArchive {
+                if let plan = store.activePlan {
+                    store.archivePlan(id: plan.id)
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirmingArchive = false }
+            } else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirmingArchive = true }
+            }
+        } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(isConfirmingArchive ? "确认" : "归档")
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textMuted)
-                Image(systemName: symbol)
+                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textMuted)
+                Image(systemName: isConfirmingArchive ? "exclamationmark.triangle.fill" : "archivebox")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(WeekflowPalette.textPrimary)
+                    .foregroundStyle(isConfirmingArchive ? WeekflowPalette.danger : WeekflowPalette.textPrimary)
             }
             .padding(.horizontal, 9)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
-                WeekflowPalette.surfaceHover,
+                isConfirmingArchive
+                    ? WeekflowPalette.danger.opacity(0.1)
+                    : WeekflowPalette.surfaceHover,
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
             )
             .overlay {
                 WeekflowRoundedRectangle(cornerRadius: 6)
-                    .stroke(WeekflowPalette.border, lineWidth: 1)
+                    .stroke(
+                        isConfirmingArchive
+                            ? WeekflowPalette.danger.opacity(0.4)
+                            : WeekflowPalette.border,
+                        lineWidth: 1
+                    )
             }
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+        .background {
+            if isConfirmingArchive {
+                GeometryReader { proxy in
+                    WindowOutsideClickMonitor(
+                        protectedRect: CGRect(origin: .zero, size: proxy.size),
+                        monitoredEventMask: .leftMouseDown,
+                        action: {
+                            guard isConfirmingArchive else { return }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isConfirmingArchive = false }
+                        }
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isConfirmingArchive)
     }
 
     private func selectPlanningBoundaryDate(_ date: Date) {
@@ -625,64 +626,6 @@ struct WeeklyHeaderUndoButton: View {
         .pointingHandCursor()
         .onHover { isHovering = $0 }
         .help("撤销最近一次自动分配")
-    }
-}
-
-/// Dialog for creating a new weekly plan with title and date range.
-struct NewPlanDialog: View {
-    @Bindable var store: WeekflowStore
-    let defaultStart: Date
-    let defaultEnd: Date
-    @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var startDate: Date
-    @State private var endDate: Date
-
-    init(store: WeekflowStore, defaultStart: Date, defaultEnd: Date) {
-        self.store = store
-        self.defaultStart = defaultStart
-        self.defaultEnd = defaultEnd
-        _startDate = State(initialValue: defaultStart)
-        _endDate = State(initialValue: defaultEnd)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("新建本周规划")
-                .font(.system(size: 15, weight: .semibold))
-
-            TextField("规划名称（如：第30周）", text: $title)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 13))
-
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("开始日期").font(.system(size: 11)).foregroundStyle(.secondary)
-                    DatePicker("", selection: $startDate, displayedComponents: .date)
-                        .labelsHidden()
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("截止日期").font(.system(size: 11)).foregroundStyle(.secondary)
-                    DatePicker("", selection: $endDate, in: startDate..., displayedComponents: .date)
-                        .labelsHidden()
-                }
-            }
-
-            HStack {
-                Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("创建") {
-                    let planTitle = title.isEmpty ? "本周规划" : title
-                    store.addPlan(title: planTitle, startDate: startDate, endDate: endDate)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(width: 320)
     }
 }
 
