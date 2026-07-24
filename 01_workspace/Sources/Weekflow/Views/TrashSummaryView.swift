@@ -11,6 +11,8 @@ struct TrashSummaryView: View {
     @State private var isConfirmingDeleteAllTasks = false
     @State private var isConfirmingDeleteAllGoals = false
     @State private var isConfirmingDeleteAllPlans = false
+    @State private var detailPlan: WeeklyPlan?
+    @State private var detailGoal: WeeklyGoal?
     @FocusState private var isSearchFocused: Bool
 
     init(
@@ -71,7 +73,9 @@ struct TrashSummaryView: View {
                         ArchiveEmptyRow(text: searchText.isEmpty ? "当前筛选下没有已删除周目标" : "没有匹配的目标")
                     } else {
                         ForEach(filteredGoals) { goal in
-                            TrashGoalCard(store: store, goal: goal)
+                            TrashGoalCard(store: store, goal: goal) {
+                                detailGoal = goal
+                            }
                         }
                     }
                 }
@@ -93,7 +97,9 @@ struct TrashSummaryView: View {
                         ArchiveEmptyRow(text: searchText.isEmpty ? "当前没有已删除周规划" : "没有匹配的规划")
                     } else {
                         ForEach(filteredDeletedPlans) { plan in
-                            TrashPlanCard(store: store, plan: plan)
+                            TrashPlanCard(store: store, plan: plan) {
+                                detailPlan = plan
+                            }
                         }
                     }
                 }
@@ -104,6 +110,12 @@ struct TrashSummaryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(WeekflowPalette.appBackground)
+        .sheet(item: $detailPlan) { plan in
+            PlanDetailView(store: store, plan: plan)
+        }
+        .sheet(item: $detailGoal) { goal in
+            ArchivedGoalDetailView(goal: goal)
+        }
     }
 
     private var searchField: some View {
@@ -215,6 +227,7 @@ struct TrashTaskCard: View {
 struct TrashGoalCard: View {
     @Bindable var store: WeekflowStore
     let goal: WeeklyGoal
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         let completed = goal.subgoals.filter(\.isCompleted).count
@@ -229,6 +242,8 @@ struct TrashGoalCard: View {
                     .foregroundStyle(WeekflowPalette.textMuted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onTap?() }
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",
@@ -318,6 +333,7 @@ struct DeleteAllCapsuleButton: View {
 struct TrashPlanCard: View {
     @Bindable var store: WeekflowStore
     let plan: WeeklyPlan
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         ArchiveItemCard(symbol: "trash") {
@@ -335,6 +351,8 @@ struct TrashPlanCard: View {
                 .foregroundStyle(WeekflowPalette.textMuted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onTap?() }
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",

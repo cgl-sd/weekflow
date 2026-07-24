@@ -15,6 +15,8 @@ struct ArchiveSummaryView: View {
     @State private var goalsExpanded = true
     @State private var plansExpanded = true
     @State private var searchText = ""
+    @State private var detailPlan: WeeklyPlan?
+    @State private var detailGoal: WeeklyGoal?
     @FocusState private var isSearchFocused: Bool
 
     init(
@@ -41,6 +43,12 @@ struct ArchiveSummaryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(WeekflowPalette.appBackground)
+        .sheet(item: $detailPlan) { plan in
+            PlanDetailView(store: store, plan: plan)
+        }
+        .sheet(item: $detailGoal) { goal in
+            ArchivedGoalDetailView(goal: goal)
+        }
     }
 
     private var archiveContent: some View {
@@ -167,6 +175,8 @@ struct ArchiveSummaryView: View {
                 .foregroundStyle(WeekflowPalette.textMuted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { detailPlan = plan }
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",
@@ -224,6 +234,8 @@ struct ArchiveSummaryView: View {
                     .foregroundStyle(WeekflowPalette.textMuted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { detailGoal = goal }
         } actions: {
             ArchiveCapsuleActions(
                 destructiveTitle: "删除",
@@ -445,5 +457,175 @@ struct ArchiveEmptyRow: View {
             .font(.system(size: 12))
             .foregroundStyle(WeekflowPalette.textMuted)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .center)
+    }
+}
+
+/// Detail view for an archived/deleted plan showing its goals and subgoals.
+struct PlanDetailView: View {
+    @Bindable var store: WeekflowStore
+    let plan: WeeklyPlan
+    @Environment(\.dismiss) private var dismiss
+
+    private var planGoals: [WeeklyGoal] {
+        store.goals.filter { $0.planID == plan.id || ($0.planID == nil && $0.archivedAt != nil) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(plan.title)
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("\(plan.startDate.formatted(.dateTime.month().day())) – \(plan.endDate.formatted(.dateTime.month().day()))")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                Spacer()
+                WeekflowButton { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+            }
+            .padding(20)
+
+            Divider().opacity(0.4)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(planGoals.count) 个周目标")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textSecondary)
+
+                    if planGoals.isEmpty {
+                        Text("该规划下没有目标")
+                            .font(.system(size: 12))
+                            .foregroundStyle(WeekflowPalette.textMuted)
+                    } else {
+                        ForEach(planGoals) { goal in
+                            planGoalRow(goal)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .frame(width: 420, height: 480)
+        .background(WeekflowPalette.surface)
+    }
+
+    private func planGoalRow(_ goal: WeeklyGoal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "target")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.objective)
+                Text(goal.title.isEmpty ? "未命名目标" : goal.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(WeekflowPalette.textPrimary)
+                Spacer()
+                if !goal.outcome.isEmpty {
+                    Text(goal.outcome)
+                        .font(.system(size: 11))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                        .lineLimit(1)
+                }
+            }
+            if !goal.subgoals.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(goal.subgoals) { subgoal in
+                        HStack(spacing: 6) {
+                            Image(systemName: subgoal.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(subgoal.isCompleted ? WeekflowPalette.objective : WeekflowPalette.textMuted)
+                            Text(subgoal.title)
+                                .font(.system(size: 12))
+                                .foregroundStyle(WeekflowPalette.textSecondary)
+                        }
+                        .padding(.leading, 20)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(WeekflowPalette.surfaceHover.opacity(0.5), in: WeekflowRoundedRectangle(cornerRadius: 8))
+        .overlay(
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(WeekflowPalette.border.opacity(0.5))
+        )
+    }
+}
+
+/// Detail view for a single archived goal showing its subgoals.
+struct ArchivedGoalDetailView: View {
+    let goal: WeeklyGoal
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goal.title.isEmpty ? "未命名目标" : goal.title)
+                        .font(.system(size: 17, weight: .semibold))
+                    if !goal.outcome.isEmpty {
+                        Text(goal.outcome)
+                            .font(.system(size: 12))
+                            .foregroundStyle(WeekflowPalette.textMuted)
+                    }
+                }
+                Spacer()
+                WeekflowButton { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(WeekflowPalette.textMuted)
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+            }
+            .padding(20)
+
+            Divider().opacity(0.4)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    let completed = goal.subgoals.filter(\.isCompleted).count
+                    Text("\(goal.subgoals.count) 个子目标，\(completed) 个已完成")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WeekflowPalette.textSecondary)
+
+                    if goal.subgoals.isEmpty {
+                        Text("没有子目标")
+                            .font(.system(size: 12))
+                            .foregroundStyle(WeekflowPalette.textMuted)
+                    } else {
+                        ForEach(goal.subgoals) { subgoal in
+                            HStack(spacing: 8) {
+                                Image(systemName: subgoal.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(subgoal.isCompleted ? WeekflowPalette.objective : WeekflowPalette.textMuted)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(subgoal.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(WeekflowPalette.textPrimary)
+                                    if !subgoal.detail.isEmpty {
+                                        Text(subgoal.detail)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(WeekflowPalette.textMuted)
+                                    }
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(WeekflowPalette.surfaceHover.opacity(0.5), in: WeekflowRoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .frame(width: 380, height: 420)
+        .background(WeekflowPalette.surface)
     }
 }

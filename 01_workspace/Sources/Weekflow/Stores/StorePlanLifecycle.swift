@@ -23,9 +23,13 @@ extension WeekflowStore {
     func archivePlan(id: UUID) {
         guard let index = plans.firstIndex(where: { $0.id == id }) else { return }
         plans[index].archivedAt = .now
-        // Batch-archive all goals belonging to this plan.
-        for goalIndex in goals.indices where goals[goalIndex].planID == id {
-            if goals[goalIndex].archivedAt == nil && goals[goalIndex].deletedAt == nil {
+        // Batch-archive all goals belonging to this plan OR orphan goals (no planID).
+        for goalIndex in goals.indices {
+            let belongsToPlan = goals[goalIndex].planID == id
+            let isOrphan = goals[goalIndex].planID == nil
+            if (belongsToPlan || isOrphan)
+                && goals[goalIndex].archivedAt == nil
+                && goals[goalIndex].deletedAt == nil {
                 goals[goalIndex].archivedAt = .now
             }
         }

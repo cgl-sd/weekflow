@@ -12,10 +12,11 @@ extension WeekflowStore {
         endDate: Date,
         channelID: String? = nil,
         subgoals: [GoalSubgoal] = [],
+        planID: UUID? = nil,
         persistImmediately: Bool = true
     ) -> UUID {
         let sortOrder = (activeGoals.map(\.sortOrder).min() ?? 0) - 1
-        let newGoal = goalService.makeGoal(
+        var newGoal = goalService.makeGoal(
             title: title,
             outcome: outcome,
             startDate: startDate,
@@ -24,6 +25,7 @@ extension WeekflowStore {
             subgoals: subgoals,
             sortOrder: sortOrder
         )
+        newGoal.planID = planID ?? activePlan?.id
         goals.insert(newGoal, at: 0)
         invalidateGoalIndex()
         selectedGoalID = newGoal.id
