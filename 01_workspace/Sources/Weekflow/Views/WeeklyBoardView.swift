@@ -55,6 +55,8 @@ struct WeeklyBoardView: View {
     @State private var showsPlanningRange = false
     @State private var isConfirmingArchive = false
     @State private var isImportHovering = false
+    @State private var hoveredBoundary: WeeklyPlanningRangeBoundary?
+    @State private var isArchiveHovering = false
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
 
@@ -459,6 +461,7 @@ struct WeeklyBoardView: View {
         date: Date
     ) -> some View {
         let isActive = planningRangeBoundary == boundary
+        let isHovered = hoveredBoundary == boundary
         return WeekflowButton {
             planningRangeBoundary = boundary
             planningDisplayedMonth = calendar.dateInterval(of: .month, for: date)?.start ?? date
@@ -474,7 +477,8 @@ struct WeeklyBoardView: View {
             .padding(.horizontal, 9)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
-                isActive ? WeekflowPalette.objective.opacity(0.10) : WeekflowPalette.surfaceHover,
+                isActive ? WeekflowPalette.objective.opacity(isHovered ? 0.15 : 0.10)
+                    : (isHovered ? WeekflowPalette.surfaceHover : WeekflowPalette.surfaceHover.opacity(0.5)),
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
             )
             .overlay {
@@ -482,13 +486,15 @@ struct WeeklyBoardView: View {
                     .stroke(
                         isActive
                             ? WeekflowPalette.objective.opacity(0.65)
-                            : WeekflowPalette.border,
+                            : (isHovered ? WeekflowPalette.borderStrong : WeekflowPalette.border),
                         lineWidth: 1
                     )
             }
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+        .onHover { hoveredBoundary = $0 ? boundary : nil }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 
     private func planningArchiveButton() -> some View {
@@ -512,8 +518,8 @@ struct WeeklyBoardView: View {
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             .background(
                 isConfirmingArchive
-                    ? WeekflowPalette.danger.opacity(0.10)
-                    : WeekflowPalette.surfaceHover,
+                    ? WeekflowPalette.danger.opacity(isArchiveHovering ? 0.15 : 0.10)
+                    : (isArchiveHovering ? WeekflowPalette.surfaceHover : WeekflowPalette.surfaceHover.opacity(0.5)),
                 in: WeekflowRoundedRectangle(cornerRadius: 6)
             )
             .overlay {
@@ -521,13 +527,15 @@ struct WeeklyBoardView: View {
                     .stroke(
                         isConfirmingArchive
                             ? WeekflowPalette.danger.opacity(0.65)
-                            : WeekflowPalette.border,
+                            : (isArchiveHovering ? WeekflowPalette.borderStrong : WeekflowPalette.border),
                         lineWidth: 1
                     )
             }
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+        .onHover { isArchiveHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isArchiveHovering)
         .background {
             if isConfirmingArchive {
                 GeometryReader { proxy in
