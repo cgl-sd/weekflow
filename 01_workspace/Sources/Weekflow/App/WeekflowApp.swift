@@ -56,9 +56,21 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         // SwiftUI finishes constructing its default command menu after the
         // scene appears. Reinstall on the next run-loop turn so the complete
         // Chinese menu becomes the stable application menu.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.applicationMenu.install()
         }
+        // Reinstall whenever the app becomes active to guard against
+        // SwiftUI resetting the menu bar.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reinstallMenuOnActivate),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func reinstallMenuOnActivate() {
+        applicationMenu.install()
     }
 
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {
