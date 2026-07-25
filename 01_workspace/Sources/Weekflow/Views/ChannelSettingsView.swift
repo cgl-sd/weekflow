@@ -33,7 +33,6 @@ struct ChannelSettingsView: View {
     @State private var newChannelIconName = "number"
     @State private var newChannelColorName = "gray"
     @State private var activeChannelPaletteID: String?
-    @State private var isColorPaletteInteractionActive = false
     @State private var channelPaletteAnchors: [String: CGRect] = [:]
     @State private var activeChannelIconID: String?
     @State private var channelIconAnchors: [String: CGRect] = [:]
@@ -209,15 +208,16 @@ struct ChannelSettingsView: View {
             y: min(anchor.maxY + 6, availableSize.height - panelSize.height - 6)
         )
         return ZStack(alignment: .topLeading) {
+            // Transparent tap layer: clicking anywhere outside the panel dismisses it
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { activeChannelPaletteID = nil }
+                .frame(width: availableSize.width, height: availableSize.height)
+
             WindowOutsideClickMonitor(
                 protectedRects: [anchor, CGRect(origin: origin, size: panelSize)],
                 monitoredEventMask: .leftMouseUp,
-                action: {
-                    guard ColorPickerDismissalPolicy.shouldDismiss(
-                        isInteractingInsidePanel: isColorPaletteInteractionActive
-                    ) else { return }
-                    activeChannelPaletteID = nil
-                }
+                action: { activeChannelPaletteID = nil }
             )
             .frame(width: availableSize.width, height: availableSize.height)
             .allowsHitTesting(false)
@@ -239,7 +239,7 @@ struct ChannelSettingsView: View {
                         store.updateChannel(channel)
                     }
                 ),
-                interactionChanged: { isColorPaletteInteractionActive = $0 }
+                interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: origin.x, y: origin.y)
@@ -304,7 +304,6 @@ struct ChannelSettingsView: View {
 
     private func toggleColorPalette(for channelID: String) {
         activeChannelIconID = nil
-        isColorPaletteInteractionActive = false
         activeChannelPaletteID = activeChannelPaletteID == channelID ? nil : channelID
     }
 
@@ -359,10 +358,8 @@ struct GeneralSettingsView: View {
     @AppStorage(GlobalDateShortcutPreferences.errorKey)
     private var globalDateShortcutError = ""
     @State private var isColorPalettePresented = false
-    @State private var isColorPaletteInteractionActive = false
     @State private var colorPaletteAnchor = CGRect.zero
     @State private var isThemeColorPalettePresented = false
-    @State private var isThemeColorPaletteInteractionActive = false
     @State private var themeColorPaletteAnchor = CGRect.zero
     @State private var isChartPalettePresented = false
     @State private var chartPaletteAnchor = CGRect.zero
@@ -733,25 +730,25 @@ struct GeneralSettingsView: View {
             y: min(colorPaletteAnchor.maxY + 6, availableSize.height - panelSize.height - 6)
         )
         return ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { isColorPalettePresented = false }
+                .frame(width: availableSize.width, height: availableSize.height)
+
             WindowOutsideClickMonitor(
                 protectedRects: [
                     colorPaletteAnchor,
                     CGRect(origin: panelOrigin, size: panelSize)
                 ],
                 monitoredEventMask: .leftMouseUp,
-                action: {
-                    guard ColorPickerDismissalPolicy.shouldDismiss(
-                        isInteractingInsidePanel: isColorPaletteInteractionActive
-                    ) else { return }
-                    isColorPalettePresented = false
-                }
+                action: { isColorPalettePresented = false }
             )
             .frame(width: availableSize.width, height: availableSize.height)
             .allowsHitTesting(false)
 
             CompactColorPalettePanel(
                 selectedToken: $colorToken,
-                interactionChanged: { isColorPaletteInteractionActive = $0 }
+                interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: panelOrigin.x, y: panelOrigin.y)
@@ -777,25 +774,25 @@ struct GeneralSettingsView: View {
             )
         )
         return ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { isThemeColorPalettePresented = false }
+                .frame(width: availableSize.width, height: availableSize.height)
+
             WindowOutsideClickMonitor(
                 protectedRects: [
                     themeColorPaletteAnchor,
                     CGRect(origin: panelOrigin, size: panelSize)
                 ],
                 monitoredEventMask: .leftMouseUp,
-                action: {
-                    guard ColorPickerDismissalPolicy.shouldDismiss(
-                        isInteractingInsidePanel: isThemeColorPaletteInteractionActive
-                    ) else { return }
-                    isThemeColorPalettePresented = false
-                }
+                action: { isThemeColorPalettePresented = false }
             )
             .frame(width: availableSize.width, height: availableSize.height)
             .allowsHitTesting(false)
 
             CompactColorPalettePanel(
                 selectedToken: $themeColorToken,
-                interactionChanged: { isThemeColorPaletteInteractionActive = $0 }
+                interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: panelOrigin.x, y: panelOrigin.y)
