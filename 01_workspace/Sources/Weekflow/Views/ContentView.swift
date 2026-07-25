@@ -499,20 +499,20 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
-        let panel = NSSavePanel()
+        // Use NSOpenPanel (same as import) for consistent full file browser UI
+        let panel = NSOpenPanel()
         panel.title = "导出周规划"
-        panel.prompt = "导出"
-        panel.message = "选择要导出周规划 JSON 文件的位置"
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "\(plan.title).json"
+        panel.prompt = "导出到此文件夹"
+        panel.message = "选择要导出「\(plan.title).json」的文件夹"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         panel.showsHiddenFiles = false
-        panel.canSelectHiddenExtension = false
-        panel.isExtensionHidden = false
-        // Force full file browser view (like NSOpenPanel) instead of compact mode
         panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        if panel.runModal() == .OK, let url = panel.url {
-            do { try data.write(to: url) } catch {}
+        if panel.runModal() == .OK, let dirURL = panel.url {
+            let fileURL = dirURL.appendingPathComponent("\(plan.title).json")
+            do { try data.write(to: fileURL) } catch {}
         }
         reinstallMenuAfterPanel()
     }
