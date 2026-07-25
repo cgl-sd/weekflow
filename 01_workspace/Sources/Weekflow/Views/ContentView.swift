@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Bindable var store: WeekflowStore
@@ -29,6 +28,8 @@ struct ContentView: View {
     @State private var planImportError: String?
     @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
     @State private var showsImportOverwriteConfirm = false
+    @State private var filePickerMode: PlanFilePickerView.Mode?
+    @State private var exportData: Data?
 
     init(
         store: WeekflowStore,
@@ -76,6 +77,18 @@ struct ContentView: View {
         .sheet(isPresented: $showingShortcutHelp) { ShortcutHelpView() }
         .sheet(item: $presentedSettingsSection) { section in
             ChannelSettingsView(store: store, initialSection: section)
+        }
+        .sheet(item: $filePickerMode) { pickerMode in
+            PlanFilePickerView(mode: pickerMode) { url in
+                switch pickerMode {
+                case .importFile:
+                    handlePlanImportResult(.success(url))
+                case .exportFile:
+                    if let data = exportData {
+                        do { try data.write(to: url) } catch {}
+                    }
+                }
+            }
         }
 
         .alert("导入失败", isPresented: Binding(
@@ -468,17 +481,7 @@ struct ContentView: View {
     }
 
     private func performPlanImport() {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.beginSheetModal(for: window) { [self] response in
-            if response == .OK, let url = panel.url {
-                handlePlanImportResult(.success(url))
-            }
-            reinstallMenuAfterPanel()
-        }
+        filePickerMode = .importFile
     }
 
     private func performPlanExport() {
@@ -493,35 +496,8 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "\(plan.title).json"
-        panel.canCreateDirectories = true
-        panel.beginSheetModal(for: window) { response in
-            if response == .OK, let url = panel.url {
-                do {
-                    try data.write(to: url)
-                } catch {
-                    // Export write failure: non-destructive, no data loss.
-                }
-            }
-            reinstallMenuAfterPanel()
-        }
-    }
-
-    /// After a system panel closes, reinstall our custom menu.
-    /// beginSheetModal doesn't create a modal run loop (unlike runModal),
-    /// so SwiftUI's menu reset is less aggressive, but we still guard.
-    private func reinstallMenuAfterPanel() {
-        let delegate = NSApp.delegate as? WeekflowAppDelegate
-        delegate?.reinstallMenu()
-        DispatchQueue.main.async {
-            delegate?.reinstallMenu()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            delegate?.reinstallMenu()
-        }
+        exportData = data
+        filePickerMode = .exportFile(defaultName: "\(plan.title).json")
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {
