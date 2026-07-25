@@ -197,6 +197,26 @@ struct WeekflowApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            // Suppress ALL default SwiftUI menus so they never override our
+            // custom NSMenu installed via WeekflowApplicationMenu.
+            CommandGroup(replacing: .appInfo) {}
+            CommandGroup(replacing: .appSettings) {}
+            CommandGroup(replacing: .appTermination) {}
+            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .importExport) {}
+            CommandGroup(replacing: .undoRedo) {}
+            CommandGroup(replacing: .pasteboard) {}
+            CommandGroup(replacing: .textEditing) {}
+            CommandGroup(replacing: .textFormatting) {}
+            CommandGroup(replacing: .toolbar) {}
+        }
+        .commands {
+            CommandGroup(replacing: .sidebar) {}
+            CommandGroup(replacing: .windowArrangement) {}
+            CommandGroup(replacing: .windowList) {}
+            CommandGroup(replacing: .help) {}
+        }
     }
 
     @ViewBuilder
