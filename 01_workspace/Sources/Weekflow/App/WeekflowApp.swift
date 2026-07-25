@@ -59,28 +59,11 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.applicationMenu.install()
         }
-        // Reinstall whenever the app becomes active to guard against
-        // SwiftUI resetting the menu bar (e.g. after file dialog closes).
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(reinstallMenuDeferred),
-            name: NSApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        // Also observe window becoming key (fires after sheet/dialog dismissal).
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(reinstallMenuDeferred),
-            name: NSWindow.didBecomeKeyNotification,
-            object: nil
-        )
-    }
-
-    @objc private func reinstallMenuDeferred() {
-        // Delay slightly so our install runs AFTER SwiftUI's internal menu reset.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.applicationMenu.install()
-        }
+        // Start the enforcement timer: checks every 80ms that our menu is
+        // still installed. If any system dialog or SwiftUI reset replaces it,
+        // we reinstall immediately. This guarantees menu stability throughout
+        // the entire app lifecycle regardless of what dialogs open.
+        applicationMenu.startEnforcement()
     }
 
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {

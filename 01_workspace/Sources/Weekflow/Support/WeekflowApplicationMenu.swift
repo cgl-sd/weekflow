@@ -3,6 +3,14 @@ import AppKit
 @MainActor
 final class WeekflowApplicationMenu: NSObject {
     private var addWeeklyGoal: (() -> Void)?
+    /// Tag used to identify our custom menu vs system-generated menus.
+    /// We check the second item's title ("文件") which is unique to our menu.
+    private static var isOurMenu: Bool {
+        guard let menu = NSApp.mainMenu, menu.numberOfItems >= 2 else { return false }
+        return menu.item(at: 1)?.title == "文件"
+    }
+    /// Timer that enforces menu stability (reinstalls if something resets it).
+    private var enforcementTimer: Timer?
 
     func install(addWeeklyGoal: (() -> Void)? = nil) {
         if let addWeeklyGoal {
@@ -18,6 +26,26 @@ final class WeekflowApplicationMenu: NSObject {
         mainMenu.addItem(topLevelItem(title: "窗口", submenu: windowMenu()))
         mainMenu.addItem(topLevelItem(title: "帮助", submenu: helpMenu()))
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Starts a lightweight timer that checks every 80ms whether the menu bar
+    /// still belongs to us. If any system dialog or SwiftUI reset replaces it,
+    /// we reinstall immediately — making the flicker imperceptible.
+    func startEnforcement() {
+        guard enforcementTimer == nil else { return }
+        enforcementTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if !Self.isOurMenu {
+                    self.install()
+                }
+            }
+        }
+    }
+
+    func stopEnforcement() {
+        enforcementTimer?.invalidate()
+        enforcementTimer = nil
     }
 
     private func applicationMenu() -> NSMenu {

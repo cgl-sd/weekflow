@@ -468,7 +468,7 @@ struct ContentView: View {
     }
 
     private func performPlanImport() {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { !($0 is NSPanel) }) else { return }
+        guard let window = Self.mainAppWindow else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
@@ -491,7 +491,7 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { !($0 is NSPanel) }) else { return }
+        guard let window = Self.mainAppWindow else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(plan.title).json"
@@ -504,6 +504,13 @@ struct ContentView: View {
                 // Export write failure: non-destructive, no data loss.
             }
         }
+    }
+
+    /// Finds the main application window reliably.
+    private static var mainAppWindow: NSWindow? {
+        NSApp.keyWindow
+            ?? NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible && !($0 is NSPanel) }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {
