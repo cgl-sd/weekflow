@@ -475,6 +475,7 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             handlePlanImportResult(.success(url))
         }
+        reinstallMenuAfterPanel()
     }
 
     private func performPlanExport() {
@@ -499,6 +500,16 @@ struct ContentView: View {
             } catch {
                 // Export write failure: non-destructive, no data loss.
             }
+        }
+        reinstallMenuAfterPanel()
+    }
+
+    /// After a system panel closes, SwiftUI may reset the menu bar.
+    /// Reinstall our custom menu immediately and on the next run-loop turn.
+    private func reinstallMenuAfterPanel() {
+        (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
+        DispatchQueue.main.async {
+            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
         }
     }
 

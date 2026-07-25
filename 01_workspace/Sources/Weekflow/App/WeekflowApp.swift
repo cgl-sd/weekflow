@@ -65,6 +65,12 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         }
     }
 
+    /// Reinstalls the custom menu immediately. Call after system panels close
+    /// to guard against SwiftUI resetting the menu on modal session end.
+    func reinstallMenu() {
+        applicationMenu.install()
+    }
+
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {
         powerTransitionCheckpoint = checkpoint
     }
