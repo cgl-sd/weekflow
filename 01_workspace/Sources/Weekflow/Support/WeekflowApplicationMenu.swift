@@ -2,18 +2,22 @@ import AppKit
 import ObjectiveC
 
 /// Manages the application menu bar with fully Chinese menus.
-/// Uses manual NSMenu installation (NOT SwiftUI Commands) for full control
-/// over menu titles and structure.
+/// Uses manual NSMenu installation (NOT SwiftUI Commands) for full control.
 ///
-/// Protection mechanism (prevents SwiftUI/system from resetting the menu):
-/// 1. Method swizzling: blocks all public setMainMenu: calls
-/// 2. RunLoop beforeWaiting observer: catches private-API resets before render
+/// Protection: method swizzling + GCD main-queue timer enforcement.
+/// The timer fires every 50ms on the main queue and reinstalls the menu
+/// if it was tampered with. Combined with swizzling (blocks public API),
+/// the menu is permanently locked to our Chinese menu.
 @MainActor
 final class WeekflowApplicationMenu: NSObject {
     private(set) static var lockActive = false
     fileprivate static var bypassLock = false
+    /// Static reference so the enforcement timer can access the installer
+    /// without going through NSApp.delegate (which might fail).
+    private static weak var sharedInstance: WeekflowApplicationMenu?
 
     func install() {
+        Self.sharedInstance = self
         let mainMenu = NSMenu()
         mainMenu.addItem(topLevelItem(title: "Weekflow", submenu: applicationMenu()))
         mainMenu.addItem(topLevelItem(title: "文件", submenu: fileMenu()))
@@ -27,60 +31,41 @@ final class WeekflowApplicationMenu: NSObject {
         Self.bypassLock = false
     }
 
-    /// Permanently locks the menu bar. After calling this:
-    /// 1. Method swizzling blocks all external setMainMenu: calls
-    /// 2. RunLoop beforeWaiting observer catches any bypass via private APIs
     func activatePermanentLock() {
         Self.swizzleMainMenuSetter()
         Self.lockActive = true
-        Self.startRunLoopObserver()
+        Self.startEnforcementTimer()
     }
 
-    // MARK: - RunLoop Observer
+    // MARK: - GCD Enforcement Timer
 
-    private static var runLoopObserver: CFRunLoopObserver?
-    private static var runLoopObserver2: CFRunLoopObserver?
+    private static var enforcementTimer: DispatchSourceTimer?
 
-    private static func startRunLoopObserver() {
-        guard runLoopObserver == nil else { return }
-
-        // Observer 1: fires at beforeSources (earliest point in run loop cycle)
-        let obs1 = CFRunLoopObserverCreateWithHandler(
-            nil,
-            CFRunLoopActivity.beforeSources.rawValue,
-            true,
-            0
-        ) { _, _ in
-            Self.enforceMenu()
+    /// Starts a repeating timer on the MAIN QUEUE that checks the menu
+    /// state every 50ms. If the menu was tampered with (via private API
+    /// that bypasses swizzling), it reinstalls immediately.
+    /// GCD main queue is ALWAYS serviced on the main thread, in ALL
+    /// run loop modes (including modal). This is more reliable than
+    /// CFRunLoopObserver which may have Swift Concurrency isolation issues.
+    private static func startEnforcementTimer() {
+        guard enforcementTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(50))
+        timer.setEventHandler {
+            // This block runs on the main queue (main thread).
+            // Directly check and enforce - no @MainActor dispatch needed
+            // because DispatchQueue.main IS the main actor's executor.
+            guard Self.lockActive else { return }
+            if let menu = NSApp.mainMenu,
+               menu.numberOfItems >= 2,
+               menu.item(at: 1)?.title == "文件" {
+                return // Our menu is intact
+            }
+            // Menu was tampered with! Reinstall immediately.
+            Self.sharedInstance?.install()
         }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), obs1, .commonModes)
-        runLoopObserver = obs1
-
-        // Observer 2: fires at beforeWaiting (right before screen refresh)
-        let obs2 = CFRunLoopObserverCreateWithHandler(
-            nil,
-            CFRunLoopActivity.beforeWaiting.rawValue,
-            true,
-            0
-        ) { _, _ in
-            Self.enforceMenu()
-        }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), obs2, .commonModes)
-        runLoopObserver2 = obs2
-    }
-
-    /// Checks if our menu is still in place. If not, reinstalls immediately.
-    /// Called from RunLoop observers (main thread, no MainActor.assumeIsolated
-    /// because CFRunLoop callbacks are C function pointer context).
-    private static func enforceMenu() {
-        guard lockActive else { return }
-        guard let menu = NSApp.mainMenu,
-              menu.numberOfItems >= 2,
-              menu.item(at: 1)?.title == "文件" else {
-            // Menu was replaced! Reinstall immediately.
-            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
-            return
-        }
+        timer.resume()
+        enforcementTimer = timer
     }
 
     // MARK: - Method Swizzling
@@ -251,17 +236,13 @@ final class WeekflowApplicationMenu: NSObject {
 
 extension NSApplication {
     /// Swizzled replacement for `setMainMenu:`.
-    /// When the lock is active, ANY external attempt to change the menu
-    /// is intercepted and REPLACED with our Chinese menu.
-    /// Our own install() sets bypassLock=true to get through.
+    /// When the lock is active, ALL external attempts to change the menu
+    /// are silently BLOCKED (just return). The GCD timer handles restoration.
     @objc dynamic func weekflow_locked_setMainMenu(_ menu: NSMenu?) {
         if WeekflowApplicationMenu.lockActive && !WeekflowApplicationMenu.bypassLock {
-            // External code tried to change the menu.
-            // Force our menu back immediately.
-            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
+            // Block external menu changes entirely.
             return
         }
-        // Either lock not active, or our own install() is calling.
         weekflow_locked_setMainMenu(menu)
     }
 }
