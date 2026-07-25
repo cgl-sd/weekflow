@@ -26,8 +26,6 @@ struct ContentView: View {
     @State private var showingShortcutHelp = false
     @State private var presentedSettingsSection: WorkspaceSettingsSection?
     @State private var dailyPlanningStep = 0
-    @State private var showsPlanImporter = false
-    @State private var showsPlanExporter = false
     @State private var planImportError: String?
     @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
     @State private var showsImportOverwriteConfirm = false
@@ -79,12 +77,7 @@ struct ContentView: View {
         .sheet(item: $presentedSettingsSection) { section in
             ChannelSettingsView(store: store, initialSection: section)
         }
-        .fileImporter(
-            isPresented: $showsPlanImporter,
-            allowedContentTypes: [.json]
-        ) { result in
-            handlePlanImportResult(result)
-        }
+
         .alert("导入失败", isPresented: Binding(
             get: { planImportError != nil },
             set: { if !$0 { planImportError = nil } }
@@ -423,7 +416,7 @@ struct ContentView: View {
             setPresentedTask: { presentedTask = $0 },
             setDestination: { destination = $0 },
             navigateDate: { routeDateNavigation($0) },
-            setShowPlanImporter: { showsPlanImporter = $0 },
+            setShowPlanImporter: { _ in performPlanImport() },
             setShowPlanExporter: { _ in performPlanExport() }
         )
         handler.handle(command)
@@ -474,6 +467,18 @@ struct ContentView: View {
         pendingImportPayload = nil
     }
 
+    private func performPlanImport() {
+        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { !($0 is NSPanel) }) else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [self] response in
+            guard response == .OK, let url = panel.url else { return }
+            handlePlanImportResult(.success(url))
+        }
+    }
+
     private func performPlanExport() {
         let plan: WeeklyPlan
         let planGoals: [WeeklyGoal]
@@ -486,11 +491,13 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
+        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { !($0 is NSPanel) }) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(plan.title).json"
         panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
             do {
                 try data.write(to: url)
             } catch {
@@ -565,7 +572,7 @@ struct ContentView: View {
                 presentedTask: $presentedTask,
                 referenceDate: weeklyReferenceDate,
                 presentation: $weeklyPlanningPresentation,
-                onImport: { showsPlanImporter = true }
+                onImport: { performPlanImport() }
             )
             .id(WeeklyDateNavigation.weekStart(for: weeklyReferenceDate))
         case .weeklyReview:
