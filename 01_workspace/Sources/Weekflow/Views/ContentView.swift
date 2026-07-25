@@ -480,6 +480,7 @@ struct ContentView: View {
         panel.canChooseFiles = true
         panel.showsHiddenFiles = false
         panel.canCreateDirectories = false
+        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         if panel.runModal() == .OK, let url = panel.url {
             handlePlanImportResult(.success(url))
         }
@@ -508,6 +509,8 @@ struct ContentView: View {
         panel.showsHiddenFiles = false
         panel.canSelectHiddenExtension = false
         panel.isExtensionHidden = false
+        // Force full file browser view (like NSOpenPanel) instead of compact mode
+        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         if panel.runModal() == .OK, let url = panel.url {
             do { try data.write(to: url) } catch {}
         }
