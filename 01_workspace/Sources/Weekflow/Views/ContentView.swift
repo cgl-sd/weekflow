@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Bindable var store: WeekflowStore
@@ -28,8 +29,6 @@ struct ContentView: View {
     @State private var planImportError: String?
     @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
     @State private var showsImportOverwriteConfirm = false
-    @State private var filePickerMode: PlanFilePickerView.Mode?
-    @State private var exportData: Data?
 
     init(
         store: WeekflowStore,
@@ -77,18 +76,6 @@ struct ContentView: View {
         .sheet(isPresented: $showingShortcutHelp) { ShortcutHelpView() }
         .sheet(item: $presentedSettingsSection) { section in
             ChannelSettingsView(store: store, initialSection: section)
-        }
-        .sheet(item: $filePickerMode) { pickerMode in
-            PlanFilePickerView(mode: pickerMode) { url in
-                switch pickerMode {
-                case .importFile:
-                    handlePlanImportResult(.success(url))
-                case .exportFile:
-                    if let data = exportData {
-                        do { try data.write(to: url) } catch {}
-                    }
-                }
-            }
         }
 
         .alert("导入失败", isPresented: Binding(
@@ -481,7 +468,13 @@ struct ContentView: View {
     }
 
     private func performPlanImport() {
-        filePickerMode = .importFile
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            handlePlanImportResult(.success(url))
+        }
     }
 
     private func performPlanExport() {
@@ -496,8 +489,17 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
-        exportData = data
-        filePickerMode = .exportFile(defaultName: "\(plan.title).json")
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(plan.title).json"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try data.write(to: url)
+            } catch {
+                // Export write failure: non-destructive, no data loss.
+            }
+        }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {
