@@ -471,6 +471,8 @@ struct ContentView: View {
 
     private func performPlanImport() {
         let panel = NSOpenPanel()
+        panel.title = "导入周规划"
+        panel.prompt = "导入"
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -493,6 +495,8 @@ struct ContentView: View {
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
         let panel = NSSavePanel()
+        panel.title = "导出周规划"
+        panel.prompt = "导出"
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(plan.title).json"
         panel.canCreateDirectories = true
