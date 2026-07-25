@@ -473,9 +473,13 @@ struct ContentView: View {
         let panel = NSOpenPanel()
         panel.title = "导入周规划"
         panel.prompt = "导入"
+        panel.message = "选择要导入的周规划 JSON 文件"
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.showsHiddenFiles = false
+        panel.canCreateDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
             handlePlanImportResult(.success(url))
         }
@@ -497,9 +501,13 @@ struct ContentView: View {
         let panel = NSSavePanel()
         panel.title = "导出周规划"
         panel.prompt = "导出"
+        panel.message = "选择要导出周规划 JSON 文件的位置"
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(plan.title).json"
         panel.canCreateDirectories = true
+        panel.showsHiddenFiles = false
+        panel.canSelectHiddenExtension = false
+        panel.isExtensionHidden = false
         if panel.runModal() == .OK, let url = panel.url {
             do { try data.write(to: url) } catch {}
         }
