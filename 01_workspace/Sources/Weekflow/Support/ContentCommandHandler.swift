@@ -18,6 +18,7 @@ struct ContentCommandHandler {
     var setDestination: (AppDestination) -> Void
     var navigateDate: (GlobalDateNavigation) -> Void
     var setShowPlanImporter: (Bool) -> Void
+    var setShowPlanExporter: (Bool) -> Void
 
     enum GlobalDateNavigation { case today, previous, next }
 
@@ -64,6 +65,8 @@ struct ContentCommandHandler {
             break
         case .importPlan:
             setShowPlanImporter(true)
+        case .exportPlan:
+            setShowPlanExporter(true)
         }
     }
 

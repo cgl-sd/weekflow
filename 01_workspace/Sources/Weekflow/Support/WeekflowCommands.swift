@@ -12,7 +12,7 @@ enum AppCommand: String, Sendable {
     case jumpToToday, jumpToPreviousDay, jumpToNextDay
     case copyHighlightedTask, cutHighlightedTask, pasteTask
     case refreshGlobalShortcuts
-    case importPlan
+    case importPlan, exportPlan
 }
 
 struct RoutedAppCommand: Equatable, Sendable {

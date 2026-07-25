@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var presentedSettingsSection: WorkspaceSettingsSection?
     @State private var dailyPlanningStep = 0
     @State private var showsPlanImporter = false
+    @State private var showsPlanExporter = false
     @State private var planImportError: String?
     @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
     @State private var showsImportOverwriteConfirm = false
@@ -422,7 +423,8 @@ struct ContentView: View {
             setPresentedTask: { presentedTask = $0 },
             setDestination: { destination = $0 },
             navigateDate: { routeDateNavigation($0) },
-            setShowPlanImporter: { showsPlanImporter = $0 }
+            setShowPlanImporter: { showsPlanImporter = $0 },
+            setShowPlanExporter: { _ in performPlanExport() }
         )
         handler.handle(command)
     }
@@ -470,6 +472,31 @@ struct ContentView: View {
             planImportError = "导入过程中日期解析失败"
         }
         pendingImportPayload = nil
+    }
+
+    private func performPlanExport() {
+        let plan: WeeklyPlan
+        let planGoals: [WeeklyGoal]
+        if let active = store.activePlan {
+            plan = active
+            planGoals = store.goalsForPlan(active.id)
+        } else {
+            let range = WeeklyPlanningRangePreferences.range(for: .now)
+            plan = WeeklyPlan(title: "周规划", startDate: range.start, endDate: range.end)
+            planGoals = store.activeGoals
+        }
+        guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(plan.title).json"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try data.write(to: url)
+            } catch {
+                // Export write failure: non-destructive, no data loss.
+            }
+        }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {

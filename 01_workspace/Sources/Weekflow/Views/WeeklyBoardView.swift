@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum WeeklyPlanningPresentation: String, CaseIterable, Identifiable {
     case sections
@@ -148,7 +147,6 @@ struct WeeklyBoardView: View {
             .anchorPreference(key: WeeklyPlanningRangeAnchorPreferenceKey.self, value: .bounds) { $0 }
 
             Spacer()
-            exportMenu
             WeeklyHeaderActionButton(
                 title: "新建周目标",
                 symbol: "plus",
@@ -180,43 +178,6 @@ struct WeeklyBoardView: View {
                 )
             }
         }
-    }
-
-    private var exportMenu: some View {
-        Menu {
-            if store.activePlan != nil || !store.activeGoals.isEmpty {
-                Button("当前规划（\(weekRangeLabel)）") {
-                    exportPlan(nil)
-                }
-            }
-            if !store.archivedPlans.isEmpty {
-                Divider()
-                ForEach(store.archivedPlans) { plan in
-                    Button("\(plan.title)") {
-                        exportPlan(plan)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 11, weight: .medium))
-                Text("导出")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(WeekflowPalette.textSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(WeekflowPalette.surfaceHover, in: WeekflowRoundedRectangle(cornerRadius: 7))
-            .overlay(
-                WeekflowRoundedRectangle(cornerRadius: 7)
-                    .stroke(WeekflowPalette.border, lineWidth: 1)
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .pointingHandCursor()
     }
 
     private var taskPool: some View {
@@ -590,35 +551,6 @@ struct WeeklyBoardView: View {
         .pointingHandCursor()
         .onHover { isImportHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isImportHovering)
-    }
-
-    private func exportPlan(_ archivedPlan: WeeklyPlan?) {
-        let plan: WeeklyPlan
-        let planGoals: [WeeklyGoal]
-        if let archived = archivedPlan {
-            plan = archived
-            planGoals = store.goalsForPlan(archived.id)
-        } else if let active = store.activePlan {
-            plan = active
-            planGoals = store.goalsForPlan(active.id)
-        } else {
-            plan = WeeklyPlan(title: "周规划", startDate: planningStartDate, endDate: planningEndDate)
-            planGoals = store.activeGoals
-        }
-        guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "\(plan.title).json"
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try data.write(to: url)
-            } catch {
-                // Export write failure: user chose path but write failed (permissions/disk).
-                // No alert here since NSSavePanel already validated the path;
-                // failure is rare and non-destructive (no data loss).
-            }
-        }
     }
 
     private func selectPlanningBoundaryDate(_ date: Date) {

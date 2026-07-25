@@ -57,6 +57,7 @@ final class WeekflowApplicationMenu: NSObject {
         menu.addItem(actionItem("新建任务", action: #selector(createTask), key: "a", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(commandItem("导入周规划…", command: .importPlan, key: "i", modifiers: [.command, .shift]))
+        menu.addItem(commandItem("导出周规划…", command: .exportPlan, key: "e", modifiers: [.command, .shift]))
         menu.addItem(.separator())
         menu.addItem(responderItem("关闭窗口", action: #selector(NSWindow.performClose(_:)), key: "w"))
         return menu
