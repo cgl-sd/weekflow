@@ -39,6 +39,10 @@ struct ChannelSettingsView: View {
     @State private var selectedSection: WorkspaceSettingsSection
     @State private var hoveredSection: WorkspaceSettingsSection?
     @State private var isBackHovering = false
+    // General section popup state (lifted for full-screen overlay)
+    @State private var isGeneralColorPalettePresented = false
+    @State private var isGeneralThemePalettePresented = false
+    @State private var isGeneralChartPalettePresented = false
 
     init(
         store: WeekflowStore,
@@ -49,48 +53,78 @@ struct ChannelSettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                WeekflowButton { dismiss() } label: {
-                    Label("返回工作区", systemImage: "chevron.left")
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                        .background(
-                            isBackHovering ? WeekflowPalette.surfaceSelected : .clear,
-                            in: WeekflowRoundedRectangle(cornerRadius: 7)
-                        )
-                        .contentShape(Rectangle())
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    WeekflowButton { dismiss() } label: {
+                        Label("返回工作区", systemImage: "chevron.left")
+                            .padding(.horizontal, 8)
+                            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                            .background(
+                                isBackHovering ? WeekflowPalette.surfaceSelected : .clear,
+                                in: WeekflowRoundedRectangle(cornerRadius: 7)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                        .buttonStyle(.plain)
+                        .pointingHandCursor()
+                        .stablePointingHandHover { isBackHovering = $0 }
+                        .padding(.bottom, 20)
+                    Text("工作区").font(.caption.weight(.bold)).foregroundStyle(WeekflowPalette.secondaryText)
+                    ForEach(WorkspaceSettingsSection.allCases) { section in
+                        settingsRow(section)
+                    }
+                    Spacer()
                 }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
-                    .stablePointingHandHover { isBackHovering = $0 }
-                    .padding(.bottom, 20)
-                Text("工作区").font(.caption.weight(.bold)).foregroundStyle(WeekflowPalette.secondaryText)
-                ForEach(WorkspaceSettingsSection.allCases) { section in
-                    settingsRow(section)
-                }
-                Spacer()
-            }
-            .padding(24)
-            .frame(minWidth: 210, maxWidth: 210, maxHeight: .infinity, alignment: .topLeading)
-            .background(WeekflowPalette.sidebar)
-            Divider()
+                .padding(24)
+                .frame(minWidth: 210, maxWidth: 210, maxHeight: .infinity, alignment: .topLeading)
+                .background(WeekflowPalette.sidebar)
+                Divider()
 
-            Group {
-                switch selectedSection {
-                case .general:
-                    GeneralSettingsView()
-                case .channels:
-                    channelSettings
-                case .calendar:
-                    calendarSettings
+                Group {
+                    switch selectedSection {
+                    case .general:
+                        GeneralSettingsView(
+                            isColorPalettePresented: $isGeneralColorPalettePresented,
+                            isThemeColorPalettePresented: $isGeneralThemePalettePresented,
+                            isChartPalettePresented: $isGeneralChartPalettePresented
+                        )
+                    case .channels:
+                        channelSettings
+                    case .calendar:
+                        calendarSettings
+                    }
                 }
+                .padding(30)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(30)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            // Full-screen click-catching layer: closes only the topmost popup
+            if activeChannelPaletteID != nil || activeChannelIconID != nil
+                || isGeneralColorPalettePresented || isGeneralThemePalettePresented
+                || isGeneralChartPalettePresented {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { dismissTopmostPopup() }
+            }
         }
         .frame(width: 860, height: 620, alignment: .topLeading)
         .background(WeekflowPalette.canvas)
+    }
+
+    private func dismissTopmostPopup() {
+        // Close only ONE layer per click (topmost first)
+        if activeChannelIconID != nil {
+            activeChannelIconID = nil
+        } else if activeChannelPaletteID != nil {
+            activeChannelPaletteID = nil
+        } else if isGeneralChartPalettePresented {
+            isGeneralChartPalettePresented = false
+        } else if isGeneralThemePalettePresented {
+            isGeneralThemePalettePresented = false
+        } else if isGeneralColorPalettePresented {
+            isGeneralColorPalettePresented = false
+        }
     }
 
     private func settingsRow(_ section: WorkspaceSettingsSection) -> some View {
@@ -335,6 +369,9 @@ enum ChannelSettingsDraftID {
 
 struct GeneralSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Binding var isColorPalettePresented: Bool
+    @Binding var isThemeColorPalettePresented: Bool
+    @Binding var isChartPalettePresented: Bool
     @AppStorage(AppAppearancePreference.storageKey)
     private var appearanceRawValue = AppAppearancePreference.defaultValue
     @AppStorage(DailyProgressPreferences.colorTokenKey)
@@ -357,11 +394,8 @@ struct GeneralSettingsView: View {
     private var globalDateShortcutState = GlobalDateShortcutRegistrationState.disabled.rawValue
     @AppStorage(GlobalDateShortcutPreferences.errorKey)
     private var globalDateShortcutError = ""
-    @State private var isColorPalettePresented = false
     @State private var colorPaletteAnchor = CGRect.zero
-    @State private var isThemeColorPalettePresented = false
     @State private var themeColorPaletteAnchor = CGRect.zero
-    @State private var isChartPalettePresented = false
     @State private var chartPaletteAnchor = CGRect.zero
 
     var body: some View {
