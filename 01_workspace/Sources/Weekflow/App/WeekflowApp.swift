@@ -58,12 +58,11 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         // Chinese menu becomes the stable application menu.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.applicationMenu.install()
+            // After the reinstall, permanently lock the menu bar.
+            // Any future attempt by SwiftUI or system dialogs to change
+            // NSApp.mainMenu will be silently blocked via method swizzling.
+            self?.applicationMenu.activatePermanentLock()
         }
-        // Start the enforcement timer: checks every 80ms that our menu is
-        // still installed. If any system dialog or SwiftUI reset replaces it,
-        // we reinstall immediately. This guarantees menu stability throughout
-        // the entire app lifecycle regardless of what dialogs open.
-        applicationMenu.startEnforcement()
     }
 
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {

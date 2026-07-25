@@ -1,16 +1,14 @@
 import AppKit
+import ObjectiveC
 
 @MainActor
 final class WeekflowApplicationMenu: NSObject {
     private var addWeeklyGoal: (() -> Void)?
-    /// Tag used to identify our custom menu vs system-generated menus.
-    /// We check the second item's title ("文件") which is unique to our menu.
-    private static var isOurMenu: Bool {
-        guard let menu = NSApp.mainMenu, menu.numberOfItems >= 2 else { return false }
-        return menu.item(at: 1)?.title == "文件"
-    }
-    /// Timer that enforces menu stability (reinstalls if something resets it).
-    private var enforcementTimer: Timer?
+
+    /// Once activated, ALL external attempts to change NSApp.mainMenu are
+    /// silently blocked via method swizzling. The menu bar is permanently
+    /// locked to our custom Chinese menu — no flicker, no reset, ever.
+    private(set) static var lockActive = false
 
     func install(addWeeklyGoal: (() -> Void)? = nil) {
         if let addWeeklyGoal {
@@ -28,25 +26,40 @@ final class WeekflowApplicationMenu: NSObject {
         NSApp.mainMenu = mainMenu
     }
 
-    /// Starts a lightweight timer that checks every 80ms whether the menu bar
-    /// still belongs to us. If any system dialog or SwiftUI reset replaces it,
-    /// we reinstall immediately — making the flicker imperceptible.
-    func startEnforcement() {
-        guard enforcementTimer == nil else { return }
-        enforcementTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if !Self.isOurMenu {
-                    self.install()
-                }
-            }
-        }
+    /// Permanently locks the menu bar. After calling this, any external code
+    /// (SwiftUI, system dialogs, panels) that tries to set NSApp.mainMenu
+    /// will be silently ignored. Our menu stays forever.
+    func activatePermanentLock() {
+        Self.swizzleMainMenuSetter()
+        Self.lockActive = true
     }
 
-    func stopEnforcement() {
-        enforcementTimer?.invalidate()
-        enforcementTimer = nil
+    // MARK: - Method Swizzling
+
+    private static var swizzleToken: DispatchOnce?
+    private struct DispatchOnce { var done = false }
+
+    private static func swizzleMainMenuSetter() {
+        // Ensure swizzle only happens once.
+        guard !Self.lockActive else { return }
+
+        guard let original = class_getInstanceMethod(
+            NSApplication.self,
+            #selector(setter: NSApplication.mainMenu)
+        ) else { return }
+
+        let swizzled = #selector(
+            NSApplication.weekflow_locked_setMainMenu(_:)
+        )
+        guard let swizzledMethod = class_getInstanceMethod(
+            NSApplication.self,
+            swizzled
+        ) else { return }
+
+        method_exchangeImplementations(original, swizzledMethod)
     }
+
+    // MARK: - Menu Construction
 
     private func applicationMenu() -> NSMenu {
         let menu = NSMenu(title: "Weekflow")
@@ -239,5 +252,20 @@ final class WeekflowApplicationMenu: NSObject {
               let command = AppCommand(rawValue: rawValue) else { return }
         CommandRouter.shared.send(command)
     }
+}
 
+// MARK: - NSApplication swizzled setter
+
+extension NSApplication {
+    /// Swizzled replacement for `setMainMenu:`.
+    /// When the lock is active, any external attempt to change the menu is
+    /// silently blocked — the menu bar never changes.
+    @objc dynamic func weekflow_locked_setMainMenu(_ menu: NSMenu?) {
+        if WeekflowApplicationMenu.lockActive {
+            // Block ALL external menu changes. Our menu stays permanently.
+            return
+        }
+        // Lock not yet active — proceed with normal behavior.
+        weekflow_locked_setMainMenu(menu)
+    }
 }
