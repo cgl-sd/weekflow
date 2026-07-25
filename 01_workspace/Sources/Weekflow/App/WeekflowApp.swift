@@ -6,6 +6,7 @@ import UserNotifications
 final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let globalDateShortcuts = GlobalDateShortcutService()
     private let focusStatusItemController = FocusStatusItemController()
+    private let applicationMenu = WeekflowApplicationMenu()
     /// Checkpoint invoked on system power transitions (sleep/wake). Flushes the
     /// in-flight active-task timer so elapsed work survives low-power states.
     private var powerTransitionCheckpoint: (() -> Void)?
@@ -48,6 +49,24 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     func installFocusStatusItem(timer: FocusTimerService) {
         focusStatusItemController.install(timer: timer)
+    }
+
+    /// Installs the custom Chinese menu bar and activates permanent lock.
+    /// No SwiftUI .commands {} are used — we solely own the menu bar.
+    func installApplicationMenu() {
+        applicationMenu.install()
+        // SwiftUI may still be constructing its default menu.
+        // Reinstall after a short delay, then permanently lock.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.applicationMenu.install()
+            self?.applicationMenu.activatePermanentLock()
+        }
+    }
+
+    /// Reinstalls the custom menu. Called by RunLoop observer when
+    /// a private-API menu reset is detected.
+    func reinstallMenu() {
+        applicationMenu.install()
     }
 
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {
@@ -164,15 +183,6 @@ struct WeekflowApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
-        .commands {
-            WeekflowDefaultMenuSuppression()
-        }
-        .commands {
-            WeekflowDefaultMenuSuppression2()
-        }
-        .commands {
-            WeekflowCommands()
-        }
     }
 
     @ViewBuilder
@@ -182,6 +192,7 @@ struct WeekflowApp: App {
             .onAppear {
                 appearancePreference.applyToApplication()
                 appDelegate.installFocusStatusItem(timer: focusTimer)
+                appDelegate.installApplicationMenu()
                 appDelegate.installPowerTransitionCheckpoint {
                     store.checkpointActiveTaskTimer()
                 }
