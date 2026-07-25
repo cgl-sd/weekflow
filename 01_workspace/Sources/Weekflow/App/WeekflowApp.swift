@@ -6,7 +6,6 @@ import UserNotifications
 final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let globalDateShortcuts = GlobalDateShortcutService()
     private let focusStatusItemController = FocusStatusItemController()
-    private let applicationMenu = WeekflowApplicationMenu()
     /// Checkpoint invoked on system power transitions (sleep/wake). Flushes the
     /// in-flight active-task timer so elapsed work survives low-power states.
     private var powerTransitionCheckpoint: (() -> Void)?
@@ -49,26 +48,6 @@ final class WeekflowAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     func installFocusStatusItem(timer: FocusTimerService) {
         focusStatusItemController.install(timer: timer)
-    }
-
-    func installApplicationMenu(addWeeklyGoal: @escaping () -> Void) {
-        applicationMenu.install(addWeeklyGoal: addWeeklyGoal)
-        // SwiftUI finishes constructing its default command menu after the
-        // scene appears. Reinstall on the next run-loop turn so the complete
-        // Chinese menu becomes the stable application menu.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.applicationMenu.install()
-            // After the reinstall, permanently lock the menu bar.
-            // Any future attempt by SwiftUI or system dialogs to change
-            // NSApp.mainMenu will be silently blocked via method swizzling.
-            self?.applicationMenu.activatePermanentLock()
-        }
-    }
-
-    /// Reinstalls the custom menu immediately. Call after system panels close
-    /// to guard against SwiftUI resetting the menu on modal session end.
-    func reinstallMenu() {
-        applicationMenu.install()
     }
 
     func installPowerTransitionCheckpoint(_ checkpoint: @escaping () -> Void) {
