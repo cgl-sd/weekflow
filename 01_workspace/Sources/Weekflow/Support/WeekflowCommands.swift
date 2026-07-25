@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Observation
 
 /// Internal commands are typed and routed to exactly one active scene.
@@ -45,26 +46,37 @@ final class CommandRouter {
     }
 }
 
-/// SwiftUI-native menu bar commands for Weekflow.
-/// By defining menus through SwiftUI's Commands API (instead of manual
-/// NSMenu installation), SwiftUI consistently owns the menu bar and
-/// will NEVER reset it when system panels open/close.
+/// Suppresses ALL default English menus that SwiftUI auto-generates.
+/// Without this, the menu bar shows English titles (File, Edit, View, Window, Help).
+struct WeekflowDefaultMenuSuppression: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {}
+        CommandGroup(replacing: .appSettings) {}
+        CommandGroup(replacing: .appTermination) {}
+        CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .importExport) {}
+        CommandGroup(replacing: .undoRedo) {}
+        CommandGroup(replacing: .pasteboard) {}
+        CommandGroup(replacing: .textEditing) {}
+        CommandGroup(replacing: .textFormatting) {}
+        CommandGroup(replacing: .toolbar) {}
+    }
+}
+
+/// Additional default menu suppression (CommandsBuilder max 10 items per block).
+struct WeekflowDefaultMenuSuppression2: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .sidebar) {}
+        CommandGroup(replacing: .windowArrangement) {}
+        CommandGroup(replacing: .windowList) {}
+        CommandGroup(replacing: .help) {}
+    }
+}
+
+/// All-visible Chinese menus. Only useful items, all in Chinese.
 struct WeekflowCommands: Commands {
     var body: some Commands {
-        // ─── Weekflow App Menu ───
-        CommandGroup(replacing: .appInfo) {
-            Button("关于 Weekflow") {
-                WeekflowMenuActions.showAbout()
-            }
-        }
-        CommandGroup(replacing: .appSettings) {
-            Button("设置…") {
-                CommandRouter.shared.send(.openSettings)
-            }
-            .keyboardShortcut(",", modifiers: .command)
-        }
-
-        // ─── 文件 Menu ───
+        // ─── 文件 ───
         CommandMenu("文件") {
             Button("新建周目标") {
                 CommandRouter.shared.addWeeklyGoalHandler?()
@@ -96,14 +108,15 @@ struct WeekflowCommands: Commands {
             .keyboardShortcut("w", modifiers: .command)
         }
 
-        // ─── 编辑 Menu (standard undo/redo/cut/copy/paste) ───
-        CommandGroup(replacing: .undoRedo) {
+        // ─── 编辑 ───
+        CommandMenu("编辑") {
             Button("撤销") { NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) }
                 .keyboardShortcut("z", modifiers: .command)
             Button("重做") { NSApp.sendAction(Selector(("redo:")), to: nil, from: nil) }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-        }
-        CommandGroup(replacing: .pasteboard) {
+
+            Divider()
+
             Button("剪切") { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
                 .keyboardShortcut("x", modifiers: .command)
             Button("复制") { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
@@ -114,7 +127,7 @@ struct WeekflowCommands: Commands {
                 .keyboardShortcut("a", modifiers: .command)
         }
 
-        // ─── 显示 Menu ───
+        // ─── 显示 ───
         CommandMenu("显示") {
             Button("进入全屏幕") {
                 NSApp.keyWindow?.toggleFullScreen(nil)
@@ -122,7 +135,7 @@ struct WeekflowCommands: Commands {
             .keyboardShortcut("f", modifiers: [.command, .control])
         }
 
-        // ─── 任务 Menu ───
+        // ─── 任务 ───
         CommandMenu("任务") {
             Button("打开所选任务") { CommandRouter.shared.send(.openHighlightedTask) }
                 .keyboardShortcut(.return, modifiers: [])
@@ -153,15 +166,15 @@ struct WeekflowCommands: Commands {
             Button("删除所选任务") { CommandRouter.shared.send(.deleteHighlightedTask) }
         }
 
-        // ─── 窗口 Menu ───
-        CommandGroup(replacing: .windowArrangement) {
-            Button("前置全部窗口") {
-                NSApp.arrangeInFront(nil)
-            }
+        // ─── 窗口 ───
+        CommandMenu("窗口") {
+            Button("最小化") { NSApp.keyWindow?.performMiniaturize(nil) }
+                .keyboardShortcut("m", modifiers: .command)
+            Button("前置全部窗口") { NSApp.arrangeInFront(nil) }
         }
 
-        // ─── 帮助 Menu ───
-        CommandGroup(replacing: .help) {
+        // ─── 帮助 ───
+        CommandMenu("帮助") {
             Button("键盘快捷键") {
                 CommandRouter.shared.send(.shortcutHelp)
             }
@@ -170,22 +183,3 @@ struct WeekflowCommands: Commands {
     }
 }
 
-/// Helper for menu actions that don't route through CommandRouter.
-enum WeekflowMenuActions {
-    static func showAbout() {
-        let credits = NSMutableAttributedString(
-            string: "周目标驱动的个人执行系统\n\n开发者：cgl-sd\n© 2026 cgl-sd. 保留所有权利。",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ]
-        )
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "Weekflow",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发预览版",
-            .version: "构建 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1")",
-            .credits: credits
-        ])
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}

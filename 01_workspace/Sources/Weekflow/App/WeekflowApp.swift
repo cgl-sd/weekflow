@@ -165,6 +165,12 @@ struct WeekflowApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            WeekflowDefaultMenuSuppression()
+        }
+        .commands {
+            WeekflowDefaultMenuSuppression2()
+        }
+        .commands {
             WeekflowCommands()
         }
     }
