@@ -56,43 +56,43 @@ struct FocusMenuBarPanel: View {
                     .font(.system(size: 15, weight: .semibold))
                 Text(statusText)
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(timer.selectedMode.accentColor)
+                    .foregroundStyle(timer.selectedModeColor)
             }
             Spacer()
-            Image(systemName: timer.isRunning ? timer.selectedMode.runningSymbol : timer.selectedMode.symbol)
+            Image(systemName: timer.isRunning ? timer.selectedModeRunningSymbol : timer.selectedModeSymbol)
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(timer.selectedMode.accentColor)
+                .foregroundStyle(timer.selectedModeColor)
                 .symbolEffect(.pulse, options: .repeating, isActive: timer.isRunning)
                 .frame(width: 34, height: 34)
-                .background(timer.selectedMode.accentColor.opacity(0.12), in: Circle())
+                .background(timer.selectedModeColor.opacity(0.12), in: Circle())
         }
     }
 
     private var modeSelector: some View {
         HStack(spacing: 6) {
-            ForEach(FocusMode.allCases) { mode in
+            ForEach(FocusModePreferences.modes) { mode in
                 WeekflowButton {
-                    timer.stopAndSelect(mode)
+                    timer.stopAndSelect(mode.id)
                 } label: {
                     VStack(spacing: 4) {
-                        Image(systemName: mode.symbol)
+                        Image(systemName: mode.iconName)
                             .font(.system(size: 12, weight: .medium))
                         Text(mode.title)
                             .font(.system(size: 10.5, weight: .medium))
                     }
-                    .foregroundStyle(timer.selectedMode == mode ? mode.accentColor : WeekflowPalette.textSecondary)
+                    .foregroundStyle(timer.selectedModeID == mode.id ? mode.color : WeekflowPalette.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(
-                        timer.selectedMode == mode
-                            ? mode.accentColor.opacity(0.12)
+                        timer.selectedModeID == mode.id
+                            ? mode.color.opacity(0.12)
                             : WeekflowPalette.floatingPanelRaisedSurface,
                         in: WeekflowRoundedRectangle(cornerRadius: 7)
                     )
                     .overlay {
                         WeekflowRoundedRectangle(cornerRadius: 7)
                             .stroke(
-                                timer.selectedMode == mode
-                                    ? mode.accentColor.opacity(0.48)
+                                timer.selectedModeID == mode.id
+                                    ? mode.color.opacity(0.48)
                                     : WeekflowPalette.border.opacity(0.72),
                                 lineWidth: 1
                             )
@@ -112,7 +112,7 @@ struct FocusMenuBarPanel: View {
             Circle()
                 .trim(from: 0, to: max(1 - timer.progress, 0.001))
                 .stroke(
-                    timer.selectedMode.accentColor,
+                    timer.selectedModeColor,
                     style: StrokeStyle(lineWidth: 8, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -166,7 +166,7 @@ struct FocusMenuBarPanel: View {
                 .foregroundStyle(primary ? Color.white : WeekflowPalette.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .background(
-                    primary ? timer.selectedMode.accentColor : WeekflowPalette.floatingPanelRaisedSurface,
+                    primary ? timer.selectedModeColor : WeekflowPalette.floatingPanelRaisedSurface,
                     in: WeekflowRoundedRectangle(cornerRadius: 7)
                 )
                 .overlay {
@@ -183,6 +183,6 @@ struct FocusMenuBarPanel: View {
     private var statusText: String {
         if timer.isRunning { return "专注进行中" }
         if timer.hasStarted { return "已暂停" }
-        return "准备开始 · \(timer.selectedMode.title)"
+        return "准备开始 · \(timer.selectedModeTitle)"
     }
 }

@@ -286,3 +286,171 @@ struct ChannelIconSelectionRow: View {
         .accessibilityValue(isSelected ? "已选择" : "")
     }
 }
+
+// MARK: - Focus Mode Settings Components
+
+enum FocusSettingsDraftID {
+    static let newMode = "__new-focus-mode__"
+}
+
+enum FocusIconOption: String, CaseIterable, Identifiable {
+    case leaf
+    case book = "book.closed"
+    case cup = "cup.and.saucer"
+    case flame
+    case brain = "brain.head.profile"
+    case music = "music.note"
+    case paintbrush
+    case figure = "figure.walk"
+    case moon
+    case sparkles
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .leaf: "叶子"
+        case .book: "书籍"
+        case .cup: "茶杯"
+        case .flame: "火焰"
+        case .brain: "思维"
+        case .music: "音乐"
+        case .paintbrush: "绘画"
+        case .figure: "运动"
+        case .moon: "月亮"
+        case .sparkles: "灵感"
+        }
+    }
+}
+
+struct FocusModeCreateButton: View {
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        WeekflowButton(action: action) {
+            Label("新建模式", systemImage: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 30)
+                .background(
+                    WeekflowPalette.objective.opacity(isHovering ? 0.86 : 1),
+                    in: WeekflowRoundedRectangle(cornerRadius: 7)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .stablePointingHandHover { isHovering = $0 }
+    }
+}
+
+struct FocusModeSettingRow: View {
+    let mode: FocusModeConfig
+    let showColorPalette: () -> Void
+    let showIconMenu: () -> Void
+    let onDelete: () -> Void
+    let onRename: (String) -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                ChannelIconButton(
+                    channelID: mode.id,
+                    iconName: mode.iconName,
+                    action: showIconMenu
+                )
+                .foregroundStyle(mode.color)
+                .disabled(mode.isBuiltIn)
+
+                TextField("模式名称", text: Binding(
+                    get: { mode.title },
+                    set: { onRename($0) }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .disabled(mode.isBuiltIn)
+
+                ChannelColorPaletteButton(
+                    channelID: mode.id,
+                    color: mode.color,
+                    action: showColorPalette
+                )
+
+                if !mode.isBuiltIn {
+                    ChannelDeleteButton(action: onDelete)
+                }
+            }
+        }
+        .padding(11)
+        .background(WeekflowPalette.surface, in: WeekflowRoundedRectangle(cornerRadius: 8))
+        .overlay {
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(WeekflowPalette.border, lineWidth: 1)
+        }
+    }
+}
+
+struct FocusIconSelectionPanel: View {
+    let selection: String
+    let select: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(FocusIconOption.allCases) { option in
+                FocusIconSelectionRow(
+                    option: option,
+                    isSelected: option.rawValue == selection,
+                    action: { select(option.rawValue) }
+                )
+            }
+        }
+        .padding(6)
+        .background(WeekflowPalette.surface, in: WeekflowRoundedRectangle(cornerRadius: 7))
+        .overlay {
+            WeekflowRoundedRectangle(cornerRadius: 7)
+                .stroke(WeekflowPalette.borderStrong, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
+    }
+}
+
+struct FocusIconSelectionRow: View {
+    let option: FocusIconOption
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        WeekflowButton(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: option.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 20, alignment: .leading)
+                Text(option.title)
+                    .font(.system(size: 12))
+                Spacer(minLength: 8)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: 16, alignment: .trailing)
+            }
+            .foregroundStyle(WeekflowPalette.textPrimary)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .background(
+                isHovering ? WeekflowPalette.surfaceHover : .clear,
+                in: WeekflowRoundedRectangle(cornerRadius: 5)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .stablePointingHandHover { isHovering = $0 }
+        .accessibilityLabel(option.title)
+        .accessibilityValue(isSelected ? "已选择" : "")
+    }
+}

@@ -3,7 +3,7 @@ import Foundation
 struct DailyShutdownSummaryBuilder {
     static func build(
         entries: [(goal: WeeklyGoal, task: WeekTask)],
-        focusMinutes: [FocusMode: Int],
+        focusMinutes: [String: Int],
         channelTitle: (String?) -> String
     ) -> String {
         let progressed = entries.filter { $0.task.hasExecutionProgress }
@@ -26,10 +26,10 @@ struct DailyShutdownSummaryBuilder {
             .map { "- \($0.task.title)" }
             .joined(separator: "\n")
 
-        let focusLines = FocusMode.allCases.map { mode in
-            "- \(mode.title)：\((focusMinutes[mode] ?? 0).hourMinuteClockText)"
+        let focusLines = FocusModePreferences.modes.map { mode in
+            "- \(mode.title)：\((focusMinutes[mode.id] ?? 0).hourMinuteClockText)"
         }.joined(separator: "\n")
-        let totalFocusMinutes = FocusMode.allCases.reduce(0) { $0 + (focusMinutes[$1] ?? 0) }
+        let totalFocusMinutes = FocusModePreferences.modes.reduce(0) { $0 + (focusMinutes[$1.id] ?? 0) }
 
         let channelLines = Dictionary(grouping: entries) { $0.task.channelID }
             .compactMap { channelID, tasks -> (String, Int)? in

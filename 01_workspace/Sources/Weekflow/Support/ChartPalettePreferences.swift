@@ -63,7 +63,7 @@ enum ChartPalettePreset: String, CaseIterable, Identifiable {
     }
 
     var focusColors: [Color] {
-        FocusMode.allCases.map(\.accentColor)
+        FocusModePreferences.modes.map(\.color)
     }
 
     func taskSummaryColor(for colorScheme: ColorScheme) -> Color {
@@ -71,7 +71,7 @@ enum ChartPalettePreset: String, CaseIterable, Identifiable {
     }
 
     var taskSummaryColor: Color { taskSummaryColor(for: .light) }
-    var focusSummaryColor: Color { FocusMode.meditation.accentColor }
+    var focusSummaryColor: Color { FocusModePreferences.color(for: "meditation") }
 
     func taskColor(
         channelID: String?,
@@ -86,8 +86,8 @@ enum ChartPalettePreset: String, CaseIterable, Identifiable {
         return colors[index % colors.count]
     }
 
-    func focusColor(_ mode: FocusMode) -> Color {
-        mode.accentColor
+    func focusColor(_ modeID: String) -> Color {
+        FocusModePreferences.color(for: modeID)
     }
 
     private var lightTaskColors: [Color] {

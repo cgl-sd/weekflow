@@ -2,7 +2,7 @@ import SwiftUI
 
 struct FocusView: View {
     @Bindable var timer: FocusTimerService
-    @State private var pendingMode: FocusMode?
+    @State private var pendingModeID: String?
     @State private var isEditingDuration: Bool
 
     init(timer: FocusTimerService, initiallyEditingDuration: Bool = false) {
@@ -35,16 +35,16 @@ struct FocusView: View {
         .confirmationDialog(
             "结束当前专注并切换模式？",
             isPresented: Binding(
-                get: { pendingMode != nil },
-                set: { if !$0 { pendingMode = nil } }
+                get: { pendingModeID != nil },
+                set: { if !$0 { pendingModeID = nil } }
             ),
             titleVisibility: .visible
         ) {
             WeekflowButton("结束并切换") {
-                if let mode = pendingMode { timer.stopAndSelect(mode) }
-                pendingMode = nil
+                if let modeID = pendingModeID { timer.stopAndSelect(modeID) }
+                pendingModeID = nil
             }
-            WeekflowButton("继续当前专注", role: .cancel) { pendingMode = nil }
+            WeekflowButton("继续当前专注", role: .cancel) { pendingModeID = nil }
         }
     }
 
@@ -55,18 +55,18 @@ struct FocusView: View {
                 .font(.system(size: 20, weight: .semibold))
 
             HStack(spacing: 8) {
-                ForEach(FocusMode.allCases) { mode in
+                ForEach(FocusModePreferences.modes) { mode in
                     FocusModeButton(
                         mode: mode,
-                        durationMinutes: timer.minutes(for: mode),
-                        isSelected: timer.selectedMode == mode
+                        durationMinutes: timer.minutes(for: mode.id),
+                        isSelected: timer.selectedModeID == mode.id
                     ) {
-                        guard timer.selectedMode != mode else { return }
+                        guard timer.selectedModeID != mode.id else { return }
                         isEditingDuration = false
                         if timer.isRunning {
-                            pendingMode = mode
+                            pendingModeID = mode.id
                         } else {
-                            timer.select(mode)
+                            timer.select(mode.id)
                         }
                     }
                 }
@@ -86,7 +86,7 @@ struct FocusView: View {
                 Circle()
                     .trim(from: 0, to: max(1 - timer.progress, 0.001))
                     .stroke(
-                        timer.selectedMode.accentColor,
+                        timer.selectedModeColor,
                         style: StrokeStyle(lineWidth: 9, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
@@ -134,7 +134,7 @@ struct FocusView: View {
                     symbol: timer.isRunning ? "pause.fill" : "play.fill",
                     accessibilityTitle: timer.isRunning ? "暂停专注" : (timer.hasStarted ? "继续专注" : "开始专注"),
                     isPrimary: true,
-                    primaryColor: timer.selectedMode.accentColor
+                    primaryColor: timer.selectedModeColor
                 ) {
                     timer.toggle()
                 }
@@ -142,7 +142,7 @@ struct FocusView: View {
                     symbol: "stop.fill",
                     accessibilityTitle: "停止专注",
                     isPrimary: false,
-                    primaryColor: timer.selectedMode.accentColor
+                    primaryColor: timer.selectedModeColor
                 ) {
                     isEditingDuration = false
                     timer.stop()
@@ -191,7 +191,7 @@ struct FocusControlButton: View {
 }
 
 struct FocusModeButton: View {
-    let mode: FocusMode
+    let mode: FocusModeConfig
     let durationMinutes: Int
     let isSelected: Bool
     let action: () -> Void
@@ -200,7 +200,7 @@ struct FocusModeButton: View {
     var body: some View {
         WeekflowButton(action: action) {
             HStack(spacing: 7) {
-                Image(systemName: mode.symbol)
+                Image(systemName: mode.iconName)
                     .font(.system(size: 14, weight: .regular))
                 Text(mode.title)
                     .font(.system(size: 13, weight: .medium))
@@ -208,20 +208,21 @@ struct FocusModeButton: View {
                     .font(.system(size: 10))
                     .foregroundStyle(isSelected ? WeekflowPalette.textPrimary : WeekflowPalette.textMuted)
             }
-            .frame(width: 112, height: 36)
+            .frame(minWidth: 112, minHeight: 36)
+            .padding(.horizontal, 12)
             .background(
                 isSelected
-                    ? mode.accentColor.opacity(0.13)
+                    ? mode.color.opacity(0.13)
                     : (isHovering ? WeekflowPalette.surfaceHover : WeekflowPalette.surface),
                 in: Capsule()
             )
             .overlay(
                 Capsule().stroke(
-                    isSelected ? mode.accentColor.opacity(0.55) : WeekflowPalette.border,
+                    isSelected ? mode.color.opacity(0.55) : WeekflowPalette.border,
                     lineWidth: 1
                 )
             )
-            .foregroundStyle(isSelected ? mode.accentColor : WeekflowPalette.textPrimary)
+            .foregroundStyle(isSelected ? mode.color : WeekflowPalette.textPrimary)
         }
         .buttonStyle(.plain)
         .pointingHandCursor()

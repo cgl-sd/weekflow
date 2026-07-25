@@ -146,8 +146,8 @@ struct ContentView: View {
             focusTimer.configureTaskWriter { [weak store] reference, seconds in
                 store?.recordFocusSeconds(for: reference, seconds: seconds)
             }
-            focusTimer.configureFocusWriter { [weak store] mode, seconds, date in
-                store?.recordFocusSession(mode: mode, seconds: seconds, date: date)
+            focusTimer.configureFocusWriter { [weak store] modeID, seconds, date in
+                store?.recordFocusSession(modeID: modeID, seconds: seconds, date: date)
             }
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in

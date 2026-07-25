@@ -5,6 +5,7 @@ import SwiftUI
 enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
     case general
     case channels
+    case focusMode
     case calendar
 
     var id: Self { self }
@@ -13,6 +14,7 @@ enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "通用"
         case .channels: "分类与频道"
+        case .focusMode: "专注模式"
         case .calendar: "日历"
         }
     }
@@ -21,6 +23,7 @@ enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .channels: "number"
+        case .focusMode: "mug"
         case .calendar: "calendar"
         }
     }
@@ -43,6 +46,15 @@ struct ChannelSettingsView: View {
     @State private var isGeneralColorPalettePresented = false
     @State private var isGeneralThemePalettePresented = false
     @State private var isGeneralChartPalettePresented = false
+    // Focus mode section popup state
+    @State private var activeFocusPaletteID: String?
+    @State private var focusPaletteAnchors: [String: CGRect] = [:]
+    @State private var activeFocusIconID: String?
+    @State private var focusIconAnchors: [String: CGRect] = [:]
+    @State private var newFocusModeName = ""
+    @State private var newFocusModeIconName = "leaf"
+    @State private var newFocusModeColorName = "gray"
+    @State private var focusModes: [FocusModeConfig] = FocusModePreferences.modes
 
     init(
         store: WeekflowStore,
@@ -91,6 +103,8 @@ struct ChannelSettingsView: View {
                         )
                     case .channels:
                         channelSettings
+                    case .focusMode:
+                        focusModeSettings
                     case .calendar:
                         calendarSettings
                     }
@@ -102,7 +116,8 @@ struct ChannelSettingsView: View {
             // Full-screen click-catching layer: closes only the topmost popup
             if activeChannelPaletteID != nil || activeChannelIconID != nil
                 || isGeneralColorPalettePresented || isGeneralThemePalettePresented
-                || isGeneralChartPalettePresented {
+                || isGeneralChartPalettePresented
+                || activeFocusPaletteID != nil || activeFocusIconID != nil {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { dismissTopmostPopup() }
@@ -118,6 +133,10 @@ struct ChannelSettingsView: View {
             activeChannelIconID = nil
         } else if activeChannelPaletteID != nil {
             activeChannelPaletteID = nil
+        } else if activeFocusIconID != nil {
+            activeFocusIconID = nil
+        } else if activeFocusPaletteID != nil {
+            activeFocusPaletteID = nil
         } else if isGeneralChartPalettePresented {
             isGeneralChartPalettePresented = false
         } else if isGeneralThemePalettePresented {
@@ -325,6 +344,225 @@ struct ChannelSettingsView: View {
                 .foregroundStyle(WeekflowPalette.secondaryText)
             Spacer()
         }
+    }
+
+    // MARK: - Focus Mode Settings
+
+    private var focusModeSettings: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("专注模式").font(.system(size: 25, weight: .bold))
+                    Text("自定义专注模式的名称、颜色和图标。禅定为内置模式不可删除。")
+                        .font(.system(size: 13)).foregroundStyle(WeekflowPalette.secondaryText)
+                    HStack(spacing: 10) {
+                        ChannelIconButton(
+                            channelID: FocusSettingsDraftID.newMode,
+                            iconName: newFocusModeIconName,
+                            action: { toggleFocusIconMenu(for: FocusSettingsDraftID.newMode) }
+                        )
+                        TextField("新模式名称", text: $newFocusModeName)
+                            .textFieldStyle(.plain)
+                            .frame(minWidth: 220)
+                            .onSubmit(addFocusMode)
+                        ChannelColorPaletteButton(
+                            channelID: FocusSettingsDraftID.newMode,
+                            color: DailyProgressPreferences.color(for: newFocusModeColorName),
+                            action: { toggleFocusColorPalette(for: FocusSettingsDraftID.newMode) }
+                        )
+                        Spacer(minLength: 0)
+                        FocusModeCreateButton(action: addFocusMode)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 44)
+                    .background(WeekflowPalette.surface, in: WeekflowRoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        WeekflowRoundedRectangle(cornerRadius: 8)
+                            .stroke(WeekflowPalette.border, lineWidth: 1)
+                    }
+                    Divider()
+                    HStack {
+                        Text("模式").font(.caption.weight(.bold)).foregroundStyle(WeekflowPalette.secondaryText)
+                        Spacer()
+                        Text("图标 / 颜色 / 删除").font(.caption.weight(.bold)).foregroundStyle(WeekflowPalette.secondaryText)
+                    }
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(focusModes) { mode in
+                                FocusModeSettingRow(
+                                    mode: mode,
+                                    showColorPalette: { toggleFocusColorPalette(for: mode.id) },
+                                    showIconMenu: { toggleFocusIconMenu(for: mode.id) },
+                                    onDelete: { deleteFocusMode(id: mode.id) },
+                                    onRename: { title in renameFocusMode(id: mode.id, title: title) }
+                                )
+                            }
+                        }
+                        .padding(.trailing, 6)
+                        .background(SystemOverlayScroller())
+                    }
+                    .scrollIndicators(.automatic)
+                    Spacer()
+                }
+
+                if let modeID = activeFocusPaletteID,
+                   let anchor = focusPaletteAnchors[modeID] {
+                    focusPaletteOverlay(modeID: modeID, anchor: anchor, availableSize: proxy.size)
+                        .zIndex(100)
+                }
+
+                if let modeID = activeFocusIconID,
+                   let anchor = focusIconAnchors[modeID] {
+                    focusIconOverlay(modeID: modeID, anchor: anchor, availableSize: proxy.size)
+                        .zIndex(110)
+                }
+            }
+            .coordinateSpace(name: "channel-settings")
+            .onPreferenceChange(ChannelPaletteAnchorPreferenceKey.self) { anchors in
+                focusPaletteAnchors.merge(anchors) { _, new in new }
+            }
+            .onPreferenceChange(ChannelIconAnchorPreferenceKey.self) { anchors in
+                focusIconAnchors.merge(anchors) { _, new in new }
+            }
+        }
+    }
+
+    private func focusPaletteOverlay(
+        modeID: String,
+        anchor: CGRect,
+        availableSize: CGSize
+    ) -> some View {
+        let panelSize = CGSize(
+            width: WeekflowLayout.colorPickerPanelWidth,
+            height: WeekflowLayout.colorPickerPanelHeight
+        )
+        let origin = CGPoint(
+            x: min(max(anchor.maxX - panelSize.width, 6), availableSize.width - panelSize.width - 6),
+            y: min(anchor.maxY + 6, availableSize.height - panelSize.height - 6)
+        )
+        return ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { activeFocusPaletteID = nil }
+                .frame(width: availableSize.width, height: availableSize.height)
+
+            WindowOutsideClickMonitor(
+                protectedRects: [anchor, CGRect(origin: origin, size: panelSize)],
+                monitoredEventMask: .leftMouseUp,
+                action: { activeFocusPaletteID = nil }
+            )
+            .frame(width: availableSize.width, height: availableSize.height)
+            .allowsHitTesting(false)
+
+            CompactColorPalettePanel(
+                selectedToken: Binding(
+                    get: {
+                        modeID == FocusSettingsDraftID.newMode
+                            ? newFocusModeColorName
+                            : (FocusModePreferences.mode(for: modeID)?.colorName ?? "gray")
+                    },
+                    set: { token in
+                        if modeID == FocusSettingsDraftID.newMode {
+                            newFocusModeColorName = token
+                            return
+                        }
+                        guard var mode = FocusModePreferences.mode(for: modeID) else { return }
+                        mode.colorName = token
+                        FocusModePreferences.updateMode(mode)
+                        focusModes = FocusModePreferences.modes
+                    }
+                ),
+                interactionChanged: { _ in }
+            )
+            .frame(width: panelSize.width, height: panelSize.height)
+            .offset(x: origin.x, y: origin.y)
+        }
+        .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
+    }
+
+    private func focusIconOverlay(
+        modeID: String,
+        anchor: CGRect,
+        availableSize: CGSize
+    ) -> some View {
+        let rowHeight: CGFloat = 30
+        let panelSize = CGSize(
+            width: 184,
+            height: CGFloat(FocusIconOption.allCases.count) * rowHeight + 12
+        )
+        let origin = CGPoint(
+            x: min(max(anchor.minX, 6), availableSize.width - panelSize.width - 6),
+            y: min(anchor.maxY + 6, availableSize.height - panelSize.height - 6)
+        )
+        let panelFrame = CGRect(origin: origin, size: panelSize)
+
+        return ZStack(alignment: .topLeading) {
+            WindowOutsideClickMonitor(
+                protectedRects: [anchor, panelFrame],
+                action: { activeFocusIconID = nil }
+            )
+            .frame(width: availableSize.width, height: availableSize.height)
+            .allowsHitTesting(false)
+
+            FocusIconSelectionPanel(
+                selection: selectedFocusIconName(for: modeID),
+                select: { iconName in
+                    setFocusIconName(iconName, for: modeID)
+                }
+            )
+            .frame(width: panelSize.width, height: panelSize.height)
+            .offset(x: origin.x, y: origin.y)
+        }
+        .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
+    }
+
+    private func addFocusMode() {
+        FocusModePreferences.addMode(
+            title: newFocusModeName,
+            colorName: newFocusModeColorName,
+            iconName: newFocusModeIconName
+        )
+        newFocusModeName = ""
+        focusModes = FocusModePreferences.modes
+    }
+
+    private func deleteFocusMode(id: String) {
+        FocusModePreferences.deleteMode(id: id)
+        focusModes = FocusModePreferences.modes
+    }
+
+    private func renameFocusMode(id: String, title: String) {
+        guard var mode = FocusModePreferences.mode(for: id) else { return }
+        mode.title = title
+        FocusModePreferences.updateMode(mode)
+        focusModes = FocusModePreferences.modes
+    }
+
+    private func toggleFocusColorPalette(for modeID: String) {
+        activeFocusIconID = nil
+        activeFocusPaletteID = activeFocusPaletteID == modeID ? nil : modeID
+    }
+
+    private func toggleFocusIconMenu(for modeID: String) {
+        activeFocusPaletteID = nil
+        activeFocusIconID = activeFocusIconID == modeID ? nil : modeID
+    }
+
+    private func selectedFocusIconName(for modeID: String) -> String {
+        modeID == FocusSettingsDraftID.newMode
+            ? newFocusModeIconName
+            : (FocusModePreferences.mode(for: modeID)?.iconName ?? "leaf")
+    }
+
+    private func setFocusIconName(_ iconName: String, for modeID: String) {
+        if modeID == FocusSettingsDraftID.newMode {
+            newFocusModeIconName = iconName
+            return
+        }
+        guard var mode = FocusModePreferences.mode(for: modeID) else { return }
+        mode.iconName = iconName
+        FocusModePreferences.updateMode(mode)
+        focusModes = FocusModePreferences.modes
     }
 
     private func addChannel() {

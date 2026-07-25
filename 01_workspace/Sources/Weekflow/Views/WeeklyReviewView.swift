@@ -370,8 +370,8 @@ struct WeeklyReviewBreakdown: View {
 
     private func focusModeRow(_ metric: WeeklyReviewFocusMetric) -> some View {
         HStack(spacing: 8) {
-            Circle().fill(metric.mode.accentColor).frame(width: 7, height: 7)
-            Text(metric.mode.title).font(.system(size: 10.5, weight: .medium))
+            Circle().fill(FocusModePreferences.color(for: metric.modeID)).frame(width: 7, height: 7)
+            Text(FocusModePreferences.title(for: metric.modeID)).font(.system(size: 10.5, weight: .medium))
             Spacer()
             Text(metric.minutes.hourMinuteClockText)
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))

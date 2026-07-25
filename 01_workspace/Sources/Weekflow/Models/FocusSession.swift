@@ -1,54 +1,41 @@
 import Foundation
 import SwiftUI
 
+/// Legacy enum kept only for backward-compatible decoding of old records.
+/// New code should use `FocusModePreferences` and string-based mode IDs.
 enum FocusMode: String, CaseIterable, Identifiable, Codable {
     case meditation
     case study
     case leisure
 
     var id: String { rawValue }
+}
 
-    var title: String {
-        switch self {
-        case .meditation: "禅定"
-        case .study: "学习"
-        case .leisure: "休闲"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .meditation: "leaf"
-        case .study: "book.closed"
-        case .leisure: "cup.and.saucer"
-        }
-    }
-
+extension FocusMode {
+    var title: String { FocusModePreferences.title(for: rawValue) }
+    var symbol: String { FocusModePreferences.symbol(for: rawValue) }
     var defaultMinutes: Int { 60 }
-
-    var accentColor: Color {
-        switch self {
-        case .meditation: WeekflowPalette.focusMeditation
-        case .study: WeekflowPalette.focusStudy
-        case .leisure: WeekflowPalette.focusLeisure
-        }
-    }
-
+    var accentColor: Color { FocusModePreferences.color(for: rawValue) }
     var runningSymbol: String { "\(symbol).fill" }
 }
 
 /// A single focus session record. Internal storage is always in **seconds**;
-/// `minutes` is a derived display value (P1-4 requirement: “内部统一存储秒”).
+/// `minutes` is a derived display value (P1-4 requirement: "内部统一存储秒").
 struct FocusRecord: Identifiable, Codable, Hashable {
     var id = UUID()
     var day: LocalDay
-    var mode: FocusMode
+    /// String-based mode ID referencing FocusModePreferences.
+    var modeID: String
     /// Canonical storage – all accumulation happens here.
     var seconds: Int
     var sessionCount = 1
 
     /// Derived display value. Never stored independently.
     var minutes: Int { DurationDisplay.minutes(for: seconds) }
+
+    /// Display helpers resolved from preferences.
+    var modeTitle: String { FocusModePreferences.title(for: modeID) }
+    var modeColor: Color { FocusModePreferences.color(for: modeID) }
 
     private enum CodingKeys: String, CodingKey {
         case id, day, date, mode, minutes, seconds, sessionCount
@@ -57,14 +44,14 @@ struct FocusRecord: Identifiable, Codable, Hashable {
     init(
         id: UUID = UUID(),
         date: Date,
-        mode: FocusMode,
+        modeID: String,
         seconds: Int,
         sessionCount: Int = 1,
         calendar: BusinessCalendarProviding = SystemBusinessCalendar.current
     ) {
         self.id = id
         day = calendar.day(containing: date)
-        self.mode = mode
+        self.modeID = modeID
         self.seconds = max(seconds, 0)
         self.sessionCount = sessionCount
     }
@@ -74,7 +61,7 @@ struct FocusRecord: Identifiable, Codable, Hashable {
     init(
         id: UUID = UUID(),
         date: Date,
-        mode: FocusMode,
+        modeID: String,
         minutes: Int,
         seconds: Int? = nil,
         sessionCount: Int = 1,
@@ -83,7 +70,7 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         self.init(
             id: id,
             date: date,
-            mode: mode,
+            modeID: modeID,
             seconds: seconds ?? minutes * 60,
             sessionCount: sessionCount,
             calendar: calendar
@@ -95,7 +82,8 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         day = try container.decodeIfPresent(LocalDay.self, forKey: .day)
             ?? SystemBusinessCalendar.current.day(containing: container.decode(Date.self, forKey: .date))
-        mode = try container.decode(FocusMode.self, forKey: .mode)
+        // Decode mode as raw string (backward compatible with old FocusMode enum)
+        modeID = try container.decode(String.self, forKey: .mode)
         // Prefer seconds; fall back to legacy minutes * 60 for old data.
         if let storedSeconds = try container.decodeIfPresent(Int.self, forKey: .seconds) {
             seconds = storedSeconds
@@ -115,7 +103,7 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(day, forKey: .day)
-        try container.encode(mode, forKey: .mode)
+        try container.encode(modeID, forKey: .mode)
         // Encode both for backward compatibility with older readers.
         try container.encode(minutes, forKey: .minutes)
         try container.encode(seconds, forKey: .seconds)
@@ -131,7 +119,7 @@ struct FocusRecord: Identifiable, Codable, Hashable {
 /// periodically while running, allowing the next launch to recover the
 /// countdown and preserve elapsed work.
 struct FocusTimerSession: Codable, Equatable, Sendable {
-    var mode: FocusMode
+    var modeID: String
     var totalSeconds: Int
     var remainingSeconds: Int
     var unloggedSeconds: Int
@@ -143,4 +131,63 @@ struct FocusTimerSession: Codable, Equatable, Sendable {
     var linkedTask: TaskReference?
     var linkedTaskTitle: String?
     var lastCheckpointAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, modeID, totalSeconds, remainingSeconds, unloggedSeconds
+        case hasStarted, isRunning, linkedTask, linkedTaskTitle, lastCheckpointAt
+    }
+
+    init(
+        modeID: String,
+        totalSeconds: Int,
+        remainingSeconds: Int,
+        unloggedSeconds: Int,
+        hasStarted: Bool,
+        isRunning: Bool? = nil,
+        linkedTask: TaskReference? = nil,
+        linkedTaskTitle: String? = nil,
+        lastCheckpointAt: Date
+    ) {
+        self.modeID = modeID
+        self.totalSeconds = totalSeconds
+        self.remainingSeconds = remainingSeconds
+        self.unloggedSeconds = unloggedSeconds
+        self.hasStarted = hasStarted
+        self.isRunning = isRunning
+        self.linkedTask = linkedTask
+        self.linkedTaskTitle = linkedTaskTitle
+        self.lastCheckpointAt = lastCheckpointAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Backward compat: old snapshots stored enum under "mode"
+        if let id = try container.decodeIfPresent(String.self, forKey: .modeID) {
+            modeID = id
+        } else {
+            modeID = try container.decode(String.self, forKey: .mode)
+        }
+        totalSeconds = try container.decode(Int.self, forKey: .totalSeconds)
+        remainingSeconds = try container.decode(Int.self, forKey: .remainingSeconds)
+        unloggedSeconds = try container.decode(Int.self, forKey: .unloggedSeconds)
+        hasStarted = try container.decode(Bool.self, forKey: .hasStarted)
+        isRunning = try container.decodeIfPresent(Bool.self, forKey: .isRunning)
+        linkedTask = try container.decodeIfPresent(TaskReference.self, forKey: .linkedTask)
+        linkedTaskTitle = try container.decodeIfPresent(String.self, forKey: .linkedTaskTitle)
+        lastCheckpointAt = try container.decode(Date.self, forKey: .lastCheckpointAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(modeID, forKey: .mode)
+        try container.encode(modeID, forKey: .modeID)
+        try container.encode(totalSeconds, forKey: .totalSeconds)
+        try container.encode(remainingSeconds, forKey: .remainingSeconds)
+        try container.encode(unloggedSeconds, forKey: .unloggedSeconds)
+        try container.encode(hasStarted, forKey: .hasStarted)
+        try container.encodeIfPresent(isRunning, forKey: .isRunning)
+        try container.encodeIfPresent(linkedTask, forKey: .linkedTask)
+        try container.encodeIfPresent(linkedTaskTitle, forKey: .linkedTaskTitle)
+        try container.encode(lastCheckpointAt, forKey: .lastCheckpointAt)
+    }
 }

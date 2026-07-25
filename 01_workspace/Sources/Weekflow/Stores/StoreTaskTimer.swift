@@ -210,31 +210,31 @@ extension WeekflowStore {
         }
     }
 
-    func recordFocusSession(mode: FocusMode, minutes: Int, date: Date = .now) {
-        recordFocusSession(mode: mode, seconds: minutes * 60, date: date)
+    func recordFocusSession(modeID: String, minutes: Int, date: Date = .now) {
+        recordFocusSession(modeID: modeID, seconds: minutes * 60, date: date)
     }
 
-    func recordFocusSession(mode: FocusMode, seconds: Int, date: Date = .now) {
+    func recordFocusSession(modeID: String, seconds: Int, date: Date = .now) {
         guard seconds > 0 else { return }
         let day = businessCalendar.day(containing: date)
         let record: FocusRecord
         if let index = focusRecords.firstIndex(where: {
-            $0.mode == mode && $0.day == day
+            $0.modeID == modeID && $0.day == day
         }) {
             focusRecords[index].seconds += seconds
             focusRecords[index].sessionCount += 1
             focusRecords[index].day = day
             record = focusRecords[index]
         } else {
-            record = FocusRecord(date: date, mode: mode, seconds: seconds, calendar: businessCalendar)
+            record = FocusRecord(date: date, modeID: modeID, seconds: seconds, calendar: businessCalendar)
             focusRecords.append(record)
         }
         persistFocusRecord(record)
     }
 
-    func focusMinutes(on date: Date) -> [FocusMode: Int] {
+    func focusMinutes(on date: Date) -> [String: Int] {
         let day = businessCalendar.day(containing: date)
-        return Dictionary(grouping: focusRecords.filter { $0.day == day }, by: \.mode)
+        return Dictionary(grouping: focusRecords.filter { $0.day == day }, by: \.modeID)
             .mapValues { $0.reduce(0) { $0 + $1.minutes } }
     }
 

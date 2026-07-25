@@ -6,7 +6,7 @@ struct WeeklyReviewDayMetric: Identifiable, Equatable {
     let taskMinutes: Int
     let focusMinutes: Int
     let taskChannelMinutes: [String: Int]
-    let focusModeMinutes: [FocusMode: Int]
+    let focusModeMinutes: [String: Int]
 
     var totalMinutes: Int { taskMinutes + focusMinutes }
 }
@@ -21,8 +21,8 @@ struct WeeklyReviewChannelMetric: Identifiable, Equatable {
 }
 
 struct WeeklyReviewFocusMetric: Identifiable, Equatable {
-    var id: FocusMode { mode }
-    let mode: FocusMode
+    var id: String { modeID }
+    let modeID: String
     let minutes: Int
     let sessionCount: Int
 }
@@ -42,7 +42,7 @@ struct WeeklyReviewSnapshot {
     let plannedMinutes: Int
     let actualMinutes: Int
     let channelMetrics: [WeeklyReviewChannelMetric]
-    let focusMinutes: [FocusMode: Int]
+    let focusMinutes: [String: Int]
     let focusMetrics: [WeeklyReviewFocusMetric]
     let dayMetrics: [WeeklyReviewDayMetric]
     let incompleteEntries: [WeeklyReviewTaskEntry]
@@ -127,13 +127,13 @@ struct WeeklyReviewSnapshot {
         let weeklyFocusRecords = focusRecords.filter {
             Self.contains($0.date, in: weekInterval)
         }
-        let weeklyFocusGroups = Dictionary(grouping: weeklyFocusRecords, by: \FocusRecord.mode)
+        let weeklyFocusGroups = Dictionary(grouping: weeklyFocusRecords, by: \FocusRecord.modeID)
         let weeklyFocusMinutes = weeklyFocusGroups
         .mapValues { records in records.reduce(0) { $0 + $1.minutes } }
-        let weeklyFocusMetrics = FocusMode.allCases.compactMap { mode -> WeeklyReviewFocusMetric? in
-            guard let records = weeklyFocusGroups[mode], !records.isEmpty else { return nil }
+        let weeklyFocusMetrics = FocusModePreferences.modes.compactMap { mode -> WeeklyReviewFocusMetric? in
+            guard let records = weeklyFocusGroups[mode.id], !records.isEmpty else { return nil }
             return WeeklyReviewFocusMetric(
-                mode: mode,
+                modeID: mode.id,
                 minutes: records.reduce(0) { $0 + $1.minutes },
                 sessionCount: records.reduce(0) { $0 + $1.sessionCount }
             )
@@ -157,7 +157,7 @@ struct WeeklyReviewSnapshot {
             }
             let focusModeMinutes = Dictionary(grouping: focusRecords.filter {
                 calendar.isDate($0.date, inSameDayAs: date)
-            }, by: \FocusRecord.mode)
+            }, by: \FocusRecord.modeID)
             .mapValues { records in records.reduce(0) { $0 + $1.minutes } }
             let focusMinutes = focusModeMinutes.values.reduce(0, +)
             return WeeklyReviewDayMetric(

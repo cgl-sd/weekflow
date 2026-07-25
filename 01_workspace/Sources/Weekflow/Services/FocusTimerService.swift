@@ -1,12 +1,13 @@
 import Foundation
 import Observation
+import SwiftUI
 import UserNotifications
 
 @MainActor
 protocol FocusNotificationScheduling: AnyObject {
     func requestPermission()
     func requestPermission(completion: @escaping @MainActor (Bool) -> Void)
-    func sendCompletion(mode: FocusMode, minutes: Int)
+    func sendCompletion(modeTitle: String, minutes: Int)
 }
 
 extension FocusNotificationScheduling {
@@ -28,9 +29,9 @@ final class SystemFocusNotificationScheduler: FocusNotificationScheduling {
         }
     }
 
-    func sendCompletion(mode: FocusMode, minutes: Int) {
+    func sendCompletion(modeTitle: String, minutes: Int) {
         let content = UNMutableNotificationContent()
-        content.title = "\(mode.title)结束"
+        content.title = "\(modeTitle)结束"
         content.body = "本次 \(minutes) 分钟专注已经完成。"
         content.sound = .default
         let request = UNNotificationRequest(identifier: "weekflow.focus.completed", content: content, trigger: nil)
@@ -45,21 +46,30 @@ final class FocusTimerService {
     static let maximumDurationMinutes = 240
     static let durationStepMinutes = 5
 
-    private(set) var selectedMode: FocusMode = .meditation
+    private(set) var selectedModeID: String = "meditation"
     private(set) var remainingSeconds: Int
     private(set) var totalSeconds: Int
     private(set) var isRunning = false
     private(set) var hasStarted = false
     private(set) var linkedTask: TaskReference?
     private(set) var linkedTaskTitle: String?
-    private(set) var configuredMinutes: [FocusMode: Int]
+    private(set) var configuredMinutes: [String: Int]
     private(set) var notificationPermissionIssue: String?
+
+    /// Resolved display properties for the selected mode.
+    var selectedModeConfig: FocusModeConfig {
+        FocusModePreferences.mode(for: selectedModeID) ?? FocusModeConfig.builtInMeditation
+    }
+    var selectedModeTitle: String { selectedModeConfig.title }
+    var selectedModeSymbol: String { selectedModeConfig.iconName }
+    var selectedModeColor: Color { selectedModeConfig.color }
+    var selectedModeRunningSymbol: String { selectedModeConfig.runningSymbol }
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let notificationScheduler: FocusNotificationScheduling
     @ObservationIgnored private var taskWriter: ((TaskReference, Int) -> Void)?
-    @ObservationIgnored private var focusWriter: ((FocusMode, Int, Date) -> Void)?
+    @ObservationIgnored private var focusWriter: ((String, Int, Date) -> Void)?
     @ObservationIgnored private var unloggedSeconds = 0
     @ObservationIgnored private var lastTickDate: Date?
     @ObservationIgnored private let continuousClock = ContinuousClock()
@@ -77,13 +87,13 @@ final class FocusTimerService {
     ) {
         self.defaults = defaults
         self.notificationScheduler = notificationScheduler
-        var durations: [FocusMode: Int] = [:]
-        for mode in FocusMode.allCases {
-            let stored = defaults.integer(forKey: Self.durationKey(for: mode))
-            durations[mode] = stored > 0 ? stored : mode.defaultMinutes
+        var durations: [String: Int] = [:]
+        for mode in FocusModePreferences.modes {
+            let stored = defaults.integer(forKey: Self.durationKey(for: mode.id))
+            durations[mode.id] = stored > 0 ? stored : 60
         }
         configuredMinutes = durations
-        let initialSeconds = (durations[.meditation] ?? FocusMode.meditation.defaultMinutes) * 60
+        let initialSeconds = (durations["meditation"] ?? 60) * 60
         remainingSeconds = initialSeconds
         totalSeconds = initialSeconds
         // P1-8 fix: recover an interrupted focus session if one was persisted.
@@ -111,19 +121,19 @@ final class FocusTimerService {
         return 1 - Double(remainingSeconds) / Double(totalSeconds)
     }
 
-    func minutes(for mode: FocusMode) -> Int {
-        configuredMinutes[mode] ?? mode.defaultMinutes
+    func minutes(for modeID: String) -> Int {
+        configuredMinutes[modeID] ?? 60
     }
 
-    func updateMinutes(_ minutes: Int, for mode: FocusMode) {
+    func updateMinutes(_ minutes: Int, for modeID: String) {
         guard !isRunning else { return }
         let clamped = min(
             max(minutes, Self.minimumDurationMinutes),
             Self.maximumDurationMinutes
         )
-        configuredMinutes[mode] = clamped
-        defaults.set(clamped, forKey: Self.durationKey(for: mode))
-        if selectedMode == mode {
+        configuredMinutes[modeID] = clamped
+        defaults.set(clamped, forKey: Self.durationKey(for: modeID))
+        if selectedModeID == modeID {
             resetCountdown(seconds: clamped * 60)
         }
     }
@@ -138,19 +148,19 @@ final class FocusTimerService {
             Self.maximumDurationMinutes
         )
         if linkedTask == nil {
-            updateMinutes(clamped, for: selectedMode)
+            updateMinutes(clamped, for: selectedModeID)
         } else {
             resetCountdown(seconds: clamped * 60)
         }
     }
 
-    func select(_ mode: FocusMode) {
+    func select(_ modeID: String) {
         guard !isRunning else { return }
-        guard selectedMode != mode else { return }
-        selectedMode = mode
+        guard selectedModeID != modeID else { return }
+        selectedModeID = modeID
         linkedTask = nil
         linkedTaskTitle = nil
-        resetCountdown(seconds: minutes(for: mode) * 60)
+        resetCountdown(seconds: minutes(for: modeID) * 60)
     }
 
     /// Configures the callback that receives raw elapsed **seconds** for a
@@ -163,7 +173,7 @@ final class FocusTimerService {
     /// Configures the callback that receives raw elapsed **seconds** for a
     /// focus session. Accumulation is always in seconds; minute conversion is
     /// the receiver's responsibility (see `DurationDisplay.minutes(for:)`).
-    func configureFocusWriter(_ writer: @escaping (FocusMode, Int, Date) -> Void) {
+    func configureFocusWriter(_ writer: @escaping (String, Int, Date) -> Void) {
         focusWriter = writer
     }
 
@@ -179,13 +189,13 @@ final class FocusTimerService {
         guard !isRunning else { return }
         linkedTask = nil
         linkedTaskTitle = nil
-        resetCountdown(seconds: minutes(for: selectedMode) * 60)
+        resetCountdown(seconds: minutes(for: selectedModeID) * 60)
         persistSnapshot()
     }
 
     func start(now: Date = .now) {
         if remainingSeconds <= 0 {
-            resetCountdown(seconds: minutes(for: selectedMode) * 60)
+            resetCountdown(seconds: minutes(for: selectedModeID) * 60)
         }
         notificationScheduler.requestPermission { [weak self] granted in
             self?.notificationPermissionIssue = granted
@@ -227,7 +237,7 @@ final class FocusTimerService {
         flushElapsedTime()
         linkedTask = nil
         linkedTaskTitle = nil
-        resetCountdown(seconds: minutes(for: selectedMode) * 60)
+        resetCountdown(seconds: minutes(for: selectedModeID) * 60)
         clearSnapshot()
     }
 
@@ -238,12 +248,12 @@ final class FocusTimerService {
     /// Used by global controls such as the menu bar. Any elapsed work is
     /// settled before the new mode becomes active, so switching never drops
     /// task actual time or focus records.
-    func stopAndSelect(_ mode: FocusMode) {
-        guard selectedMode != mode else { return }
+    func stopAndSelect(_ modeID: String) {
+        guard selectedModeID != modeID else { return }
         if isRunning || hasStarted || linkedTask != nil {
             stop()
         }
-        select(mode)
+        select(modeID)
     }
 
     /// Flushes accumulated seconds to the configured writers without stopping
@@ -278,7 +288,7 @@ final class FocusTimerService {
         lastTickInstant = nil
         flushElapsedTime()
         clearSnapshot()
-        notificationScheduler.sendCompletion(mode: selectedMode, minutes: totalSeconds / 60)
+        notificationScheduler.sendCompletion(modeTitle: selectedModeTitle, minutes: totalSeconds / 60)
     }
 
     /// P3-15 fix: maximum seconds that a single reconciliation step may advance.
@@ -341,12 +351,12 @@ final class FocusTimerService {
         if let linkedTask {
             taskWriter?(linkedTask, unloggedSeconds)
         }
-        focusWriter?(selectedMode, unloggedSeconds, date)
+        focusWriter?(selectedModeID, unloggedSeconds, date)
         unloggedSeconds = 0
     }
 
-    private static func durationKey(for mode: FocusMode) -> String {
-        "weekflow.focus.duration.\(mode.rawValue)"
+    private static func durationKey(for modeID: String) -> String {
+        "weekflow.focus.duration.\(modeID)"
     }
 
     // MARK: - Crash Recovery (P1-8)
@@ -357,7 +367,7 @@ final class FocusTimerService {
     private func persistSnapshot(at date: Date = .now) {
         secondsSinceSnapshot = 0
         let session = FocusTimerSession(
-            mode: selectedMode,
+            modeID: selectedModeID,
             totalSeconds: totalSeconds,
             remainingSeconds: remainingSeconds,
             unloggedSeconds: unloggedSeconds,
@@ -391,7 +401,7 @@ final class FocusTimerService {
               let session = try? JSONDecoder().decode(FocusTimerSession.self, from: data) else {
             return
         }
-        selectedMode = session.mode
+        selectedModeID = session.modeID
         totalSeconds = max(session.totalSeconds, 1)
         remainingSeconds = max(session.remainingSeconds, 0)
         unloggedSeconds = max(session.unloggedSeconds, 0)

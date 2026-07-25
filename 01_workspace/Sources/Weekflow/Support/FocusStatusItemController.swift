@@ -95,7 +95,7 @@ final class FocusStatusItemController: NSObject {
         guard let timer, generation == observationGeneration else { return }
         withObservationTracking {
             _ = timer.isRunning
-            _ = timer.selectedMode
+            _ = timer.selectedModeID
             _ = timer.linkedTaskTitle
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
@@ -112,10 +112,10 @@ final class FocusStatusItemController: NSObject {
     private func refreshStatusItem() {
         guard let timer, let button = statusItem?.button else { return }
         button.title = ""
-        let symbol = timer.isRunning ? timer.selectedMode.runningSymbol : timer.selectedMode.symbol
+        let symbol = timer.isRunning ? timer.selectedModeRunningSymbol : timer.selectedModeSymbol
         button.image = NSImage(
             systemSymbolName: symbol,
-            accessibilityDescription: timer.selectedMode.title
+            accessibilityDescription: timer.selectedModeTitle
         )?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
         statusItem?.length = NSStatusItem.variableLength
     }
