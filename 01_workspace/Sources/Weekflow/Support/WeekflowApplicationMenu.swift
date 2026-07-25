@@ -9,6 +9,8 @@ final class WeekflowApplicationMenu: NSObject {
     /// silently blocked via method swizzling. The menu bar is permanently
     /// locked to our custom Chinese menu — no flicker, no reset, ever.
     private(set) static var lockActive = false
+    /// Bypass flag: allows our own install() to set the menu even when locked.
+    fileprivate static var bypassLock = false
 
     func install(addWeeklyGoal: (() -> Void)? = nil) {
         if let addWeeklyGoal {
@@ -23,15 +25,52 @@ final class WeekflowApplicationMenu: NSObject {
         mainMenu.addItem(topLevelItem(title: "任务", submenu: taskMenu()))
         mainMenu.addItem(topLevelItem(title: "窗口", submenu: windowMenu()))
         mainMenu.addItem(topLevelItem(title: "帮助", submenu: helpMenu()))
+        Self.bypassLock = true
         NSApp.mainMenu = mainMenu
+        Self.bypassLock = false
     }
 
-    /// Permanently locks the menu bar. After calling this, any external code
-    /// (SwiftUI, system dialogs, panels) that tries to set NSApp.mainMenu
-    /// will be silently ignored. Our menu stays forever.
+    /// Permanently locks the menu bar. After calling this:
+    /// 1. Method swizzling blocks all external setMainMenu: calls
+    /// 2. A RunLoop beforeWaiting observer catches any bypass via private APIs
+    ///    and restores our menu BEFORE the frame renders (zero visible flicker)
     func activatePermanentLock() {
         Self.swizzleMainMenuSetter()
         Self.lockActive = true
+        Self.startRunLoopObserver()
+    }
+
+    // MARK: - RunLoop Observer (catches private-API menu resets)
+
+    private static var runLoopObserver: CFRunLoopObserver?
+
+    /// Installs a beforeWaiting observer that fires at the END of every run
+    /// loop cycle, right before the screen refreshes. If any code (SwiftUI,
+    /// system panels) managed to replace our menu via a private path that
+    /// bypasses swizzling, we detect and restore it within the SAME frame.
+    private static func startRunLoopObserver() {
+        guard runLoopObserver == nil else { return }
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil,
+            CFRunLoopActivity.beforeWaiting.rawValue,
+            true,  // repeats
+            0      // order: earliest
+        ) { _, _ in
+            MainActor.assumeIsolated {
+                // Check if our menu is still in place (2nd item = "文件").
+                guard let menu = NSApp.mainMenu,
+                      menu.numberOfItems >= 2,
+                      menu.item(at: 1)?.title == "文件" else {
+                    // Menu was replaced! Reinstall immediately.
+                    // This fires BEFORE the screen refreshes, so the user
+                    // never sees the wrong menu.
+                    (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
+                    return
+                }
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        runLoopObserver = observer
     }
 
     // MARK: - Method Swizzling
@@ -260,12 +299,13 @@ extension NSApplication {
     /// Swizzled replacement for `setMainMenu:`.
     /// When the lock is active, any external attempt to change the menu is
     /// silently blocked — the menu bar never changes.
+    /// Our own install() sets bypassLock=true to get through.
     @objc dynamic func weekflow_locked_setMainMenu(_ menu: NSMenu?) {
-        if WeekflowApplicationMenu.lockActive {
-            // Block ALL external menu changes. Our menu stays permanently.
+        if WeekflowApplicationMenu.lockActive && !WeekflowApplicationMenu.bypassLock {
+            // Block external menu changes. Our menu stays permanently.
             return
         }
-        // Lock not yet active — proceed with normal behavior.
+        // Either lock not active, or our own install() is calling.
         weekflow_locked_setMainMenu(menu)
     }
 }
