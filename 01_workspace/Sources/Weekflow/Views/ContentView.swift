@@ -468,14 +468,17 @@ struct ContentView: View {
     }
 
     private func performPlanImport() {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
-            handlePlanImportResult(.success(url))
+        panel.beginSheetModal(for: window) { [self] response in
+            if response == .OK, let url = panel.url {
+                handlePlanImportResult(.success(url))
+            }
+            reinstallMenuAfterPanel()
         }
-        reinstallMenuAfterPanel()
     }
 
     private func performPlanExport() {
@@ -490,30 +493,34 @@ struct ContentView: View {
             planGoals = store.activeGoals
         }
         guard let data = PlanImportService.exportPlan(plan, goals: planGoals) else { return }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(plan.title).json"
         panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try data.write(to: url)
-            } catch {
-                // Export write failure: non-destructive, no data loss.
+        panel.beginSheetModal(for: window) { response in
+            if response == .OK, let url = panel.url {
+                do {
+                    try data.write(to: url)
+                } catch {
+                    // Export write failure: non-destructive, no data loss.
+                }
             }
+            reinstallMenuAfterPanel()
         }
-        reinstallMenuAfterPanel()
     }
 
-    /// After a system panel closes, SwiftUI resets the menu bar via private
-    /// async mechanisms at unpredictable timings. We reinstall at multiple
-    /// delays to cover all possible reset windows.
+    /// After a system panel closes, reinstall our custom menu.
+    /// beginSheetModal doesn't create a modal run loop (unlike runModal),
+    /// so SwiftUI's menu reset is less aggressive, but we still guard.
     private func reinstallMenuAfterPanel() {
         let delegate = NSApp.delegate as? WeekflowAppDelegate
         delegate?.reinstallMenu()
-        for delay in [0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 1.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                delegate?.reinstallMenu()
-            }
+        DispatchQueue.main.async {
+            delegate?.reinstallMenu()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            delegate?.reinstallMenu()
         }
     }
 
