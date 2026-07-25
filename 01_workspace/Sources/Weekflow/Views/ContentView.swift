@@ -504,12 +504,16 @@ struct ContentView: View {
         reinstallMenuAfterPanel()
     }
 
-    /// After a system panel closes, SwiftUI may reset the menu bar.
-    /// Reinstall our custom menu immediately and on the next run-loop turn.
+    /// After a system panel closes, SwiftUI resets the menu bar via private
+    /// async mechanisms at unpredictable timings. We reinstall at multiple
+    /// delays to cover all possible reset windows.
     private func reinstallMenuAfterPanel() {
-        (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
-        DispatchQueue.main.async {
-            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
+        let delegate = NSApp.delegate as? WeekflowAppDelegate
+        delegate?.reinstallMenu()
+        for delay in [0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                delegate?.reinstallMenu()
+            }
         }
     }
 
