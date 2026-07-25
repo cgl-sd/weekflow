@@ -39,26 +39,48 @@ final class WeekflowApplicationMenu: NSObject {
     // MARK: - RunLoop Observer
 
     private static var runLoopObserver: CFRunLoopObserver?
+    private static var runLoopObserver2: CFRunLoopObserver?
 
     private static func startRunLoopObserver() {
         guard runLoopObserver == nil else { return }
-        let observer = CFRunLoopObserverCreateWithHandler(
+
+        // Observer 1: fires at beforeSources (earliest point in run loop cycle)
+        let obs1 = CFRunLoopObserverCreateWithHandler(
+            nil,
+            CFRunLoopActivity.beforeSources.rawValue,
+            true,
+            0
+        ) { _, _ in
+            Self.enforceMenu()
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), obs1, .commonModes)
+        runLoopObserver = obs1
+
+        // Observer 2: fires at beforeWaiting (right before screen refresh)
+        let obs2 = CFRunLoopObserverCreateWithHandler(
             nil,
             CFRunLoopActivity.beforeWaiting.rawValue,
             true,
             0
         ) { _, _ in
-            MainActor.assumeIsolated {
-                guard let menu = NSApp.mainMenu,
-                      menu.numberOfItems >= 2,
-                      menu.item(at: 1)?.title == "文件" else {
-                    (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
-                    return
-                }
-            }
+            Self.enforceMenu()
         }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-        runLoopObserver = observer
+        CFRunLoopAddObserver(CFRunLoopGetMain(), obs2, .commonModes)
+        runLoopObserver2 = obs2
+    }
+
+    /// Checks if our menu is still in place. If not, reinstalls immediately.
+    /// Called from RunLoop observers (main thread, no MainActor.assumeIsolated
+    /// because CFRunLoop callbacks are C function pointer context).
+    private static func enforceMenu() {
+        guard lockActive else { return }
+        guard let menu = NSApp.mainMenu,
+              menu.numberOfItems >= 2,
+              menu.item(at: 1)?.title == "文件" else {
+            // Menu was replaced! Reinstall immediately.
+            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
+            return
+        }
     }
 
     // MARK: - Method Swizzling
@@ -228,10 +250,18 @@ final class WeekflowApplicationMenu: NSObject {
 // MARK: - NSApplication swizzled setter
 
 extension NSApplication {
+    /// Swizzled replacement for `setMainMenu:`.
+    /// When the lock is active, ANY external attempt to change the menu
+    /// is intercepted and REPLACED with our Chinese menu.
+    /// Our own install() sets bypassLock=true to get through.
     @objc dynamic func weekflow_locked_setMainMenu(_ menu: NSMenu?) {
         if WeekflowApplicationMenu.lockActive && !WeekflowApplicationMenu.bypassLock {
+            // External code tried to change the menu.
+            // Force our menu back immediately.
+            (NSApp.delegate as? WeekflowAppDelegate)?.reinstallMenu()
             return
         }
+        // Either lock not active, or our own install() is calling.
         weekflow_locked_setMainMenu(menu)
     }
 }

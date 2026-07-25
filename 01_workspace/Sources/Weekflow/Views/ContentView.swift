@@ -477,6 +477,7 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             handlePlanImportResult(.success(url))
         }
+        reinstallMenuAfterPanel()
     }
 
     private func performPlanExport() {
@@ -498,6 +499,19 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             do { try data.write(to: url) } catch {}
         }
+        reinstallMenuAfterPanel()
+    }
+
+    /// After a system panel's modal session ends, SwiftUI/AppKit may reset
+    /// the menu bar. Reinstall at multiple timing points to cover all cases.
+    private func reinstallMenuAfterPanel() {
+        let delegate = NSApp.delegate as? WeekflowAppDelegate
+        delegate?.reinstallMenu()
+        DispatchQueue.main.async { delegate?.reinstallMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { delegate?.reinstallMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { delegate?.reinstallMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { delegate?.reinstallMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { delegate?.reinstallMenu() }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {
