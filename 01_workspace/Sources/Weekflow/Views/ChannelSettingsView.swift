@@ -607,6 +607,7 @@ enum ChannelSettingsDraftID {
 
 struct GeneralSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
     @Binding var isColorPalettePresented: Bool
     @Binding var isThemeColorPalettePresented: Bool
     @Binding var isChartPalettePresented: Bool
@@ -635,6 +636,7 @@ struct GeneralSettingsView: View {
     @State private var colorPaletteAnchor = CGRect.zero
     @State private var themeColorPaletteAnchor = CGRect.zero
     @State private var chartPaletteAnchor = CGRect.zero
+    @State private var updateCheckState: UpdateCheckState = .idle
 
     var body: some View {
         GeometryReader { proxy in
@@ -878,6 +880,8 @@ struct GeneralSettingsView: View {
             }
             .frame(maxWidth: 480)
 
+            updateSettingsCard
+
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .background(SystemOverlayScroller())
@@ -939,6 +943,112 @@ struct GeneralSettingsView: View {
         case .failed:
             globalDateShortcutError.isEmpty ? "注册失败，请检查快捷键冲突。" : globalDateShortcutError
         }
+    }
+
+    private var updateSettingsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("版本与更新")
+                .font(.system(size: 15, weight: .semibold))
+
+            SettingsLayoutRow {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("检查 GitHub 上的新版本")
+                    Text(currentVersionText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(WeekflowPalette.secondaryText)
+                }
+                Spacer()
+                SettingsHoverControl {
+                    Button(updateButtonTitle) {
+                        checkForUpdates()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(updateCheckState.isChecking || WeekflowAppVersion.current == nil)
+                    .pointingHandCursor()
+                }
+            }
+
+            updateStatusView
+
+            Text("仅在点击时访问 GitHub Releases；不会上传任务、计划或其他本地数据。")
+                .font(.system(size: 12))
+                .foregroundStyle(WeekflowPalette.secondaryText)
+        }
+        .padding(18)
+        .background(WeekflowPalette.surface, in: WeekflowRoundedRectangle(cornerRadius: 8))
+        .overlay {
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(WeekflowPalette.border, lineWidth: 1)
+        }
+        .frame(maxWidth: 480)
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateCheckState {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("正在检查…")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(WeekflowPalette.secondaryText)
+        case let .upToDate(version):
+            Label("已是最新版本（\(displayVersion(version))）。", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.green)
+        case let .updateAvailable(version, releaseURL):
+            HStack(spacing: 10) {
+                Label("发现新版本 \(displayVersion(version))。", systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: 12))
+                Button("查看版本") { openURL(releaseURL) }
+                    .buttonStyle(.link)
+                    .pointingHandCursor()
+            }
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private var currentVersionText: String {
+        guard let currentVersion = WeekflowAppVersion.current else {
+            return "当前为未打包的开发构建"
+        }
+        return "当前版本 \(displayVersion(currentVersion))"
+    }
+
+    private var updateButtonTitle: String {
+        updateCheckState.isChecking ? "检查中" : "检查更新"
+    }
+
+    private func checkForUpdates() {
+        guard let currentVersion = WeekflowAppVersion.current else {
+            updateCheckState = .failed(message: "未打包的开发构建无法比较版本。")
+            return
+        }
+        updateCheckState = .checking
+        Task {
+            do {
+                let result = try await AppUpdateService().check(currentVersion: currentVersion)
+                updateCheckState = result.isUpdateAvailable
+                    ? .updateAvailable(version: result.latestVersion, releaseURL: result.releaseURL)
+                    : .upToDate(version: result.latestVersion)
+            } catch is CancellationError {
+                updateCheckState = .idle
+            } catch {
+                updateCheckState = .failed(
+                    message: (error as? LocalizedError)?.errorDescription ?? "暂时无法检查更新，请稍后重试。"
+                )
+            }
+        }
+    }
+
+    private func displayVersion(_ version: String) -> String {
+        version.lowercased().hasPrefix("v") ? version : "v\(version)"
     }
 
     private func chartPaletteOverlay(in availableSize: CGSize) -> some View {
@@ -1090,3 +1200,14 @@ struct GeneralSettingsView: View {
 
 }
 
+private enum UpdateCheckState: Equatable {
+    case idle
+    case checking
+    case upToDate(version: String)
+    case updateAvailable(version: String, releaseURL: URL)
+    case failed(message: String)
+
+    var isChecking: Bool {
+        self == .checking
+    }
+}
