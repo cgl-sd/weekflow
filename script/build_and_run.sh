@@ -115,6 +115,14 @@ validate_bundle() {
 }
 validate_bundle
 
+# Debug builds read project-local data. Give the reconstructed app bundle a
+# stable code-signing identifier so macOS does not treat every rebuild as a
+# completely unrelated executable when remembering Files & Folders consent.
+if [[ "$BUILD_CONFIGURATION" == "debug" ]]; then
+  /usr/bin/codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP_BUNDLE"
+  /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+fi
+
 open_app() { /usr/bin/open -n "$APP_BUNDLE"; }
 open_fixture_app() { /usr/bin/open -n "$APP_BUNDLE" --args --development-fixtures; }
 

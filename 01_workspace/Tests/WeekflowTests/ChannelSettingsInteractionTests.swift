@@ -84,6 +84,21 @@ import Testing
 }
 
 @MainActor
+@Test func builtInFocusModeReservesTheDeleteColumnForColorAlignment() throws {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let source = try String(
+        contentsOf: root.appendingPathComponent("Sources/Weekflow/Views/ChannelSettingComponents.swift"),
+        encoding: .utf8
+    )
+
+    #expect(source.contains("if !mode.isBuiltIn"))
+    #expect(source.contains("Color.clear\n                        .frame(width: 28, height: 26)"))
+}
+
+@MainActor
 @Test func appearancePreferenceSupportsSystemLightAndDarkModes() {
     #expect(AppAppearancePreference.storageKey == "weekflow.appearance")
     #expect(AppAppearancePreference.defaultValue == AppAppearancePreference.system.rawValue)

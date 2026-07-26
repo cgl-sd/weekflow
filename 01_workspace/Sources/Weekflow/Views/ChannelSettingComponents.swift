@@ -382,6 +382,12 @@ struct FocusModeSettingRow: View {
 
                 if !mode.isBuiltIn {
                     ChannelDeleteButton(action: onDelete)
+                } else {
+                    // Keep the trailing action column occupied so the built-in
+                    // meditation mode's color control aligns with custom modes.
+                    Color.clear
+                        .frame(width: 28, height: 26)
+                        .accessibilityHidden(true)
                 }
             }
         }
