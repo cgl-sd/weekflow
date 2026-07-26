@@ -61,7 +61,9 @@ Focus sessions contribute to actual task time and review statistics while preser
 ## System and data
 
 - Requires macOS 14 or later.
-- User data stays in the local `Application Support/Weekflow` directory.
+- Installed release builds store user data in `~/Library/Application Support/Weekflow`.
+- Development DEBUG builds use only `01_workspace/.data` inside the project for business data and never read or write installed-app data; Git ignores that directory.
+- Development builds use the separate bundle identifier `com.weekflow.app.debug`; installed release builds use `com.weekflow.app`, so macOS-managed window and UI preferences cannot overlap either.
 - Release archives contain no user data; local storage is created on first launch.
 - The current version does not connect to iCloud, Apple Calendar, Reminders, or external AI APIs.
 - Planned days, daily summaries, and week boundaries use timezone-free business dates, so travel or a system timezone change does not rewrite an existing plan.

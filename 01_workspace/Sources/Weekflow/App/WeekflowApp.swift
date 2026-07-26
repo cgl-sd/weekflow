@@ -216,20 +216,25 @@ struct WeekflowApp: App {
         isLoadingStore = true
         defer { isLoadingStore = false }
 #if DEBUG
+        let developmentDirectory = AppDataLocation.developmentDirectory()
         if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
             store = WeekflowStore(
-                storage: .developmentFixtures(),
+                storage: .developmentFixtures(rootDirectory: developmentDirectory),
                 developmentFixture: .stageOne(referenceDate: .now)
             )
             return
         }
-#endif
+        let developmentBaseStorage = LocalStorage(baseDirectory: developmentDirectory)
+        let developmentStorage = await LocalStoragePreloader.preload(developmentBaseStorage)
+        store = WeekflowStore(storage: developmentStorage)
+#else
         // 数据安全：打开数据库前，对上一次会话的库做滚动备份（此时库静止，
         // 上一会话关闭时已做 WAL 检查点；不干扰任何打开中的连接）。
         LocalStorage.backupDefaultDatabase()
         let baseStorage = await Task.detached(priority: .userInitiated) { LocalStorage() }.value
         let storage = await LocalStoragePreloader.preload(baseStorage)
         store = WeekflowStore(storage: storage)
+#endif
     }
 
     private var appearancePreference: AppAppearancePreference {
@@ -322,9 +327,7 @@ private struct PersistenceRecoveryView: View {
     }
 
     private func openDataFolder() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dataFolder = appSupport.appendingPathComponent("Weekflow", isDirectory: true)
-        NSWorkspace.shared.open(dataFolder)
+        NSWorkspace.shared.open(AppDataLocation.runtimeDirectory())
     }
 
     private func copyErrorDetails() {
@@ -337,8 +340,7 @@ private struct PersistenceRecoveryView: View {
         // P3-13 fix: The retry action terminates and relaunches the app so the
         // Store is re-initialized from disk. A plain window close + relaunch is
         // the safest recovery path for a corrupted persistence session.
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dataFolder = appSupport.appendingPathComponent("Weekflow", isDirectory: true)
+        let dataFolder = AppDataLocation.runtimeDirectory()
         // Remove the failure marker so the next launch attempts a fresh connection.
         let failureMarker = dataFolder.appendingPathComponent("Database/persistence-failure.json")
         try? FileManager.default.removeItem(at: failureMarker)

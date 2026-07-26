@@ -28,8 +28,7 @@ struct LocalStorage: @unchecked Sendable {
         baseDirectory: URL? = nil,
         faultInjector: PersistenceFaultInjector? = nil
     ) {
-        let folder = baseDirectory ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Weekflow", isDirectory: true)
+        let folder = baseDirectory ?? AppDataLocation.runtimeDirectory(fileManager: fileManager)
         self.fileManager = fileManager
         directoryURL = folder
         dataDirectoryURL = folder.appendingPathComponent("Database", isDirectory: true)
@@ -53,8 +52,7 @@ struct LocalStorage: @unchecked Sendable {
         fileManager: FileManager = .default,
         rootDirectory: URL? = nil
     ) -> LocalStorage {
-        let root = rootDirectory ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Weekflow", isDirectory: true)
+        let root = rootDirectory ?? AppDataLocation.runtimeDirectory(fileManager: fileManager)
         return LocalStorage(
             fileManager: fileManager,
             baseDirectory: root.appendingPathComponent("DevelopmentFixtures", isDirectory: true)
@@ -65,8 +63,7 @@ struct LocalStorage: @unchecked Sendable {
     /// 应在创建 Store 之前调用——此时数据库处于静止状态（上一会话关闭时已做 WAL
     /// 检查点），备份只读取主库文件，不会干扰任何打开中的连接，也不会与并发写入竞争。
     static func backupDefaultDatabase(fileManager: FileManager = .default) {
-        let folder = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Weekflow", isDirectory: true)
+        let folder = AppDataLocation.systemDirectory(fileManager: fileManager)
         let databaseURL = folder
             .appendingPathComponent("Database", isDirectory: true)
             .appendingPathComponent("Weekflow.store")

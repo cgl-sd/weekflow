@@ -16,6 +16,10 @@ xcuserdata/
 .swiftpm/
 DerivedData/
 
+# Development-mode local data (isolated from production)
+.data/
+**/.data/
+
 # Local Codex and developer state
 .codex/
 .qoder/

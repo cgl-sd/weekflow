@@ -61,7 +61,9 @@ Weekflow 把“目标—任务—日期—投入—回顾”放在同一个数�
 ## 系统与数据
 
 - 支持 macOS 14 或更高版本。
-- 用户数据保存在本机 `Application Support/Weekflow`。
+- 正式安装版的用户数据保存在本机 `~/Library/Application Support/Weekflow`。
+- 开发阶段的 DEBUG 构建仅使用项目内 `01_workspace/.data` 保存业务数据，不会读写正式安装版数据；该目录已被 Git 忽略。
+- 开发版使用独立 Bundle ID `com.weekflow.app.debug`，正式安装版使用 `com.weekflow.app`，因此 macOS 管理的窗口与界面偏好也不会串用。
 - Release 安装包不包含用户数据；首次运行时才会在本机创建数据存储。
 - 当前不接入 iCloud、Apple Calendar、Reminders 或外部 AI API。
 - 计划日、每日总结和周边界以无时区业务日期保存，旅行或切换系统时区不会改写原安排。

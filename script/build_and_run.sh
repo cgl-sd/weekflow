@@ -3,7 +3,8 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="Weekflow"
-BUNDLE_ID="com.weekflow.app"
+RELEASE_BUNDLE_ID="com.weekflow.app"
+DEBUG_BUNDLE_ID="com.weekflow.app.debug"
 MIN_SYSTEM_VERSION="14.0"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/01_workspace"
@@ -22,6 +23,12 @@ trap cleanup EXIT INT TERM
 
 if [[ "$MODE" == "--package" || "$MODE" == "package" || "$MODE" == "--release" || "$MODE" == "release" ]]; then
   BUILD_CONFIGURATION="release"
+fi
+
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  BUNDLE_ID="$RELEASE_BUNDLE_ID"
+else
+  BUNDLE_ID="$DEBUG_BUNDLE_ID"
 fi
 
 resolve_version() {
