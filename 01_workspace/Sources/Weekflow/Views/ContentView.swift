@@ -80,7 +80,7 @@ struct ContentView: View {
         }
 
 
-        .alert("导入失败", isPresented: Binding(
+        .alert("操作失败", isPresented: Binding(
             get: { planImportError != nil },
             set: { if !$0 { planImportError = nil } }
         )) {
@@ -427,34 +427,38 @@ struct ContentView: View {
     private func handlePlanImportResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):
-            guard url.startAccessingSecurityScopedResource() else {
-                planImportError = "无法访问所选文件"
-                return
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            do {
-                let data = try Data(contentsOf: url)
-                switch PlanImportService.parse(data: data) {
-                case .success(let payload):
-                    let conflict = PlanImportService.detectConflict(
-                        startDate: PlanImportService.parseDatePublic(payload.startDate) ?? .now,
-                        endDate: PlanImportService.parseDatePublic(payload.endDate) ?? .now,
-                        activePlan: store.activePlan
-                    )
-                    switch conflict {
-                    case .none:
-                        if PlanImportService.importIntoStore(payload, store: store, archiveExisting: false) == nil {
-                            planImportError = "导入过程中日期解析失败"
-                        }
-                    case .partialOverlap, .fullOverlap:
-                        pendingImportPayload = payload
-                        showsImportOverwriteConfirm = true
-                    }
-                case .failure(let error):
-                    planImportError = error.localizedDescription
+            Task { @MainActor in
+                guard url.startAccessingSecurityScopedResource() else {
+                    planImportError = "无法访问所选文件"
+                    return
                 }
-            } catch {
-                planImportError = "读取文件失败：\(error.localizedDescription)"
+                defer { url.stopAccessingSecurityScopedResource() }
+                do {
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try Data(contentsOf: url, options: [.mappedIfSafe])
+                    }.value
+                    switch PlanImportService.parse(data: data) {
+                    case .success(let payload):
+                        let conflict = PlanImportService.detectConflict(
+                            startDate: PlanImportService.parseDatePublic(payload.startDate) ?? .now,
+                            endDate: PlanImportService.parseDatePublic(payload.endDate) ?? .now,
+                            activePlan: store.activePlan
+                        )
+                        switch conflict {
+                        case .none:
+                            if PlanImportService.importIntoStore(payload, store: store, archiveExisting: false) == nil {
+                                planImportError = "导入过程中日期解析失败"
+                            }
+                        case .partialOverlap, .fullOverlap:
+                            pendingImportPayload = payload
+                            showsImportOverwriteConfirm = true
+                        }
+                    case .failure(let error):
+                        planImportError = error.localizedDescription
+                    }
+                } catch {
+                    planImportError = "读取文件失败：\(error.localizedDescription)"
+                }
             }
         case .failure(let error):
             planImportError = "选择文件失败：\(error.localizedDescription)"
@@ -484,7 +488,6 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             handlePlanImportResult(.success(url))
         }
-        reinstallMenuAfterPanel()
     }
 
     private func performPlanExport() {
@@ -511,22 +514,16 @@ struct ContentView: View {
         panel.showsHiddenFiles = false
         panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         if panel.runModal() == .OK, let dirURL = panel.url {
-            let fileURL = dirURL.appendingPathComponent("\(plan.title).json")
-            do { try data.write(to: fileURL) } catch {}
+            let safeTitle = plan.title
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ":", with: "-")
+            let fileURL = dirURL.appendingPathComponent("\(safeTitle).json")
+            do {
+                try data.write(to: fileURL, options: .atomic)
+            } catch {
+                planImportError = "导出文件失败：\(error.localizedDescription)"
+            }
         }
-        reinstallMenuAfterPanel()
-    }
-
-    /// After a system panel's modal session ends, SwiftUI/AppKit may reset
-    /// the menu bar. Reinstall at multiple timing points to cover all cases.
-    private func reinstallMenuAfterPanel() {
-        let delegate = NSApp.delegate as? WeekflowAppDelegate
-        delegate?.reinstallMenu()
-        DispatchQueue.main.async { delegate?.reinstallMenu() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { delegate?.reinstallMenu() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { delegate?.reinstallMenu() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { delegate?.reinstallMenu() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { delegate?.reinstallMenu() }
     }
 
     private func routeDateNavigation(_ navigation: ContentCommandHandler.GlobalDateNavigation) {

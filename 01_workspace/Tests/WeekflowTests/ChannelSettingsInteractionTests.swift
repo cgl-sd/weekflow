@@ -12,7 +12,7 @@ import Testing
     #expect(!DailyProgressPreferences.isVisible(hasProgress: false, alwaysShow: false))
     #expect(DailyProgressPreferences.isVisible(hasProgress: true, alwaysShow: false))
     #expect(DailyProgressPreferences.isVisible(hasProgress: false, alwaysShow: true))
-    #expect(WorkspaceSettingsSection.allCases.map(\.title) == ["通用", "分类与频道", "日历"])
+    #expect(WorkspaceSettingsSection.allCases.map(\.title) == ["通用", "分类与频道", "专注模式", "日历"])
 }
 
 @MainActor
@@ -72,8 +72,15 @@ import Testing
 
 @MainActor
 @Test func continuousColorPickerOnlyDismissesOutsideItsPanel() {
-    #expect(!ColorPickerDismissalPolicy.shouldDismiss(isInteractingInsidePanel: true))
-    #expect(ColorPickerDismissalPolicy.shouldDismiss(isInteractingInsidePanel: false))
+    let panel = CGRect(x: 20, y: 20, width: 220, height: 180)
+    #expect(!OutsideClickProbeView.shouldDismiss(
+        clickAt: CGPoint(x: 80, y: 80),
+        protectedRects: [panel]
+    ))
+    #expect(OutsideClickProbeView.shouldDismiss(
+        clickAt: CGPoint(x: 300, y: 300),
+        protectedRects: [panel]
+    ))
 }
 
 @MainActor
@@ -204,7 +211,8 @@ import Testing
     #expect(settings.contains("HueSelectionTrack"))
     #expect(settings.contains("DragGesture(minimumDistance: 0)"))
     #expect(settings.contains("interactionChanged(true)"))
-    #expect(settings.contains("ColorPickerDismissalPolicy.shouldDismiss("))
+    #expect(settings.contains("WindowOutsideClickMonitor("))
+    #expect(settings.contains("protectedRects:"))
     #expect(settings.contains("LinearGradient("))
     #expect(settings.contains("ColorPaletteAnchorPreferenceKey"))
     #expect(settings.contains("ChannelIconButton"))

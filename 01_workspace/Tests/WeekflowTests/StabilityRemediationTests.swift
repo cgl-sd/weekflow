@@ -469,7 +469,7 @@ private func withPersistenceActor<Result: Sendable>(
 @MainActor
 private final class NoopFocusNotificationScheduler: FocusNotificationScheduling {
     func requestPermission() {}
-    func sendCompletion(mode: FocusMode, minutes: Int) {}
+    func sendCompletion(modeTitle: String, minutes: Int) {}
 }
 
 @MainActor
@@ -489,7 +489,7 @@ private final class NoopFocusNotificationScheduler: FocusNotificationScheduling 
 private final class DeniedFocusNotificationScheduler: FocusNotificationScheduling {
     func requestPermission() {}
     func requestPermission(completion: @escaping @MainActor (Bool) -> Void) { completion(false) }
-    func sendCompletion(mode: FocusMode, minutes: Int) {}
+    func sendCompletion(modeTitle: String, minutes: Int) {}
 }
 
 @MainActor

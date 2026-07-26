@@ -214,6 +214,10 @@ extension WeekflowStore {
         recordFocusSession(modeID: modeID, seconds: minutes * 60, date: date)
     }
 
+    func recordFocusSession(mode: FocusMode, minutes: Int, date: Date = .now) {
+        recordFocusSession(modeID: mode.rawValue, minutes: minutes, date: date)
+    }
+
     func recordFocusSession(modeID: String, seconds: Int, date: Date = .now) {
         guard seconds > 0 else { return }
         let day = businessCalendar.day(containing: date)

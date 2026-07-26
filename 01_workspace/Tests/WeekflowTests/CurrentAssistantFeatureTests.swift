@@ -32,8 +32,8 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
     let settingsSource = try ["ChannelSettingsView.swift", "SettingsColorPickers.swift", "ChannelSettingComponents.swift"]
             .map { try String(contentsOf: currentPackageRoot.appendingPathComponent("Sources/Weekflow/Views/\($0)"), encoding: .utf8) }
             .joined(separator: "\n")
-    #expect(settingsSource.components(separatedBy: ".scrollIndicators(.automatic)").count - 1 == 2)
-    #expect(settingsSource.components(separatedBy: ".background(SystemOverlayScroller())").count - 1 == 2)
+    #expect(settingsSource.components(separatedBy: ".scrollIndicators(.automatic)").count - 1 == 3)
+    #expect(settingsSource.components(separatedBy: ".background(SystemOverlayScroller())").count - 1 == 3)
     #expect(!settingsSource.contains(".scrollIndicators(.visible)"))
     #expect(settingsSource.contains("hoveredSection == section"))
     #expect(settingsSource.contains(".stablePointingHandHover"))
@@ -673,9 +673,7 @@ private let currentPackageRoot = URL(fileURLWithPath: #filePath)
     #expect(menuBarSource.contains(".background(WeekflowPalette.floatingPanelSurface)"))
     #expect(menuBarSource.contains("WeekflowPalette.floatingPanelRaisedSurface"))
     #expect(statusItemSource.contains(".fill(WeekflowPalette.floatingPanelSurface)"))
-    #expect(focusModeSource.contains("WeekflowPalette.focusMeditation"))
-    #expect(focusModeSource.contains("WeekflowPalette.focusStudy"))
-    #expect(focusModeSource.contains("WeekflowPalette.focusLeisure"))
+    #expect(focusModeSource.contains("FocusModePreferences.color(for: modeID)"))
 }
 
 @MainActor

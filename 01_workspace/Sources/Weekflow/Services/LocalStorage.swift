@@ -135,21 +135,27 @@ struct LocalStorage: @unchecked Sendable {
     }
 
     func loadPlans() throws -> [WeeklyPlan]? {
-        if let initializationError { throw initializationError }
-        let url = plansURL
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder.weekflow.decode([WeeklyPlan].self, from: data)
+        if let preload {
+            switch try preload.take(.plans, \.plans) {
+            case .unavailable: break
+            case let .value(value): return value
+            }
+        }
+        if let stored = try readOptional({ try $0.loadPlans() }) {
+            return stored
+        }
+        guard fileManager.fileExists(atPath: legacyPlansURL.path) else { return nil }
+        let data = try Data(contentsOf: legacyPlansURL)
+        let plans = try JSONDecoder.weekflow.decode([WeeklyPlan].self, from: data)
+        try write { try $0.savePlans(plans, kind: .migration) }
+        return plans
     }
 
     func savePlans(_ plans: [WeeklyPlan]) throws {
-        if let initializationError { throw initializationError }
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        let data = try JSONEncoder.weekflow.encode(plans)
-        try data.write(to: plansURL, options: .atomic)
+        try write { try $0.savePlans(plans, kind: .userEdit) }
     }
 
-    private var plansURL: URL {
+    var legacyPlansURL: URL {
         directoryURL.appendingPathComponent("plans.json")
     }
 

@@ -372,7 +372,7 @@ extension SwiftDataPersistenceRepository {
                     predicate: #Predicate { taskIDs.contains($0.taskID) }
                 ))
             }
-            var assignmentsByTaskID = Dictionary(grouping: existingAssignments, by: \.taskID)
+            let assignmentsByTaskID = Dictionary(grouping: existingAssignments, by: \.taskID)
 
             for upsert in changes.tasksToUpsert {
                 let task = upsert.task

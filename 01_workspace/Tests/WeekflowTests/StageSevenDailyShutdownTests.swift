@@ -120,16 +120,16 @@ import Testing
         defaults: defaults,
         notificationScheduler: StageSevenNotificationScheduler()
     )
-    timer.configureFocusWriter { mode, seconds, date in
-        store.recordFocusSession(mode: mode, seconds: seconds, date: date)
+    timer.configureFocusWriter { modeID, seconds, date in
+        store.recordFocusSession(modeID: modeID, seconds: seconds, date: date)
     }
     timer.select(.study)
     timer.start(now: .now)
     timer.advance(by: 65)
     timer.pause()
 
-    #expect(store.focusMinutes(on: .now)[.study] == 1)
-    #expect(store.focusMinutes(on: .now)[.meditation] == nil)
+    #expect(store.focusMinutes(on: .now)["study"] == 1)
+    #expect(store.focusMinutes(on: .now)["meditation"] == nil)
 }
 
 @MainActor
@@ -157,8 +157,8 @@ import Testing
     // (reusing the previous store's live storage instance is not a realistic
     // restart and races the shared persistence actor's teardown).
     let reloaded = WeekflowStore(storage: LocalStorage(baseDirectory: folder), legacyPreferences: preferences)
-    #expect(reloaded.focusMinutes(on: .now)[.meditation] == 25)
-    #expect(reloaded.focusMinutes(on: .now)[.leisure] == 20)
+    #expect(reloaded.focusMinutes(on: .now)["meditation"] == 25)
+    #expect(reloaded.focusMinutes(on: .now)["leisure"] == 20)
     #expect(reloaded.dailySummary(on: .now)?.content.contains("完成了验收") == true)
 }
 
@@ -254,7 +254,7 @@ private func stageSevenSnapshot<V: View>(_ view: V, size: NSSize, name: String) 
 @MainActor
 private final class StageSevenNotificationScheduler: FocusNotificationScheduling {
     func requestPermission() {}
-    func sendCompletion(mode: FocusMode, minutes: Int) {}
+    func sendCompletion(modeTitle: String, minutes: Int) {}
 }
 
 private enum StageSevenSnapshotError: Error {

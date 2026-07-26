@@ -206,6 +206,7 @@ extension WeekflowStore {
                 operation: { try storage.saveApplicationSnapshot(snapshot) },
             commit: {
                 persistedGoals = goals
+                persistedPlans = plans
                 persistedChannels = channels
                 persistedCalendarEvents = calendarEvents
                 persistedDailyPlanningStates = dailyPlanningStates
@@ -215,6 +216,7 @@ extension WeekflowStore {
                 rollback: {
                     goals = persistedGoals
                     invalidateGoalIndex()
+                    plans = persistedPlans
                     channels = persistedChannels
                     calendarEvents = persistedCalendarEvents
                     dailyPlanningStates = persistedDailyPlanningStates
@@ -233,6 +235,7 @@ extension WeekflowStore {
             commit: { [weak self] in
                 guard let self else { return }
                 self.persistedGoals = snapshot.goals
+                self.persistedPlans = snapshot.plans
                 self.persistedChannels = snapshot.channels
                 self.persistedCalendarEvents = snapshot.calendarEvents
                 self.persistedDailyPlanningStates = snapshot.dailyPlanningStates
@@ -243,6 +246,7 @@ extension WeekflowStore {
                 guard let self else { return }
                 self.goals = self.persistedGoals
                 self.invalidateGoalIndex()
+                self.plans = self.persistedPlans
                 self.channels = self.persistedChannels
                 self.calendarEvents = self.persistedCalendarEvents
                 self.dailyPlanningStates = self.persistedDailyPlanningStates

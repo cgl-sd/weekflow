@@ -3,6 +3,18 @@ import Foundation
 struct DailyShutdownSummaryBuilder {
     static func build(
         entries: [(goal: WeeklyGoal, task: WeekTask)],
+        focusMinutes: [FocusMode: Int],
+        channelTitle: (String?) -> String
+    ) -> String {
+        build(
+            entries: entries,
+            focusMinutes: Dictionary(uniqueKeysWithValues: focusMinutes.map { ($0.key.rawValue, $0.value) }),
+            channelTitle: channelTitle
+        )
+    }
+
+    static func build(
+        entries: [(goal: WeeklyGoal, task: WeekTask)],
         focusMinutes: [String: Int],
         channelTitle: (String?) -> String
     ) -> String {

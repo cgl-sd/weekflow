@@ -36,6 +36,29 @@ private func tempDBURL(_ name: String) -> URL {
     #expect(try Data(contentsOf: dbURL) == original)
 }
 
+/// Compatibility safety: while older installations still have plans.json,
+/// database backup and restore must keep it with the SQLite snapshot.
+@Test func backupAndRestoreIncludesLegacyPlansFile() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowBackupPlans-\(UUID().uuidString)", isDirectory: true)
+    let dbURL = root.appendingPathComponent("Database/Weekflow.store")
+    let plansURL = root.appendingPathComponent("plans.json")
+    let backupsURL = root.appendingPathComponent("Backups")
+    try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("database".utf8).write(to: dbURL)
+    try Data("original-plans".utf8).write(to: plansURL)
+
+    let service = DatabaseBackupService(
+        databaseURL: dbURL,
+        backupsDirectory: backupsURL
+    )
+    _ = try #require(try service.makeBackup())
+    try Data("changed-plans".utf8).write(to: plansURL)
+    #expect(try service.restoreLatest())
+    #expect(try Data(contentsOf: plansURL) == Data("original-plans".utf8))
+}
+
 /// 数据安全：无备份时 restoreLatest 返回 false（不误报成功）。
 @Test func restoreWithoutAnyBackupReturnsFalse() throws {
     let dbURL = tempDBURL("NoBackup")

@@ -11,6 +11,7 @@ enum PersistenceEntity {
     static let goal = "goal"
     static let task = "task"
     static let taskAssignment = "taskAssignment"
+    static let weeklyPlan = "weeklyPlan"
     static let channel = "channel"
     static let calendarEvent = "calendarEvent"
     static let dailyPlan = "dailyPlan"

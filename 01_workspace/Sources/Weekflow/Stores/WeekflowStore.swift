@@ -81,6 +81,7 @@ final class WeekflowStore {
     var goalClipboard: (goalID: UUID, cutsSource: Bool)?
     var automaticDistributionChanges: [AutomaticDistributionChange] = []
     var persistedGoals: [WeeklyGoal] = []
+    var persistedPlans: [WeeklyPlan] = []
     var persistedChannels: [TaskChannel] = []
     var persistedCalendarEvents: [CalendarEvent] = []
     var persistedDailyPlanningStates: [DailyPlanningState] = []
@@ -259,6 +260,7 @@ final class WeekflowStore {
         }
         self.selectedGoalID = goals.first?.id
         persistedGoals = goals
+        persistedPlans = plans
         persistedChannels = channels
         persistedCalendarEvents = calendarEvents
         persistedDailyPlanningStates = dailyPlanningStates

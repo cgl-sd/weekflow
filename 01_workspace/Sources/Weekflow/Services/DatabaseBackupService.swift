@@ -32,6 +32,10 @@ struct DatabaseBackupService: @unchecked Sendable {
     /// SQLite 的 WAL / SHM 伴随文件路径。
     private var walURL: URL { URL(fileURLWithPath: databaseURL.path + "-wal") }
     private var shmURL: URL { URL(fileURLWithPath: databaseURL.path + "-shm") }
+    private var legacyPlansURL: URL {
+        databaseURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("plans.json")
+    }
 
     /// 做一次带时间戳的备份并轮转，返回备份目录；主库不存在时返回 nil。
     /// 先把 WAL 检查点回主库（得到一致的单一文件快照），再只拷贝主库——避免拷贝
@@ -49,7 +53,14 @@ struct DatabaseBackupService: @unchecked Sendable {
             suffix += 1
         }
         try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        checkpointWAL()
         try fileManager.copyItem(at: databaseURL, to: backupDir.appendingPathComponent(databaseURL.lastPathComponent))
+        if fileManager.fileExists(atPath: legacyPlansURL.path) {
+            try fileManager.copyItem(
+                at: legacyPlansURL,
+                to: backupDir.appendingPathComponent(legacyPlansURL.lastPathComponent)
+            )
+        }
         try rotate()
         return backupDir
     }
@@ -94,6 +105,13 @@ struct DatabaseBackupService: @unchecked Sendable {
         let backedUpStore = backupDir.appendingPathComponent(databaseURL.lastPathComponent)
         if fileManager.fileExists(atPath: backedUpStore.path) {
             try fileManager.copyItem(at: backedUpStore, to: databaseURL)
+        }
+        let backedUpPlans = backupDir.appendingPathComponent(legacyPlansURL.lastPathComponent)
+        if fileManager.fileExists(atPath: backedUpPlans.path) {
+            if fileManager.fileExists(atPath: legacyPlansURL.path) {
+                try fileManager.removeItem(at: legacyPlansURL)
+            }
+            try fileManager.copyItem(at: backedUpPlans, to: legacyPlansURL)
         }
     }
 

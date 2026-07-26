@@ -126,7 +126,7 @@ import SwiftUI
     #expect(!restored.isRunning)
     #expect(!restored.hasStarted)
     #expect(notifications.permissionRequests == 2)
-    #expect(notifications.completions.last?.mode == .leisure)
+    #expect(notifications.completions.last?.modeTitle == "休闲")
     #expect(notifications.completions.last?.minutes == 120)
 }
 
@@ -582,7 +582,7 @@ import SwiftUI
         goalID: entry.goal.id,
         recordChanges: false
     )
-    store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "新增子任务")
+    _ = store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "新增子任务")
 
     var stored = try #require(store.goals
         .first(where: { $0.id == entry.goal.id })?
@@ -655,7 +655,7 @@ import SwiftUI
     defer { try? FileManager.default.removeItem(at: folder) }
     let store = WeekflowStore.testing(storage: LocalStorage(baseDirectory: folder))
     let entry = try #require(store.todayTasks.first)
-    store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "原子任务")
+    _ = store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "原子任务")
     var stored = try #require(store.goals
         .first(where: { $0.id == entry.goal.id })?
         .tasks.first(where: { $0.id == entry.task.id }))
@@ -1554,7 +1554,7 @@ private enum SnapshotError: Error {
 @MainActor
 private final class RecordingFocusNotificationScheduler: FocusNotificationScheduling {
     struct Completion {
-        let mode: FocusMode
+        let modeTitle: String
         let minutes: Int
     }
 
@@ -1565,8 +1565,8 @@ private final class RecordingFocusNotificationScheduler: FocusNotificationSchedu
         permissionRequests += 1
     }
 
-    func sendCompletion(mode: FocusMode, minutes: Int) {
-        completions.append(Completion(mode: mode, minutes: minutes))
+    func sendCompletion(modeTitle: String, minutes: Int) {
+        completions.append(Completion(modeTitle: modeTitle, minutes: minutes))
     }
 }
 

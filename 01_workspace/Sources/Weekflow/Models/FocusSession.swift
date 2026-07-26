@@ -77,6 +77,28 @@ struct FocusRecord: Identifiable, Codable, Hashable {
         )
     }
 
+    /// Source-compatible adapter for call sites that still construct legacy
+    /// built-in modes. Persistence remains string-ID based.
+    init(
+        id: UUID = UUID(),
+        date: Date,
+        mode: FocusMode,
+        minutes: Int,
+        seconds: Int? = nil,
+        sessionCount: Int = 1,
+        calendar: BusinessCalendarProviding = SystemBusinessCalendar.current
+    ) {
+        self.init(
+            id: id,
+            date: date,
+            modeID: mode.rawValue,
+            minutes: minutes,
+            seconds: seconds,
+            sessionCount: sessionCount,
+            calendar: calendar
+        )
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()

@@ -64,6 +64,7 @@ final class FocusTimerService {
     var selectedModeSymbol: String { selectedModeConfig.iconName }
     var selectedModeColor: Color { selectedModeConfig.color }
     var selectedModeRunningSymbol: String { selectedModeConfig.runningSymbol }
+    var selectedMode: FocusMode { FocusMode(rawValue: selectedModeID) ?? .meditation }
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let defaults: UserDefaults
@@ -125,6 +126,8 @@ final class FocusTimerService {
         configuredMinutes[modeID] ?? 60
     }
 
+    func minutes(for mode: FocusMode) -> Int { minutes(for: mode.rawValue) }
+
     func updateMinutes(_ minutes: Int, for modeID: String) {
         guard !isRunning else { return }
         let clamped = min(
@@ -136,6 +139,10 @@ final class FocusTimerService {
         if selectedModeID == modeID {
             resetCountdown(seconds: clamped * 60)
         }
+    }
+
+    func updateMinutes(_ minutes: Int, for mode: FocusMode) {
+        updateMinutes(minutes, for: mode.rawValue)
     }
 
     /// Updates the duration through the countdown itself. Independent sessions
@@ -162,6 +169,8 @@ final class FocusTimerService {
         linkedTaskTitle = nil
         resetCountdown(seconds: minutes(for: modeID) * 60)
     }
+
+    func select(_ mode: FocusMode) { select(mode.rawValue) }
 
     /// Configures the callback that receives raw elapsed **seconds** for a
     /// linked task. Accumulation is always in seconds; minute conversion is
@@ -255,6 +264,8 @@ final class FocusTimerService {
         }
         select(modeID)
     }
+
+    func stopAndSelect(_ mode: FocusMode) { stopAndSelect(mode.rawValue) }
 
     /// Flushes accumulated seconds to the configured writers without stopping
     /// the timer. Used for unified checkpoint on app exit, sleep, wake and

@@ -36,8 +36,7 @@ extension WeekflowStore {
             }
         }
         invalidateGoalIndex()
-        persistPlans()
-        persist()
+        persistStartup()
     }
 
     /// Returns all goals associated with a specific plan.
@@ -48,12 +47,24 @@ extension WeekflowStore {
     /// Persists the plans array to local storage.
     func persistPlans() {
         guard persistenceEnabled else { return }
-        do {
-            try storage.savePlans(plans)
-        } catch {
-            persistenceEnabled = false
-            persistenceIssue = "规划保存失败：\(error.localizedDescription)"
+        let snapshot = plans
+        let rollbackSnapshot = persistedPlans
+        if synchronousPersistence {
+            _ = persistSafely(
+                "周规划",
+                operation: { try storage.savePlans(snapshot) },
+                commit: { persistedPlans = snapshot },
+                rollback: { plans = rollbackSnapshot }
+            )
+            return
         }
+        persistenceCoordinator.enqueue(
+            domain: "plans",
+            label: "周规划",
+            operation: { [storage] in try await storage.savePlansAsync(snapshot) },
+            commit: { [weak self] in self?.persistedPlans = snapshot },
+            rollback: { [weak self] in self?.plans = rollbackSnapshot }
+        )
     }
 
     /// Restores an archived plan (un-archives it and its goals).
@@ -67,8 +78,7 @@ extension WeekflowStore {
             }
         }
         invalidateGoalIndex()
-        persistPlans()
-        persist()
+        persistStartup()
     }
 
     /// Soft-deletes a plan (moves to trash).

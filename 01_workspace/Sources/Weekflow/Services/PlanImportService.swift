@@ -16,6 +16,13 @@ import Foundation
 ///   ]
 /// }
 struct PlanImportService {
+    static let maximumFileSize = 2 * 1024 * 1024
+    static let maximumGoalCount = 100
+    static let maximumTaskCount = 5_000
+    static let maximumTitleLength = 200
+    static let maximumOutcomeLength = 2_000
+    static let maximumTaskMinutes = 24 * 60
+
     struct PlanImportPayload: Codable {
         let title: String?
         let startDate: String
@@ -40,12 +47,18 @@ struct PlanImportService {
         case invalidFormat(String)
         case dateParseFailed(String)
         case noGoals
+        case invalidDateRange
+        case limitExceeded(String)
+        case invalidValue(String)
 
         var errorDescription: String? {
             switch self {
             case .invalidFormat(let detail): "JSON 格式无效：\(detail)"
             case .dateParseFailed(let value): "日期解析失败：\(value)"
             case .noGoals: "JSON 中没有包含任何目标"
+            case .invalidDateRange: "开始日期不能晚于结束日期"
+            case .limitExceeded(let detail): "导入内容超过限制：\(detail)"
+            case .invalidValue(let detail): "导入内容无效：\(detail)"
             }
         }
     }
@@ -72,14 +85,57 @@ struct PlanImportService {
 
     /// Parses raw JSON data into a structured payload.
     static func parse(data: Data) -> Result<PlanImportPayload, PlanImportError> {
+        guard data.count <= maximumFileSize else {
+            return .failure(.limitExceeded("文件不能超过 2 MB"))
+        }
         do {
             let payload = try JSONDecoder().decode(PlanImportPayload.self, from: data)
             guard !payload.goals.isEmpty else { return .failure(.noGoals) }
-            guard parseDate(payload.startDate) != nil else {
+            guard let startDate = parseDate(payload.startDate) else {
                 return .failure(.dateParseFailed(payload.startDate))
             }
-            guard parseDate(payload.endDate) != nil else {
+            guard let endDate = parseDate(payload.endDate) else {
                 return .failure(.dateParseFailed(payload.endDate))
+            }
+            guard startDate <= endDate else { return .failure(.invalidDateRange) }
+            guard payload.goals.count <= maximumGoalCount else {
+                return .failure(.limitExceeded("目标最多 \(maximumGoalCount) 个"))
+            }
+            let taskCount = payload.goals.reduce(0) { $0 + ($1.tasks?.count ?? 0) }
+            guard taskCount <= maximumTaskCount else {
+                return .failure(.limitExceeded("任务最多 \(maximumTaskCount) 个"))
+            }
+            if let title = payload.title,
+               !isValidText(title, maximumLength: maximumTitleLength) {
+                return .failure(.invalidValue("规划标题为空或过长"))
+            }
+            for goal in payload.goals {
+                guard isValidText(goal.title, maximumLength: maximumTitleLength) else {
+                    return .failure(.invalidValue("目标标题为空或过长"))
+                }
+                if let outcome = goal.outcome, outcome.count > maximumOutcomeLength {
+                    return .failure(.invalidValue("目标结果描述过长"))
+                }
+                if let subgoals = goal.subgoals,
+                   subgoals.contains(where: { !isValidText($0, maximumLength: maximumTitleLength) }) {
+                    return .failure(.invalidValue("子目标标题为空或过长"))
+                }
+                for task in goal.tasks ?? [] {
+                    guard isValidText(task.title, maximumLength: maximumTitleLength) else {
+                        return .failure(.invalidValue("任务标题为空或过长"))
+                    }
+                    guard (1...maximumTaskMinutes).contains(task.minutes ?? 60) else {
+                        return .failure(.invalidValue("任务时长必须在 1 到 \(maximumTaskMinutes) 分钟之间"))
+                    }
+                    if let day = task.day {
+                        guard let taskDate = parseShortDate(day, in: startDate) else {
+                            return .failure(.dateParseFailed(day))
+                        }
+                        guard taskDate >= startDate && taskDate <= endDate else {
+                            return .failure(.invalidValue("任务日期 \(day) 不在规划日期范围内"))
+                        }
+                    }
+                }
             }
             return .success(payload)
         } catch {
@@ -115,58 +171,71 @@ struct PlanImportService {
         guard let startDate = parseDate(payload.startDate),
               let endDate = parseDate(payload.endDate) else { return nil }
 
-        // Archive existing plan if requested
+        // Build the complete in-memory result first. No persistence occurs until
+        // the final application snapshot, so the import is one database transaction.
         if archiveExisting, let existing = store.activePlan {
-            store.archivePlan(id: existing.id)
+            if let planIndex = store.plans.firstIndex(where: { $0.id == existing.id }) {
+                store.plans[planIndex].archivedAt = .now
+            }
+            for goalIndex in store.goals.indices {
+                let belongsToPlan = store.goals[goalIndex].planID == existing.id
+                let isOrphan = store.goals[goalIndex].planID == nil
+                if (belongsToPlan || isOrphan)
+                    && store.goals[goalIndex].archivedAt == nil
+                    && store.goals[goalIndex].deletedAt == nil {
+                    store.goals[goalIndex].archivedAt = .now
+                    if isOrphan { store.goals[goalIndex].planID = existing.id }
+                }
+            }
         }
 
-        let planTitle = payload.title ?? "导入规划"
-        let planID = store.addPlan(title: planTitle, startDate: startDate, endDate: endDate)
+        let plan = WeeklyPlan(
+            title: trimmed(payload.title ?? "导入规划"),
+            startDate: startDate,
+            endDate: endDate,
+            sortOrder: (store.plans.map(\.sortOrder).min() ?? 0) - 1
+        )
+        store.plans.insert(plan, at: 0)
 
-        // Create goals under this plan
-        for goalPayload in payload.goals {
-            let goalID = store.addGoal(
-                title: goalPayload.title,
-                outcome: goalPayload.outcome ?? "",
+        let importedGoals = payload.goals.enumerated().map { goalOffset, goalPayload in
+            let tasks = (goalPayload.tasks ?? []).enumerated().map { taskOffset, taskPayload in
+                WeekTask(
+                    title: trimmed(taskPayload.title),
+                    plannedDate: taskPayload.day.flatMap { parseShortDate($0, in: startDate) },
+                    estimatedMinutes: taskPayload.minutes ?? 60,
+                    sortOrder: taskOffset
+                )
+            }
+            return WeeklyGoal(
+                title: trimmed(goalPayload.title),
+                outcome: trimmed(goalPayload.outcome ?? ""),
                 startDate: startDate,
                 endDate: endDate,
-                persistImmediately: false
+                subgoals: (goalPayload.subgoals ?? []).map { GoalSubgoal(title: trimmed($0)) },
+                tasks: tasks,
+                planID: plan.id,
+                sortOrder: goalOffset
             )
-            // Associate goal with plan
-            if let goalIndex = store.goals.firstIndex(where: { $0.id == goalID }) {
-                store.goals[goalIndex].planID = planID
-            }
-
-            // Add subgoals
-            if let subgoalTitles = goalPayload.subgoals {
-                for title in subgoalTitles {
-                    store.addSubgoal(to: goalID, title: title)
-                }
-            }
-
-            // Add tasks
-            if let tasks = goalPayload.tasks {
-                for taskPayload in tasks {
-                    let plannedDate = taskPayload.day.flatMap { parseShortDate($0, in: startDate) }
-                    _ = store.addTask(
-                        to: goalID,
-                        title: taskPayload.title,
-                        plannedDate: plannedDate,
-                        dueDate: nil,
-                        minutes: taskPayload.minutes ?? 60,
-                        notes: "",
-                        milestoneID: nil,
-                        priority: .none
-                    )
-                }
-            }
         }
-        store.persist()
-        return planID
+        store.goals.append(contentsOf: importedGoals)
+        store.selectedGoalID = importedGoals.first?.id
+        store.invalidateGoalIndex()
+        store.persistenceCoordinator.cancelAllPending()
+        store.persistStartup()
+        return plan.id
     }
 
     private static func parseDate(_ string: String) -> Date? {
         dateFormatter.date(from: string)
+    }
+
+    private static func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isValidText(_ value: String, maximumLength: Int) -> Bool {
+        let value = trimmed(value)
+        return !value.isEmpty && value.count <= maximumLength
     }
 
     /// Public accessor for date parsing (used by conflict detection in views).

@@ -307,7 +307,7 @@ import Testing
     store?.flushPendingPersistence()
 
     // Phase 3: Record database size after edits
-    let sizeAfterEdits = try folderSize(folder)
+    _ = try folderSize(folder)
 
     // Phase 4: Trigger history cleanup via diagnostics
     let diagnosticsBefore = try #require(try storage.diagnostics())

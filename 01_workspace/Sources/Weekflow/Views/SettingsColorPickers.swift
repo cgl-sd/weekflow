@@ -356,12 +356,6 @@ struct CompactColorPalettePanel: View {
     }
 }
 
-enum ColorPickerDismissalPolicy {
-    static func shouldDismiss(isInteractingInsidePanel: Bool) -> Bool {
-        !isInteractingInsidePanel
-    }
-}
-
 struct SaturationBrightnessField: View {
     @Binding var selection: HSBColorSelection
 
@@ -480,4 +474,3 @@ struct ChannelPaletteAnchorPreferenceKey: PreferenceKey {
         value.merge(nextValue()) { _, new in new }
     }
 }
-

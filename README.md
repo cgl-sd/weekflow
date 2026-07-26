@@ -2,8 +2,6 @@
 
 **把一周真正想完成的事，变成每天可以执行的安排。**
 
-[简体中文](README.md) · [English](README.en.md)
-
 Weekflow 是一款原生 macOS 周计划与执行工具。它不从零散待办开始，而是先确定本周目标，再把子目标转化为任务池、分配到每天，并通过专注计时和回顾形成完整闭环。
 
 ![Weekflow 首页：按日期组织的任务执行视图](assets/readme/home.png)
@@ -69,9 +67,9 @@ Weekflow 把“目标—任务—日期—投入—回顾”放在同一个数�
 - 计划日、每日总结和周边界以无时区业务日期保存，旅行或切换系统时区不会改写原安排。
 - SwiftData 数据库升级前会创建可恢复备份；损坏或迁移失败时应用进入只读保护，而不是用空数据覆盖原库。
 
-## 下载
+## 本地发布
 
-从 [GitHub Releases](https://github.com/cgl-sd/weekflow/releases/latest) 下载最新的 macOS DMG 或 ZIP。正式发布产物使用 Developer ID、Hardened Runtime 和 Apple 公证，并附带 `SHA256SUMS`；打开 DMG 后将 `Weekflow.app` 拖入“应用程序”文件夹即可。
+当前只使用本机生成 Release 安装包，不依赖 GitHub Actions 或远程发布流水线。生成的 DMG、ZIP 和 `SHA256SUMS` 位于项目的 `release/` 目录；该目录不会提交到 Git。
 
 ## 开发构建
 
@@ -93,10 +91,10 @@ swift test
 ./script/build_and_run.sh --package
 ```
 
-正式发布使用 CI secrets 中的 Developer ID 与公证凭据，由 tag workflow 执行：
+使用本机钥匙串中的 Developer ID 和公证凭据生成正式 DMG 与 ZIP：
 
 ```bash
 WEEKFLOW_DEVELOPER_ID="Developer ID Application: …" \
-WEEKFLOW_NOTARY_PROFILE=weekflow-ci \
+WEEKFLOW_NOTARY_PROFILE=weekflow-local \
 ./script/build_and_run.sh --release
 ```

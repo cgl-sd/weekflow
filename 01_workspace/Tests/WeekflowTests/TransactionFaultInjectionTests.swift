@@ -30,6 +30,7 @@ private enum InjectedPersistenceFailure: LocalizedError {
         let reopened = LocalStorage(baseDirectory: folder)
         let actual = WeekflowPersistenceSnapshot(
             goals: try reopened.load() ?? [],
+            plans: try reopened.loadPlans() ?? [],
             channels: try reopened.loadChannels() ?? [],
             calendarEvents: try reopened.loadCalendarEvents() ?? [],
             dailyPlanningStates: try reopened.loadDailyPlanningStates() ?? [],
@@ -152,10 +153,17 @@ private func transactionSnapshot(title: String, startMinutes: Int) -> WeekflowPe
         outcome: "atomic",
         startDate: date,
         endDate: date,
-        tasks: [task]
+        tasks: [task],
+        planID: UUID(uuidString: "00000000-0000-4000-8000-000000000444")!
     )
     return WeekflowPersistenceSnapshot(
         goals: [goal],
+        plans: [WeeklyPlan(
+            id: UUID(uuidString: "00000000-0000-4000-8000-000000000444")!,
+            title: title,
+            startDate: date,
+            endDate: date
+        )],
         channels: TaskChannel.defaults,
         calendarEvents: [CalendarEvent(
             id: UUID(uuidString: "00000000-0000-4000-8000-000000000333")!,

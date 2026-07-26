@@ -84,6 +84,11 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         try loadPayloads(entityType: PersistenceEntity.channel, as: TaskChannel.self)
     }
 
+    func loadPlans() throws -> [WeeklyPlan]? {
+        let values = try loadPayloads(entityType: PersistenceEntity.weeklyPlan, as: WeeklyPlan.self)
+        return values?.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
     func loadCalendarEvents() throws -> [CalendarEvent]? {
         try loadPayloads(entityType: PersistenceEntity.calendarEvent, as: CalendarEvent.self)
     }
@@ -113,6 +118,16 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             entityType: PersistenceEntity.channel,
             id: { $0.id },
             date: { $0.archivedAt },
+            kind: kind
+        )
+    }
+
+    func savePlans(_ plans: [WeeklyPlan], kind: PersistenceMutationKind = .userEdit) throws {
+        try savePayloads(
+            plans,
+            entityType: PersistenceEntity.weeklyPlan,
+            id: { $0.id.uuidString },
+            date: { $0.startDate },
             kind: kind
         )
     }
@@ -165,6 +180,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
 
     func importLegacySnapshot(_ snapshot: WeekflowPersistenceSnapshot) throws {
         try saveGoals(snapshot.goals, kind: .migration)
+        try savePlans(snapshot.plans, kind: .migration)
         try saveChannels(snapshot.channels, kind: .migration)
         try saveCalendarEvents(snapshot.calendarEvents, kind: .migration)
         try saveDailyPlanningStates(snapshot.dailyPlanningStates, kind: .migration)
@@ -184,6 +200,7 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
             try faultInjector?(.beforeFirstWrite)
             try saveGoals(snapshot.goals, kind: kind)
             try faultInjector?(.afterGoalWrite)
+            try savePlans(snapshot.plans, kind: kind)
             try saveChannels(snapshot.channels, kind: kind)
             try saveCalendarEvents(snapshot.calendarEvents, kind: kind)
             try faultInjector?(.afterCalendarEventWrite)

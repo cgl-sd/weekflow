@@ -189,6 +189,7 @@ struct PersistenceGoalChangeSet: Equatable {
 
 protocol WeekflowPersistenceRepository: AnyObject {
     func loadGoals() throws -> [WeeklyGoal]?
+    func loadPlans() throws -> [WeeklyPlan]?
     func loadChannels() throws -> [TaskChannel]?
     func loadCalendarEvents() throws -> [CalendarEvent]?
     func loadDailyPlanningStates() throws -> [DailyPlanningState]?
@@ -197,6 +198,7 @@ protocol WeekflowPersistenceRepository: AnyObject {
     func loadActiveTimerSession() throws -> TaskTimerSession?
 
     func saveGoals(_ goals: [WeeklyGoal], kind: PersistenceMutationKind) throws
+    func savePlans(_ plans: [WeeklyPlan], kind: PersistenceMutationKind) throws
     func applyGoalChanges(_ changes: PersistenceGoalChangeSet, kind: PersistenceMutationKind) throws
     func saveChannels(_ channels: [TaskChannel], kind: PersistenceMutationKind) throws
     func saveCalendarEvents(_ events: [CalendarEvent], kind: PersistenceMutationKind) throws

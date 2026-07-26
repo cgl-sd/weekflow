@@ -9,6 +9,17 @@ extension LocalStorage {
         try await readOptionalAsync { try $0.loadGoals() }
     }
 
+    func loadPlansAsync() async throws -> [WeeklyPlan]? {
+        if let stored = try await readOptionalAsync({ try $0.loadPlans() }) {
+            return stored
+        }
+        guard fileManager.fileExists(atPath: legacyPlansURL.path) else { return nil }
+        let data = try Data(contentsOf: legacyPlansURL)
+        let plans = try JSONDecoder.weekflow.decode([WeeklyPlan].self, from: data)
+        try await writeAsync { try $0.savePlans(plans, kind: .migration) }
+        return plans
+    }
+
     func loadChannelsAsync() async throws -> [TaskChannel]? {
         try await readOptionalAsync { try $0.loadChannels() }
     }
@@ -56,6 +67,10 @@ extension LocalStorage {
 
     func saveChannelsAsync(_ channels: [TaskChannel]) async throws {
         try await writeAsync { try $0.saveChannels(channels, kind: .userEdit) }
+    }
+
+    func savePlansAsync(_ plans: [WeeklyPlan]) async throws {
+        try await writeAsync { try $0.savePlans(plans, kind: .userEdit) }
     }
 
     func saveCalendarEventsAsync(_ events: [CalendarEvent]) async throws {

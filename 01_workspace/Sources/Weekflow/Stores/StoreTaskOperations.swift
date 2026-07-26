@@ -310,6 +310,7 @@ extension WeekflowStore {
             },
             commit: {
                 persistedGoals = snapshot.goals
+                persistedPlans = snapshot.plans
                 persistedChannels = snapshot.channels
                 persistedCalendarEvents = snapshot.calendarEvents
                 persistedDailyPlanningStates = snapshot.dailyPlanningStates

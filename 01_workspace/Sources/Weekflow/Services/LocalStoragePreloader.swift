@@ -2,6 +2,7 @@ import Foundation
 
 enum LocalStoragePreloadKey: String, Hashable, Sendable, CaseIterable {
     case goals
+    case plans
     case channels
     case calendarEvents
     case dailyPlanningStates
@@ -14,6 +15,7 @@ enum LocalStoragePreloadKey: String, Hashable, Sendable, CaseIterable {
 
 struct LocalStoragePreload: @unchecked Sendable {
     var goals: [WeeklyGoal]? = nil
+    var plans: [WeeklyPlan]? = nil
     var channels: [TaskChannel]? = nil
     var calendarEvents: [CalendarEvent]? = nil
     var dailyPlanningStates: [DailyPlanningState]? = nil
@@ -88,6 +90,10 @@ enum LocalStoragePreloader {
                 result.failures[.goals] = error.localizedDescription
             }
             result.consumableKeys.insert(.goals)
+            do { result.plans = try await storage.loadPlansAsync() } catch {
+                result.failures[.plans] = error.localizedDescription
+            }
+            result.consumableKeys.insert(.plans)
             do { result.channels = try await storage.loadChannelsAsync() } catch {
                 result.failures[.channels] = error.localizedDescription
             }

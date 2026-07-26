@@ -35,7 +35,7 @@ import Testing
     )
     let reference = TaskReference(goalID: UUID(), taskID: UUID())
     var taskSeconds = 0
-    var focusRecords: [(FocusMode, Int)] = []
+    var focusRecords: [(String, Int)] = []
     timer.configureTaskWriter { received, seconds in
         #expect(received == reference)
         taskSeconds += seconds
@@ -52,7 +52,7 @@ import Testing
 
     #expect(taskSeconds == 125)
     #expect(focusRecords.count == 1)
-    #expect(focusRecords.first?.0 == .meditation)
+    #expect(focusRecords.first?.0 == "meditation")
     #expect(focusRecords.first?.1 == 125)
 }
 
@@ -189,7 +189,7 @@ import Testing
 @MainActor
 private final class StageTenNotificationScheduler: FocusNotificationScheduling {
     func requestPermission() {}
-    func sendCompletion(mode: FocusMode, minutes: Int) {}
+    func sendCompletion(modeTitle: String, minutes: Int) {}
 }
 
 @MainActor

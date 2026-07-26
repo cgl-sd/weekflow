@@ -322,7 +322,7 @@ private struct TestWriteFailure: Error {}
     defer { defaults.removePersistentDomain(forName: suite) }
     let twoHoursAgo = Date.now.addingTimeInterval(-7200)
     let session = FocusTimerSession(
-        mode: .meditation,
+        modeID: "meditation",
         totalSeconds: 3600,
         remainingSeconds: 3600,
         unloggedSeconds: 0,
@@ -346,7 +346,7 @@ private struct TestWriteFailure: Error {}
     let day = SystemBusinessCalendar.current.date(
         for: LocalDay(year: 2026, month: 7, day: 20)
     )
-    var goalA = WeeklyGoal(title: "A", outcome: "a", startDate: day, endDate: day)
+    let goalA = WeeklyGoal(title: "A", outcome: "a", startDate: day, endDate: day)
     var goalB = WeeklyGoal(title: "B", outcome: "b", startDate: day, endDate: day)
     goalB.id = goalA.id
     #expect(throws: PersistenceValidationError.self) {
@@ -410,5 +410,5 @@ private struct TestWriteFailure: Error {}
 @MainActor
 private final class NoopFocusNotificationSchedulerForCoordinatorTests: FocusNotificationScheduling {
     func requestPermission() {}
-    func sendCompletion(mode: FocusMode, minutes: Int) {}
+    func sendCompletion(modeTitle: String, minutes: Int) {}
 }

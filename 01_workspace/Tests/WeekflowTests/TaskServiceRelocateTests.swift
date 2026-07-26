@@ -24,7 +24,7 @@ import Testing
     let service = TaskService(businessCalendar: BusinessCalendar(calendar: calendar))
     let source = calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 9, minute: 30))!
     let target = calendar.date(from: DateComponents(year: 2026, month: 7, day: 15))!
-    var task = WeekTask(title: "已排期任务", plannedDate: source, startTime: source, estimatedMinutes: 30)
+    let task = WeekTask(title: "已排期任务", plannedDate: source, startTime: source, estimatedMinutes: 30)
 
     let moved = service.relocated(task, from: source, to: target)
     #expect(moved.plannedDay == LocalDay(target, calendar: calendar))

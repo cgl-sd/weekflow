@@ -25,17 +25,17 @@ import Testing
     #expect(snapshot.actualMinutes == 125)
     #expect(snapshot.varianceMinutes == -145)
     #expect(snapshot.incompleteEntries.map(\.task.title) == ["编写周报", "整理附件"])
-    #expect(snapshot.focusMinutes[.study] == 30)
-    #expect(snapshot.focusMinutes[.meditation] == 10)
-    #expect(snapshot.focusMetrics.first { $0.mode == .study }?.sessionCount == 1)
+    #expect(snapshot.focusMinutes["study"] == 30)
+    #expect(snapshot.focusMinutes["meditation"] == 10)
+    #expect(snapshot.focusMetrics.first { $0.modeID == "study" }?.sessionCount == 1)
     #expect(snapshot.totalFocusMinutes == 40)
     #expect(snapshot.dailySummaries.count == 2)
     #expect(snapshot.dayMetrics.reduce(0) { $0 + $1.taskMinutes } == 125)
     #expect(snapshot.dayMetrics.reduce(0) { $0 + $1.focusMinutes } == 40)
     #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.taskChannelMinutes["work"] ?? 0) } == 95)
     #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.taskChannelMinutes["research"] ?? 0) } == 30)
-    #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.focusModeMinutes[.study] ?? 0) } == 30)
-    #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.focusModeMinutes[.meditation] ?? 0) } == 10)
+    #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.focusModeMinutes["study"] ?? 0) } == 30)
+    #expect(snapshot.dayMetrics.reduce(0) { $0 + ($1.focusModeMinutes["meditation"] ?? 0) } == 10)
     #expect(snapshot.summaryText.contains("完成 1 / 2 个目标"))
     #expect(snapshot.summaryText.contains("推进 3 / 4 项任务"))
 }
@@ -100,7 +100,7 @@ import Testing
     #expect(ChartPalettePreset.classic.taskColors(for: .light).count == 8)
     #expect(ChartPalettePreset.classic.taskColors(for: .dark).count == 8)
     for mode in FocusMode.allCases {
-        #expect(ChartPalettePreset.rainbow.focusColor(mode) == mode.accentColor)
+        #expect(ChartPalettePreset.rainbow.focusColor(mode.rawValue) == mode.accentColor)
     }
 }
 
