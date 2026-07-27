@@ -50,3 +50,25 @@ import Testing
         Issue.record("非法任务时长应被拒绝")
     }
 }
+
+@Test func planImportPreflightsFileSizeBeforeReading() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowImportPreflight-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let oversized = root.appendingPathComponent("oversized.json")
+    try Data(repeating: 0, count: PlanImportService.maximumFileSize + 1).write(to: oversized)
+    #expect(throws: PlanImportService.PlanImportError.self) {
+        _ = try PlanImportService.readData(from: oversized)
+    }
+
+    #expect(throws: PlanImportService.PlanImportError.self) {
+        _ = try PlanImportService.readData(from: root)
+    }
+
+    let valid = root.appendingPathComponent("valid.json")
+    let expected = Data("{}".utf8)
+    try expected.write(to: valid)
+    #expect(try PlanImportService.readData(from: valid) == expected)
+}

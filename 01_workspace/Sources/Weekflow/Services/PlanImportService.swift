@@ -50,6 +50,7 @@ struct PlanImportService {
         case invalidDateRange
         case limitExceeded(String)
         case invalidValue(String)
+        case invalidFile(String)
 
         var errorDescription: String? {
             switch self {
@@ -59,6 +60,7 @@ struct PlanImportService {
             case .invalidDateRange: "开始日期不能晚于结束日期"
             case .limitExceeded(let detail): "导入内容超过限制：\(detail)"
             case .invalidValue(let detail): "导入内容无效：\(detail)"
+            case .invalidFile(let detail): "导入文件无效：\(detail)"
             }
         }
     }
@@ -82,6 +84,27 @@ struct PlanImportService {
         f.locale = Locale(identifier: "en_US_POSIX")
         return f
     }()
+
+    /// Rejects non-files and oversized input from metadata before mapping any
+    /// bytes into the process. `parse(data:)` repeats the size check to protect
+    /// against a file changing between preflight and read.
+    static func readData(from url: URL) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else {
+            throw PlanImportError.invalidFile("请选择普通 JSON 文件")
+        }
+        guard let fileSize = values.fileSize else {
+            throw PlanImportError.invalidFile("无法确定文件大小")
+        }
+        guard fileSize <= maximumFileSize else {
+            throw PlanImportError.limitExceeded("文件不能超过 2 MB")
+        }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        guard data.count <= maximumFileSize else {
+            throw PlanImportError.limitExceeded("文件不能超过 2 MB")
+        }
+        return data
+    }
 
     /// Parses raw JSON data into a structured payload.
     static func parse(data: Data) -> Result<PlanImportPayload, PlanImportError> {

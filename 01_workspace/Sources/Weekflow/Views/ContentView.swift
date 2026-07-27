@@ -435,7 +435,7 @@ struct ContentView: View {
                 defer { url.stopAccessingSecurityScopedResource() }
                 do {
                     let data = try await Task.detached(priority: .userInitiated) {
-                        try Data(contentsOf: url, options: [.mappedIfSafe])
+                        try PlanImportService.readData(from: url)
                     }.value
                     switch PlanImportService.parse(data: data) {
                     case .success(let payload):
