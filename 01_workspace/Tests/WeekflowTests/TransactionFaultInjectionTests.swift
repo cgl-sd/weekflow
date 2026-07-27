@@ -97,12 +97,17 @@ private enum InjectedPersistenceFailure: LocalizedError {
     let folder = FileManager.default.temporaryDirectory
         .appendingPathComponent("WeekflowTimerSwitchAtomic-\(UUID())", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: folder) }
-    let storage = LocalStorage(baseDirectory: folder)
-    var seed: WeekflowStore? = WeekflowStore(storage: storage)
-    seed?.synchronousPersistence = true
-    let goalID = seed!.addGoal(title: "原子计时", outcome: "", endDate: .now)
-    let firstTaskID = try #require(seed?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
-    let secondTaskID = try #require(seed?.addTask(
+    let fault = ToggleTaskWriteFault()
+    let storage = LocalStorage(baseDirectory: folder) { point in
+        if fault.isEnabled, point == .afterTaskWrite {
+            throw InjectedPersistenceFailure.diskFull
+        }
+    }
+    let store = WeekflowStore(storage: storage)
+    store.synchronousPersistence = true
+    let goalID = store.addGoal(title: "原子计时", outcome: "", endDate: .now)
+    let firstTaskID = try #require(store.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
+    let secondTaskID = try #require(store.addTask(
         to: goalID,
         title: "第二项",
         plannedDate: .now,
@@ -112,14 +117,8 @@ private enum InjectedPersistenceFailure: LocalizedError {
         milestoneID: nil
     ))
     let startedAt = Date.now.addingTimeInterval(-10)
-    seed?.startTaskTimer(goalID: goalID, taskID: firstTaskID, now: startedAt)
-    seed = nil
-
-    let faulted = LocalStorage(baseDirectory: folder) { point in
-        if point == .afterTaskWrite { throw InjectedPersistenceFailure.diskFull }
-    }
-    let store = WeekflowStore(storage: faulted)
-    store.synchronousPersistence = true
+    store.startTaskTimer(goalID: goalID, taskID: firstTaskID, now: startedAt)
+    fault.enable()
     store.startTaskTimer(goalID: goalID, taskID: secondTaskID, now: startedAt.addingTimeInterval(10))
 
     #expect(store.persistenceIssue != nil)
@@ -129,10 +128,24 @@ private enum InjectedPersistenceFailure: LocalizedError {
     #expect(store.goals.first(where: { $0.id == goalID })?
         .tasks.first(where: { $0.id == secondTaskID })?.status != .inProgress)
 
-    let reopened = WeekflowStore(storage: storage)
-    #expect(reopened.activeTaskTimer?.taskID == firstTaskID)
+    let reopened = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    #expect(reopened.activeTaskTimer == nil)
+    #expect(reopened.pendingTimerRecovery?.session.taskID == firstTaskID)
     #expect(reopened.goals.first(where: { $0.id == goalID })?
         .tasks.first(where: { $0.id == secondTaskID })?.status != .inProgress)
+}
+
+private final class ToggleTaskWriteFault: @unchecked Sendable {
+    private let lock = NSLock()
+    private var enabled = false
+
+    var isEnabled: Bool {
+        lock.withLock { enabled }
+    }
+
+    func enable() {
+        lock.withLock { enabled = true }
+    }
 }
 
 private func transactionSnapshot(title: String, startMinutes: Int) -> WeekflowPersistenceSnapshot {

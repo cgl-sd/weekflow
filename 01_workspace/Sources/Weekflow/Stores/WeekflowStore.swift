@@ -201,22 +201,21 @@ final class WeekflowStore {
                goals.contains(where: { goal in
                    goal.tasks.contains(where: { $0.id == restoredTimer.taskID && goal.id == restoredTimer.goalID })
                }) {
+                // ER-001: a persisted running timer proves only that the previous
+                // process did not explicitly stop it. It does not prove that the
+                // user worked for the entire wall-clock interval while the app was
+                // closed. Never add or resume that interval without confirmation.
                 let elapsed = max(Int(Date.now.timeIntervalSince(restoredTimer.startedAt)), 0)
-                if elapsed > 24 * 60 * 60 {
-                    self.activeTaskTimer = nil
-                    self.pendingTimerRecovery = InterruptedTaskTimerRecovery(
-                        session: restoredTimer,
-                        elapsedSeconds: elapsed
-                    )
-                    for goalIndex in goals.indices {
-                        for taskIndex in goals[goalIndex].tasks.indices
-                        where goals[goalIndex].tasks[taskIndex].id == restoredTimer.taskID {
-                            goals[goalIndex].tasks[taskIndex].status = .planned
-                        }
+                self.activeTaskTimer = nil
+                self.pendingTimerRecovery = InterruptedTaskTimerRecovery(
+                    session: restoredTimer,
+                    elapsedSeconds: elapsed
+                )
+                for goalIndex in goals.indices {
+                    for taskIndex in goals[goalIndex].tasks.indices
+                    where goals[goalIndex].tasks[taskIndex].id == restoredTimer.taskID {
+                        goals[goalIndex].tasks[taskIndex].status = .planned
                     }
-                } else {
-                    self.activeTaskTimer = restoredTimer
-                    self.pendingTimerRecovery = nil
                 }
             } else {
                 self.activeTaskTimer = nil

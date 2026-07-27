@@ -103,16 +103,16 @@ struct ContentView: View {
             Text("导入将归档当前活跃的周规划，是否继续？")
         }
         .alert(
-            "发现异常中断的计时",
+            "发现未结束的任务计时",
             isPresented: Binding(
                 get: { store.pendingTimerRecovery != nil },
                 set: { if !$0, store.pendingTimerRecovery != nil { store.resolveInterruptedTimer(includeElapsedTime: false) } }
             )
         ) {
-            Button("补记中断时长") { store.resolveInterruptedTimer(includeElapsedTime: true) }
-            Button("忽略中断时长", role: .cancel) { store.resolveInterruptedTimer(includeElapsedTime: false) }
+            Button("计入中断时长") { store.resolveInterruptedTimer(includeElapsedTime: true) }
+            Button("不计入中断时长", role: .cancel) { store.resolveInterruptedTimer(includeElapsedTime: false) }
         } message: {
-            Text("上次计时持续时间异常，请确认是否计入任务实际时长。")
+            Text("应用上次关闭时仍有任务正在计时。为避免把离线时间误算为工作时间，请确认是否计入这段中断时长。")
         }
         .onChange(of: coordinator.commands.latest) { _, routed in
             guard let routed,

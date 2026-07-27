@@ -493,7 +493,7 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
 }
 
 @MainActor
-@Test func activeTaskTimerRestoresAcrossStoreRestartAndClearsAfterPause() throws {
+@Test func shortInterruptedTaskTimerRequiresConfirmationBeforeAddingOfflineTime() throws {
     let folder = FileManager.default.temporaryDirectory
         .appendingPathComponent("WeekflowActiveTimerTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: folder) }
@@ -508,14 +508,55 @@ private final class DeniedFocusNotificationScheduler: FocusNotificationSchedulin
 
     let restored = WeekflowStore(storage: storage)
     restored.synchronousPersistence = true
-    #expect(restored.activeTaskTimer?.goalID == goalID)
-    #expect(restored.activeTaskTimer?.taskID == taskID)
-    restored.pauseTaskTimer(goalID: goalID, taskID: taskID, now: startedAt.addingTimeInterval(61))
+    #expect(restored.activeTaskTimer == nil)
+    #expect(restored.pendingTimerRecovery?.session.goalID == goalID)
+    #expect(restored.pendingTimerRecovery?.session.taskID == taskID)
+    let beforeConfirmation = try #require(
+        restored.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID })
+    )
+    #expect(beforeConfirmation.actualSeconds == 0)
+    restored.resolveInterruptedTimer(
+        includeElapsedTime: true,
+        now: startedAt.addingTimeInterval(61)
+    )
 
-    let afterPause = WeekflowStore(storage: storage)
-    #expect(afterPause.activeTaskTimer == nil)
-    let task = try #require(afterPause.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID }))
+    let afterConfirmation = WeekflowStore(storage: storage)
+    #expect(afterConfirmation.activeTaskTimer == nil)
+    #expect(afterConfirmation.pendingTimerRecovery == nil)
+    let task = try #require(afterConfirmation.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID }))
     #expect(task.actualSeconds == 61)
+}
+
+@MainActor
+@Test func twelveHourOfflineTimerIsNotAddedWithoutExplicitConfirmation() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowOfflineTimer-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let storage = LocalStorage(baseDirectory: folder)
+    var store: WeekflowStore? = WeekflowStore(storage: storage)
+    store?.synchronousPersistence = true
+    let goalID = try #require(store?.addGoal(title: "隔夜计时", outcome: "数据完整性", endDate: .now))
+    let taskID = try #require(store?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
+    store?.startTaskTimer(goalID: goalID, taskID: taskID, now: .now.addingTimeInterval(-12 * 60 * 60))
+    store = nil
+
+    let interrupted = WeekflowStore(storage: storage)
+    interrupted.synchronousPersistence = true
+    #expect(interrupted.activeTaskTimer == nil)
+    #expect(interrupted.pendingTimerRecovery?.session.taskID == taskID)
+    let beforeDecision = try #require(
+        interrupted.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID })
+    )
+    #expect(beforeDecision.actualSeconds == 0)
+
+    interrupted.resolveInterruptedTimer(includeElapsedTime: false)
+    let reloaded = WeekflowStore(storage: storage)
+    let task = try #require(
+        reloaded.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID })
+    )
+    #expect(reloaded.activeTaskTimer == nil)
+    #expect(reloaded.pendingTimerRecovery == nil)
+    #expect(task.actualSeconds == 0)
 }
 
 @MainActor
