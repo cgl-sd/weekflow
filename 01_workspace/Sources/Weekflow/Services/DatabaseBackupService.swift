@@ -1,26 +1,40 @@
 import Foundation
 import SQLite3
 
-/// 数据安全：SQLite 库的滚动备份与完整性恢复。
-///
-/// 策略：每次成功加载后做一次备份（此时库处于已知良好状态），保留最近 `maxBackups`
-/// 份；当加载失败（库损坏）时，可从最近一份良好备份恢复。备份拷贝 SQLite 的
-/// 主库 + WAL + SHM 三个文件（一起拷贝才构成一致快照）。
-///
-/// 这是本地优先应用最重要的一道数据安全防线：库文件损坏或误删时，用户数据仍可
-/// 从最近备份找回，而不是永久丢失。
-/// `@unchecked Sendable`：`FileManager` 在所用操作上线程安全（与 `LocalStorage` 同理）。
+/// Creates validated SQLite snapshots and restores them without discarding the
+/// current store before a replacement is known to be usable.
 struct DatabaseBackupService: @unchecked Sendable {
+    enum BackupError: LocalizedError {
+        case checkpointFailed(Int32)
+        case missingStore(URL)
+        case invalidStore(URL, String)
+
+        var errorDescription: String? {
+            switch self {
+            case let .checkpointFailed(code):
+                "SQLite WAL 检查点失败（错误码 \(code)）"
+            case let .missingStore(url):
+                "备份中缺少数据库文件：\(url.path)"
+            case let .invalidStore(url, detail):
+                "数据库完整性校验失败：\(url.path)（\(detail)）"
+            }
+        }
+    }
+
     let databaseURL: URL
     let backupsDirectory: URL
     let maxBackups: Int
     private let fileManager: FileManager
 
-    init(databaseURL: URL, backupsDirectory: URL? = nil, maxBackups: Int = 5, fileManager: FileManager = .default) {
+    private static let completionMarkerName = "complete"
+
+    init(
+        databaseURL: URL,
+        backupsDirectory: URL? = nil,
+        maxBackups: Int = 5,
+        fileManager: FileManager = .default
+    ) {
         self.databaseURL = databaseURL
-        // 默认把备份放在 Database 目录的“同级”（Weekflow/Backups），而不是 Database
-        // 内部——避免在 SwiftData 的数据库目录里多放子目录而干扰其存储加载。测试可传入
-        // 独立的 backupsDirectory 以保证隔离。
         self.backupsDirectory = backupsDirectory ?? databaseURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -29,93 +43,142 @@ struct DatabaseBackupService: @unchecked Sendable {
         self.fileManager = fileManager
     }
 
-    /// SQLite 的 WAL / SHM 伴随文件路径。
     private var walURL: URL { URL(fileURLWithPath: databaseURL.path + "-wal") }
     private var shmURL: URL { URL(fileURLWithPath: databaseURL.path + "-shm") }
-    private var legacyPlansURL: URL {
+    private var applicationDataDirectory: URL {
         databaseURL.deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("plans.json")
+    }
+    private var legacyPlansURL: URL {
+        applicationDataDirectory.appendingPathComponent("plans.json")
     }
 
-    /// 做一次带时间戳的备份并轮转，返回备份目录；主库不存在时返回 nil。
-    /// 先把 WAL 检查点回主库（得到一致的单一文件快照），再只拷贝主库——避免拷贝
-    /// 正在被 SQLite 内存映射的 WAL/SHM 而干扰打开中的数据库。
+    /// Builds the snapshot in a hidden staging directory. Only a validated,
+    /// completed snapshot is atomically renamed into the discoverable set.
     @discardableResult
     func makeBackup(timestamp: Date = .now) throws -> URL? {
         guard fileManager.fileExists(atPath: databaseURL.path) else { return nil }
-        try fileManager.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
-        let stamp = Self.timestampFormatter.string(from: timestamp)
-        var backupDir = backupsDirectory.appendingPathComponent(stamp, isDirectory: true)
-        // 同一秒内重复备份时追加后缀，避免覆盖。
-        var suffix = 1
-        while fileManager.fileExists(atPath: backupDir.path) {
-            backupDir = backupsDirectory.appendingPathComponent("\(stamp)-\(suffix)", isDirectory: true)
-            suffix += 1
+        try createPrivateDirectory(at: backupsDirectory)
+        try checkpointWAL()
+
+        let temporary = backupsDirectory.appendingPathComponent(
+            ".partial-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        do {
+            try createPrivateDirectory(at: temporary)
+            let stagedStore = temporary.appendingPathComponent(databaseURL.lastPathComponent)
+            try fileManager.copyItem(at: databaseURL, to: stagedStore)
+            try validateSQLiteStore(at: stagedStore)
+            try setPrivateFilePermissions(at: stagedStore)
+
+            if fileManager.fileExists(atPath: legacyPlansURL.path) {
+                let stagedPlans = temporary.appendingPathComponent(legacyPlansURL.lastPathComponent)
+                try fileManager.copyItem(at: legacyPlansURL, to: stagedPlans)
+                try setPrivateFilePermissions(at: stagedPlans)
+            }
+
+            let marker = temporary.appendingPathComponent(Self.completionMarkerName)
+            let manifest = "formatVersion=1\ncreatedAt=\(ISO8601DateFormatter().string(from: timestamp))\n"
+            try Data(manifest.utf8).write(to: marker, options: .atomic)
+            try setPrivateFilePermissions(at: marker)
+
+            let backupDirectory = nextBackupDirectory(timestamp: timestamp)
+            try fileManager.moveItem(at: temporary, to: backupDirectory)
+            try rotate()
+            return backupDirectory
+        } catch {
+            try? fileManager.removeItem(at: temporary)
+            throw error
         }
-        try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
-        checkpointWAL()
-        try fileManager.copyItem(at: databaseURL, to: backupDir.appendingPathComponent(databaseURL.lastPathComponent))
-        if fileManager.fileExists(atPath: legacyPlansURL.path) {
-            try fileManager.copyItem(
-                at: legacyPlansURL,
-                to: backupDir.appendingPathComponent(legacyPlansURL.lastPathComponent)
-            )
-        }
-        try rotate()
-        return backupDir
     }
 
-    /// 通过一个独立的 SQLite 连接执行 WAL 检查点（TRUNCATE），把 WAL 数据全部落回
-    /// 主库并清空 WAL。WAL 模式允许并发连接，此操作不会破坏打开中的库。
-    private func checkpointWAL() {
+    private func checkpointWAL() throws {
         var db: OpaquePointer?
-        guard sqlite3_open_v2(databaseURL.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
-              let handle = db else {
+        let openResult = sqlite3_open_v2(databaseURL.path, &db, SQLITE_OPEN_READWRITE, nil)
+        guard openResult == SQLITE_OK, let handle = db else {
             if let db { sqlite3_close(db) }
-            return
+            throw BackupError.checkpointFailed(openResult)
         }
         defer { sqlite3_close(handle) }
-        sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+        let checkpointResult = sqlite3_wal_checkpoint_v2(
+            handle,
+            nil,
+            SQLITE_CHECKPOINT_TRUNCATE,
+            nil,
+            nil
+        )
+        guard checkpointResult == SQLITE_OK else {
+            throw BackupError.checkpointFailed(checkpointResult)
+        }
     }
 
-    /// 最近一份备份目录（按时间戳字典序，时间戳格式保证其即时间序）。
     func latestBackup() -> URL? {
-        guard let dirs = try? fileManager.contentsOfDirectory(
-            at: backupsDirectory, includingPropertiesForKeys: nil
-        ) else { return nil }
-        return dirs
-            .filter { $0.hasDirectoryPath }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-            .first
+        completeBackups().first
     }
 
-    /// 现有备份数量。
     func backupCount() -> Int {
-        guard let dirs = try? fileManager.contentsOfDirectory(
-            at: backupsDirectory, includingPropertiesForKeys: nil
-        ) else { return 0 }
-        return dirs.filter { $0.hasDirectoryPath }.count
+        completeBackups().count
     }
 
-    /// 从指定备份恢复：移除当前主库三件套，再从备份拷回单一主库文件。
-    func restore(from backupDir: URL) throws {
-        for file in [databaseURL, walURL, shmURL] {
-            try? fileManager.removeItem(at: file)
+    /// Preflights and stages the replacement before touching the current store.
+    /// The previous live SQLite family is retained under RestoreSafety.
+    func restore(from backupDirectory: URL) throws {
+        let backedUpStore = backupDirectory.appendingPathComponent(databaseURL.lastPathComponent)
+        guard isCompleteBackup(backupDirectory) else {
+            throw BackupError.missingStore(backedUpStore)
         }
-        let backedUpStore = backupDir.appendingPathComponent(databaseURL.lastPathComponent)
-        if fileManager.fileExists(atPath: backedUpStore.path) {
-            try fileManager.copyItem(at: backedUpStore, to: databaseURL)
-        }
-        let backedUpPlans = backupDir.appendingPathComponent(legacyPlansURL.lastPathComponent)
+        try validateSQLiteStore(at: backedUpStore)
+        try createPrivateDirectory(at: databaseURL.deletingLastPathComponent())
+
+        let stagingDirectory = databaseURL.deletingLastPathComponent().appendingPathComponent(
+            ".restore-stage-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer { try? fileManager.removeItem(at: stagingDirectory) }
+        try createPrivateDirectory(at: stagingDirectory)
+        let stagedStore = stagingDirectory.appendingPathComponent(databaseURL.lastPathComponent)
+        try fileManager.copyItem(at: backedUpStore, to: stagedStore)
+        try validateSQLiteStore(at: stagedStore)
+        try setPrivateFilePermissions(at: stagedStore)
+
+        let backedUpPlans = backupDirectory.appendingPathComponent(legacyPlansURL.lastPathComponent)
+        let stagedPlans = stagingDirectory.appendingPathComponent(legacyPlansURL.lastPathComponent)
         if fileManager.fileExists(atPath: backedUpPlans.path) {
-            if fileManager.fileExists(atPath: legacyPlansURL.path) {
-                try fileManager.removeItem(at: legacyPlansURL)
+            try fileManager.copyItem(at: backedUpPlans, to: stagedPlans)
+            try setPrivateFilePermissions(at: stagedPlans)
+        }
+
+        let safetyDirectory = try preserveCurrentStoreFamily()
+        do {
+            if fileManager.fileExists(atPath: databaseURL.path) {
+                _ = try fileManager.replaceItemAt(databaseURL, withItemAt: stagedStore)
+            } else {
+                try fileManager.moveItem(at: stagedStore, to: databaseURL)
             }
-            try fileManager.copyItem(at: backedUpPlans, to: legacyPlansURL)
+            for sidecar in [walURL, shmURL] where fileManager.fileExists(atPath: sidecar.path) {
+                try fileManager.removeItem(at: sidecar)
+            }
+            if fileManager.fileExists(atPath: stagedPlans.path) {
+                if fileManager.fileExists(atPath: legacyPlansURL.path) {
+                    _ = try fileManager.replaceItemAt(legacyPlansURL, withItemAt: stagedPlans)
+                } else {
+                    try fileManager.moveItem(at: stagedPlans, to: legacyPlansURL)
+                }
+            }
+            try validateSQLiteStore(at: databaseURL)
+            if let safetyDirectory {
+                let marker = safetyDirectory.appendingPathComponent(Self.completionMarkerName)
+                try Data("restoreSafetyVersion=1\n".utf8).write(to: marker, options: .atomic)
+                try setPrivateFilePermissions(at: marker)
+            }
+        } catch {
+            if let safetyDirectory {
+                try? restoreSafetyCopy(from: safetyDirectory)
+            }
+            throw error
         }
     }
 
-    /// 从最近备份恢复；无备份返回 false。
     @discardableResult
     func restoreLatest() throws -> Bool {
         guard let latest = latestBackup() else { return false }
@@ -123,17 +186,132 @@ struct DatabaseBackupService: @unchecked Sendable {
         return true
     }
 
-    /// 轮转：按时间戳保留最近 maxBackups 份，删除更旧的。
-    private func rotate() throws {
-        guard let dirs = try? fileManager.contentsOfDirectory(
-            at: backupsDirectory, includingPropertiesForKeys: nil
-        ) else { return }
-        let backups = dirs
-            .filter { $0.hasDirectoryPath }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-        for old in backups.dropFirst(maxBackups) {
-            try? fileManager.removeItem(at: old)
+    private func preserveCurrentStoreFamily() throws -> URL? {
+        let existingFiles = [databaseURL, walURL, shmURL, legacyPlansURL]
+            .filter { fileManager.fileExists(atPath: $0.path) }
+        guard !existingFiles.isEmpty else { return nil }
+
+        let root = applicationDataDirectory.appendingPathComponent("RestoreSafety", isDirectory: true)
+        try createPrivateDirectory(at: root)
+        let directory = root.appendingPathComponent(
+            "\(Self.timestampFormatter.string(from: .now))-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try createPrivateDirectory(at: directory)
+        do {
+            for source in existingFiles {
+                let destination = directory.appendingPathComponent(source.lastPathComponent)
+                try fileManager.copyItem(at: source, to: destination)
+                try setPrivateFilePermissions(at: destination)
+            }
+            return directory
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
         }
+    }
+
+    private func restoreSafetyCopy(from directory: URL) throws {
+        for destination in [databaseURL, walURL, shmURL, legacyPlansURL] {
+            let source = directory.appendingPathComponent(destination.lastPathComponent)
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            let rollback = destination.deletingLastPathComponent().appendingPathComponent(
+                ".rollback-\(UUID().uuidString)"
+            )
+            try fileManager.copyItem(at: source, to: rollback)
+            if fileManager.fileExists(atPath: destination.path) {
+                _ = try fileManager.replaceItemAt(destination, withItemAt: rollback)
+            } else {
+                try fileManager.moveItem(at: rollback, to: destination)
+            }
+        }
+    }
+
+    private func validateSQLiteStore(at url: URL) throws {
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw BackupError.missingStore(url)
+        }
+        var db: OpaquePointer?
+        let result = sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil)
+        guard result == SQLITE_OK, let handle = db else {
+            let detail = db.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed: \(result)"
+            if let db { sqlite3_close(db) }
+            throw BackupError.invalidStore(url, detail)
+        }
+        defer { sqlite3_close(handle) }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, "PRAGMA quick_check;", -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            throw BackupError.invalidStore(url, String(cString: sqlite3_errmsg(handle)))
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let value = sqlite3_column_text(statement, 0),
+              String(cString: value) == "ok" else {
+            throw BackupError.invalidStore(url, String(cString: sqlite3_errmsg(handle)))
+        }
+    }
+
+    private func completeBackups() -> [URL] {
+        guard let directories = try? fileManager.contentsOfDirectory(
+            at: backupsDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return directories
+            .filter(isCompleteBackup)
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    private func isCompleteBackup(_ directory: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return false }
+        guard fileManager.fileExists(
+            atPath: directory.appendingPathComponent(Self.completionMarkerName).path
+        ) && fileManager.fileExists(
+            atPath: directory.appendingPathComponent(databaseURL.lastPathComponent).path
+        ) else { return false }
+        return (try? validateSQLiteStore(
+            at: directory.appendingPathComponent(databaseURL.lastPathComponent)
+        )) != nil
+    }
+
+    private func rotate() throws {
+        for old in completeBackups().dropFirst(maxBackups) {
+            try fileManager.removeItem(at: old)
+        }
+    }
+
+    private func nextBackupDirectory(timestamp: Date) -> URL {
+        let stamp = Self.timestampFormatter.string(from: timestamp)
+        var candidate = backupsDirectory.appendingPathComponent(stamp, isDirectory: true)
+        var suffix = 1
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = backupsDirectory.appendingPathComponent("\(stamp)-\(suffix)", isDirectory: true)
+            suffix += 1
+        }
+        return candidate
+    }
+
+    private func createPrivateDirectory(at url: URL) throws {
+        try fileManager.createDirectory(
+            at: url,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o700))],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func setPrivateFilePermissions(at url: URL) throws {
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o600))],
+            ofItemAtPath: url.path
+        )
     }
 
     private static let timestampFormatter: DateFormatter = {

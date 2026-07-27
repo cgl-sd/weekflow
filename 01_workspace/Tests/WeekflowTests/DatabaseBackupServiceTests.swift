@@ -1,112 +1,139 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Weekflow
 
-private func tempDBURL(_ name: String) -> URL {
-    FileManager.default.temporaryDirectory
-        .appendingPathComponent("WeekflowBackupTest-\(name)-\(UUID().uuidString)", isDirectory: true)
-        .appendingPathComponent("Weekflow.store")
-}
-
-/// 数据安全：备份后即使主库损坏，也能从最近备份恢复原内容。
-@Test func backupAndRestoreRecoversDatabaseContent() throws {
-    let dbURL = tempDBURL("Restore")
-    let dir = dbURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-
-    let original = Data("good-database-content".utf8)
-    try original.write(to: dbURL)
-
-    let service = DatabaseBackupService(
-        databaseURL: dbURL,
-        backupsDirectory: dbURL.deletingLastPathComponent().appendingPathComponent("Backups"),
-        maxBackups: 5
-    )
-    let backupDir = try #require(try service.makeBackup())
-    #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Weekflow.store").path))
-
-    // 模拟损坏：覆盖主库。
-    try Data("corrupted".utf8).write(to: dbURL)
-    #expect(try Data(contentsOf: dbURL) != original)
-
-    // 从最近备份恢复原内容。
-    let restored = try service.restoreLatest()
-    #expect(restored)
-    #expect(try Data(contentsOf: dbURL) == original)
-}
-
-/// Compatibility safety: while older installations still have plans.json,
-/// database backup and restore must keep it with the SQLite snapshot.
-@Test func backupAndRestoreIncludesLegacyPlansFile() throws {
+private func temporaryDatabase(_ name: String) throws -> (root: URL, database: URL) {
     let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent("WeekflowBackupPlans-\(UUID().uuidString)", isDirectory: true)
-    let dbURL = root.appendingPathComponent("Database/Weekflow.store")
-    let plansURL = root.appendingPathComponent("plans.json")
-    let backupsURL = root.appendingPathComponent("Backups")
-    try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    try Data("database".utf8).write(to: dbURL)
-    try Data("original-plans".utf8).write(to: plansURL)
-
-    let service = DatabaseBackupService(
-        databaseURL: dbURL,
-        backupsDirectory: backupsURL
+        .appendingPathComponent("WeekflowBackupTest-\(name)-\(UUID().uuidString)", isDirectory: true)
+    let database = root.appendingPathComponent("Database/Weekflow.store")
+    try FileManager.default.createDirectory(
+        at: database.deletingLastPathComponent(),
+        withIntermediateDirectories: true
     )
-    _ = try #require(try service.makeBackup())
-    try Data("changed-plans".utf8).write(to: plansURL)
-    #expect(try service.restoreLatest())
-    #expect(try Data(contentsOf: plansURL) == Data("original-plans".utf8))
+    try executeSQL("CREATE TABLE records (value TEXT NOT NULL); INSERT INTO records VALUES ('original');", at: database)
+    return (root, database)
 }
 
-/// 数据安全：无备份时 restoreLatest 返回 false（不误报成功）。
-@Test func restoreWithoutAnyBackupReturnsFalse() throws {
-    let dbURL = tempDBURL("NoBackup")
-    let dir = dbURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    try Data("db".utf8).write(to: dbURL)
+private func executeSQL(_ sql: String, at url: URL) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(url.path, &database) == SQLITE_OK, let database else {
+        throw NSError(domain: "DatabaseBackupServiceTests", code: 1)
+    }
+    defer { sqlite3_close(database) }
+    guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+        throw NSError(
+            domain: "DatabaseBackupServiceTests",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(database))]
+        )
+    }
+}
 
-    let service = DatabaseBackupService(
-        databaseURL: dbURL,
-        backupsDirectory: dbURL.deletingLastPathComponent().appendingPathComponent("Backups"),
-        maxBackups: 3
-    )
+private func recordValues(at url: URL) throws -> [String] {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+          let database else {
+        throw NSError(domain: "DatabaseBackupServiceTests", code: 3)
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, "SELECT value FROM records ORDER BY rowid", -1, &statement, nil) == SQLITE_OK,
+          let statement else {
+        throw NSError(domain: "DatabaseBackupServiceTests", code: 4)
+    }
+    defer { sqlite3_finalize(statement) }
+    var values: [String] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+        values.append(String(cString: sqlite3_column_text(statement, 0)))
+    }
+    return values
+}
+
+@Test func backupAndRestoreRecoversDatabaseContent() throws {
+    let fixture = try temporaryDatabase("Restore")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = DatabaseBackupService(databaseURL: fixture.database)
+    let backup = try #require(try service.makeBackup())
+    #expect(FileManager.default.fileExists(atPath: backup.appendingPathComponent("complete").path))
+
+    try executeSQL("INSERT INTO records VALUES ('changed');", at: fixture.database)
+    #expect(try recordValues(at: fixture.database) == ["original", "changed"])
+    #expect(try service.restoreLatest())
+    #expect(try recordValues(at: fixture.database) == ["original"])
+
+    let safetyRoot = fixture.root.appendingPathComponent("RestoreSafety")
+    let safetyCopies = try FileManager.default.contentsOfDirectory(at: safetyRoot, includingPropertiesForKeys: nil)
+    #expect(safetyCopies.count == 1)
+    #expect(try recordValues(at: safetyCopies[0].appendingPathComponent("Weekflow.store")) == ["original", "changed"])
+}
+
+@Test func backupAndRestoreIncludesLegacyPlansFile() throws {
+    let fixture = try temporaryDatabase("Plans")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let plans = fixture.root.appendingPathComponent("plans.json")
+    try Data("original-plans".utf8).write(to: plans)
+    let service = DatabaseBackupService(databaseURL: fixture.database)
+    _ = try #require(try service.makeBackup())
+    try Data("changed-plans".utf8).write(to: plans)
+    #expect(try service.restoreLatest())
+    #expect(try Data(contentsOf: plans) == Data("original-plans".utf8))
+}
+
+@Test func restoreWithoutAnyBackupReturnsFalseAndKeepsLiveStore() throws {
+    let fixture = try temporaryDatabase("NoBackup")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = DatabaseBackupService(databaseURL: fixture.database)
+    let original = try Data(contentsOf: fixture.database)
     #expect(service.latestBackup() == nil)
     #expect(try service.restoreLatest() == false)
+    #expect(try Data(contentsOf: fixture.database) == original)
 }
 
-/// 数据安全：滚动备份只保留最近 N 份。
-@Test func backupRotationKeepsOnlyTheMostRecentN() throws {
-    let dbURL = tempDBURL("Rotate")
-    let dir = dbURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    try Data("db".utf8).write(to: dbURL)
+@Test func incompleteAndInvalidBackupsAreNeverRestored() throws {
+    let fixture = try temporaryDatabase("Invalid")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let backups = fixture.root.appendingPathComponent("Backups")
+    let incomplete = backups.appendingPathComponent("99999999-999999")
+    try FileManager.default.createDirectory(at: incomplete, withIntermediateDirectories: true)
+    try Data("not sqlite".utf8).write(to: incomplete.appendingPathComponent("Weekflow.store"))
+    let service = DatabaseBackupService(databaseURL: fixture.database)
+    let original = try Data(contentsOf: fixture.database)
 
-    let service = DatabaseBackupService(
-        databaseURL: dbURL,
-        backupsDirectory: dbURL.deletingLastPathComponent().appendingPathComponent("Backups"),
-        maxBackups: 3
-    )
-    let base = Date(timeIntervalSince1970: 1_700_000_000)
-    for i in 0..<6 {
-        _ = try service.makeBackup(timestamp: base.addingTimeInterval(Double(i)))
+    #expect(service.backupCount() == 0)
+    #expect(service.latestBackup() == nil)
+    #expect(try service.restoreLatest() == false)
+    #expect(try Data(contentsOf: fixture.database) == original)
+
+    try Data("complete".utf8).write(to: incomplete.appendingPathComponent("complete"))
+    #expect(service.latestBackup() == nil)
+    #expect(throws: DatabaseBackupService.BackupError.self) {
+        try service.restore(from: incomplete)
     }
-    #expect(service.backupCount() == 3)
-    // 最近一份是时间戳最大者（2023-11-14…）。
-    let latest = try #require(service.latestBackup())
-    #expect(latest.lastPathComponent.hasPrefix("20231114"))
+    #expect(try Data(contentsOf: fixture.database) == original)
 }
 
-/// 数据安全：主库不存在时 makeBackup 返回 nil（不创建空备份）。
+@Test func backupRotationKeepsOnlyCompleteRecentSnapshots() throws {
+    let fixture = try temporaryDatabase("Rotate")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = DatabaseBackupService(databaseURL: fixture.database, maxBackups: 3)
+    let base = Date(timeIntervalSince1970: 1_700_000_000)
+    for offset in 0..<6 {
+        _ = try service.makeBackup(timestamp: base.addingTimeInterval(Double(offset)))
+    }
+    let partial = fixture.root.appendingPathComponent("Backups/.partial-test")
+    try FileManager.default.createDirectory(at: partial, withIntermediateDirectories: true)
+    #expect(service.backupCount() == 3)
+    #expect(FileManager.default.fileExists(atPath: partial.path))
+    #expect(try #require(service.latestBackup()).lastPathComponent.hasPrefix("20231114"))
+}
+
 @Test func makeBackupWithoutDatabaseReturnsNil() throws {
-    let dbURL = tempDBURL("Missing")
-    let service = DatabaseBackupService(
-        databaseURL: dbURL,
-        backupsDirectory: dbURL.deletingLastPathComponent().appendingPathComponent("Backups"),
-        maxBackups: 3
-    )
-    let result = try service.makeBackup()
-    #expect(result == nil)
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowBackupMissing-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = root.appendingPathComponent("Database/Weekflow.store")
+    let service = DatabaseBackupService(databaseURL: database)
+    #expect(try service.makeBackup() == nil)
+    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
 }
