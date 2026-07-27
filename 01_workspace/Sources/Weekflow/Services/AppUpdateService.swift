@@ -174,8 +174,28 @@ struct AppUpdateService: Sendable {
         configuration.urlCache = nil
         let session = URLSession(configuration: configuration)
         return { request in
-            try await session.data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
+            let data = try await collectBoundedBytes(bytes)
+            return (data, response)
         }
+    }
+
+    /// Collects a response incrementally and stops as soon as the configured
+    /// ceiling is crossed. Checking `Data.count` only after `data(for:)` returns
+    /// would allow an abnormal response to be fully buffered first.
+    static func collectBoundedBytes<Bytes: AsyncSequence>(
+        _ bytes: Bytes,
+        maximumBytes: Int = maximumResponseBytes
+    ) async throws -> Data where Bytes.Element == UInt8 {
+        var data = Data()
+        data.reserveCapacity(min(maximumBytes, 8 * 1_024))
+        for try await byte in bytes {
+            guard data.count < maximumBytes else {
+                throw AppUpdateError.responseTooLarge
+            }
+            data.append(byte)
+        }
+        return data
     }
 
     private static func isTrustedAPIResponse(_ url: URL?) -> Bool {

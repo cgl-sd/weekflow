@@ -46,6 +46,27 @@ struct AppUpdateServiceTests {
         }
     }
 
+    @Test func streamingLoaderStopsAtTheResponseLimit() async throws {
+        let validBytes = AsyncStream<UInt8> { continuation in
+            for _ in 0..<AppUpdateService.maximumResponseBytes {
+                continuation.yield(0x41)
+            }
+            continuation.finish()
+        }
+        let valid = try await AppUpdateService.collectBoundedBytes(validBytes)
+        #expect(valid.count == AppUpdateService.maximumResponseBytes)
+
+        let oversizedBytes = AsyncStream<UInt8> { continuation in
+            for _ in 0...AppUpdateService.maximumResponseBytes {
+                continuation.yield(0x41)
+            }
+            continuation.finish()
+        }
+        await #expect(throws: AppUpdateError.responseTooLarge) {
+            _ = try await AppUpdateService.collectBoundedBytes(oversizedBytes)
+        }
+    }
+
     @Test func rejectsHTTPFailure() async {
         let service = AppUpdateService { request in
             let response = HTTPURLResponse(

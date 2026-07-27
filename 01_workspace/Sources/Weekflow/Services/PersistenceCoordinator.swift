@@ -25,7 +25,12 @@ final class PersistenceCoordinator: @unchecked Sendable {
     private var invalidatedRevisionByDomain: [String: UInt64] = [:]
     private var globallyInvalidatedRevision: UInt64 = 0
     private var invalidatedPrefixCutoffs: [String: UInt64] = [:]
-    private var pendingWrites: [PendingWrite] = []
+    // Indexed FIFO with tombstones. This preserves global order and same-domain
+    // tail coalescing without the O(N) scan/shift cost of Array removeAll/removeFirst.
+    private var pendingWritesByRevision: [UInt64: PendingWrite] = [:]
+    private var pendingRevisionByDomain: [String: UInt64] = [:]
+    private var pendingOrder: [UInt64] = []
+    private var pendingOrderHead = 0
     private var activeWrite: ActiveWrite?
     private var writerTask: Task<Void, Never>?
     private var writerGeneration: UInt64 = 0
@@ -77,8 +82,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
                 commit: commit,
                 rollback: rollback
             )
-            pendingWrites.removeAll { $0.domain == domain }
-            pendingWrites.append(write)
+            enqueuePendingLocked(write)
             startWriterIfNeededLocked()
         }
     }
@@ -95,25 +99,30 @@ final class PersistenceCoordinator: @unchecked Sendable {
                 await task.value
                 continue
             }
-            let drained = withState { pendingWrites.isEmpty && writerTask == nil }
+            let drained = withState { pendingWritesByRevision.isEmpty && writerTask == nil }
             if drained { return }
             await Task.yield()
         }
     }
 
     func cancelPending(for domain: String) {
-        withState { pendingWrites.removeAll { $0.domain == domain } }
+        withState { cancelPendingLocked(for: domain) }
     }
 
     func cancelAllPending() {
-        withState { pendingWrites.removeAll() }
+        withState { removeAllPendingLocked() }
     }
 
     /// Cancels pending (not-yet-started) writes whose domain begins with `prefix`.
     /// Used by a full-snapshot sync write to supersede every per-task edit
     /// (`task:<uuid>`) without touching unrelated domains (focus/calendar/…).
     func cancelPending(matchingPrefix prefix: String) {
-        withState { pendingWrites.removeAll { $0.domain.hasPrefix(prefix) } }
+        withState {
+            let matchingDomains = pendingRevisionByDomain.keys.filter { $0.hasPrefix(prefix) }
+            for domain in matchingDomains {
+                cancelPendingLocked(for: domain)
+            }
+        }
     }
 
     /// Pauses the queue and permanently invalidates writes that were already
@@ -183,7 +192,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
         withState {
             isEnabled = false
             failureMessage = reason
-            pendingWrites.removeAll()
+            removeAllPendingLocked()
         }
     }
 
@@ -201,7 +210,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
         guard writerTask == nil,
             isEnabled,
             syncBarrierDepth == 0,
-            !pendingWrites.isEmpty
+            !pendingWritesByRevision.isEmpty
         else { return }
         writerGeneration &+= 1
         let generation = writerGeneration
@@ -224,9 +233,9 @@ final class PersistenceCoordinator: @unchecked Sendable {
             let write = withState { () -> PendingWrite? in
                 guard isEnabled,
                     syncBarrierDepth == 0,
-                    !pendingWrites.isEmpty
+                    !pendingWritesByRevision.isEmpty
                 else { return nil }
-                let write = pendingWrites.removeFirst()
+                guard let write = dequeuePendingLocked() else { return nil }
                 activeWrite = ActiveWrite(
                     domain: write.domain,
                     revision: write.revision,
@@ -275,7 +284,7 @@ final class PersistenceCoordinator: @unchecked Sendable {
             let report = withState { () -> (callback: (@MainActor (String, String) -> Void)?, message: String)? in
                 guard !isStaleLocked(write) else { return nil }
                 isEnabled = false
-                pendingWrites.removeAll()
+                removeAllPendingLocked()
                 let message = "\(write.label)保存失败，本次会话已暂停后续保存。原有本地文件不会被主动删除。\n\n\(error.localizedDescription)"
                 failureMessage = message
                 return (onFailure, message)
@@ -289,6 +298,64 @@ final class PersistenceCoordinator: @unchecked Sendable {
             }
             return true
         }
+    }
+
+    private func enqueuePendingLocked(_ write: PendingWrite) {
+        if let previousRevision = pendingRevisionByDomain[write.domain] {
+            pendingWritesByRevision.removeValue(forKey: previousRevision)
+        }
+        pendingRevisionByDomain[write.domain] = write.revision
+        pendingWritesByRevision[write.revision] = write
+        pendingOrder.append(write.revision)
+        compactPendingOrderIfNeededLocked()
+    }
+
+    private func dequeuePendingLocked() -> PendingWrite? {
+        while pendingOrderHead < pendingOrder.count {
+            let revision = pendingOrder[pendingOrderHead]
+            pendingOrderHead += 1
+            guard let write = pendingWritesByRevision.removeValue(forKey: revision) else {
+                compactPendingOrderIfNeededLocked()
+                continue
+            }
+            if pendingRevisionByDomain[write.domain] == revision {
+                pendingRevisionByDomain.removeValue(forKey: write.domain)
+            }
+            compactPendingOrderIfNeededLocked()
+            return write
+        }
+        compactPendingOrderIfNeededLocked(force: true)
+        return nil
+    }
+
+    private func cancelPendingLocked(for domain: String) {
+        guard let revision = pendingRevisionByDomain.removeValue(forKey: domain) else { return }
+        pendingWritesByRevision.removeValue(forKey: revision)
+        compactPendingOrderIfNeededLocked()
+    }
+
+    private func removeAllPendingLocked() {
+        pendingWritesByRevision.removeAll()
+        pendingRevisionByDomain.removeAll()
+        pendingOrder.removeAll()
+        pendingOrderHead = 0
+    }
+
+    /// Rebuilds the revision order only after enough consumed/tombstoned slots
+    /// accumulate. The occasional O(N) compaction is amortized across at least
+    /// 1,024 O(1) queue operations.
+    private func compactPendingOrderIfNeededLocked(force: Bool = false) {
+        let queuedSlotCount = pendingOrder.count - pendingOrderHead
+        let liveCount = pendingWritesByRevision.count
+        let consumedPrefixIsLarge = pendingOrderHead >= 1_024
+            && pendingOrderHead * 2 >= pendingOrder.count
+        let tombstoneCountIsLarge = queuedSlotCount >= 1_024
+            && queuedSlotCount > max(liveCount * 2, 1_024)
+        let shouldCompact = force || consumedPrefixIsLarge || tombstoneCountIsLarge
+        guard shouldCompact else { return }
+        let liveRevisions = Set(pendingWritesByRevision.keys)
+        pendingOrder = pendingOrder[pendingOrderHead...].filter(liveRevisions.contains)
+        pendingOrderHead = 0
     }
 
     private func isStaleLocked(_ write: PendingWrite) -> Bool {

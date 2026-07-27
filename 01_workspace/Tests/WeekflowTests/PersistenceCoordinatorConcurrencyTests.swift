@@ -137,6 +137,51 @@ private struct TestWriteFailure: Error {}
 }
 
 @MainActor
+@Test func largePendingWriteBurstStaysBoundedAndKeepsLatestDomainValue() async {
+    let coordinator = PersistenceCoordinator()
+    let recorder = ConcurrencyRecorder()
+    let gate = PhaseGate()
+
+    coordinator.enqueue(
+        domain: "blocker",
+        label: "blocker",
+        operation: { await gate.arriveAndWait() },
+        commit: { recorder.commits.append("blocker") },
+        rollback: {}
+    )
+    await gate.waitForArrival()
+
+    let clock = ContinuousClock()
+    let started = clock.now
+    for index in 0..<30_000 {
+        coordinator.enqueue(
+            domain: "task:\(index)",
+            label: "task",
+            operation: {},
+            commit: {},
+            rollback: {}
+        )
+    }
+    coordinator.cancelPending(matchingPrefix: "task:")
+    for index in 0..<10_000 {
+        coordinator.enqueue(
+            domain: "latest",
+            label: "latest",
+            operation: {},
+            commit: { recorder.commits.append("latest-\(index)") },
+            rollback: {}
+        )
+    }
+    let queueingDuration = started.duration(to: clock.now)
+
+    await gate.release()
+    await coordinator.flush()
+
+    #expect(queueingDuration < .seconds(5))
+    #expect(recorder.commits == ["blocker", "latest-9999"])
+}
+
+@MainActor
 @Test func syncBarrierRaisedMidWriteSuppressesStaleCommit() async {
     let coordinator = PersistenceCoordinator()
     let recorder = ConcurrencyRecorder()
