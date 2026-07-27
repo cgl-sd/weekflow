@@ -11,16 +11,19 @@ actor PersistenceActor {
     private let storeURL: URL
     private let calendar: Calendar
     private let faultInjector: PersistenceFaultInjector?
+    private nonisolated let syncBridgeTimeoutSeconds: Double
     private var repository: SwiftDataPersistenceRepository?
 
     init(
         storeURL: URL,
         calendar: Calendar = SystemBusinessCalendar.current.calendar,
-        faultInjector: PersistenceFaultInjector? = nil
+        faultInjector: PersistenceFaultInjector? = nil,
+        syncBridgeTimeoutSeconds: Double = 60
     ) {
         self.storeURL = storeURL
         self.calendar = calendar
         self.faultInjector = faultInjector
+        self.syncBridgeTimeoutSeconds = syncBridgeTimeoutSeconds
     }
 
     // MARK: - Async (primary path – never blocks the caller)
@@ -30,9 +33,16 @@ actor PersistenceActor {
     func performTransaction<Result>(
         _ body: @Sendable (SwiftDataPersistenceRepository) throws -> Result
     ) throws -> Result {
+        // A synchronous caller may cancel while this transaction is waiting for
+        // the actor. Honour that cancellation before opening the store or running
+        // user code so a reported timeout can never become a later write.
+        try Task.checkCancellation()
         let repo = try ensureRepository()
         do {
+            try Task.checkCancellation()
             return try body(repo)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             recordPersistenceFailure(error, operation: "transaction")
             throw error
@@ -58,8 +68,6 @@ actor PersistenceActor {
     /// giving up. Converts a potential infinite hang (e.g. a future misuse that
     /// deadlocks the actor) into a catchable, logged error. 60s is far beyond any
     /// legitimate startup / synchronous-save / termination persist.
-    private static let syncBridgeTimeoutSeconds: Double = 60
-
     /// Synchronous, BLOCKING wrapper. Blocks the calling thread until the actor
     /// completes. Uses the SAME repository as the async path, ensuring a single
     /// ModelContext per database (P0-1 fix).
@@ -89,7 +97,7 @@ actor PersistenceActor {
         let semaphore = DispatchSemaphore(value: 0)
         let box = ResultBox<Result>()
 
-        Task {
+        let task = Task {
             do {
                 box.value = try await performTransaction(body)
             } catch {
@@ -98,9 +106,17 @@ actor PersistenceActor {
             semaphore.signal()
         }
 
-        let waitResult = semaphore.wait(timeout: .now() + Self.syncBridgeTimeoutSeconds)
-        guard waitResult == .success else {
-            throw PersistenceActorError.syncBridgeTimedOut
+        let waitResult = semaphore.wait(timeout: .now() + syncBridgeTimeoutSeconds)
+        if waitResult != .success {
+            // Swift tasks cannot safely pre-empt a synchronous SwiftData commit.
+            // Cancellation prevents a queued transaction from starting. Waiting
+            // for acknowledgement ensures this method never returns a timeout
+            // while the transaction can still mutate the database later.
+            task.cancel()
+            semaphore.wait()
+            if box.error is CancellationError {
+                throw PersistenceActorError.syncBridgeTimedOut
+            }
         }
 
         if let error = box.error { throw error }
@@ -118,7 +134,7 @@ actor PersistenceActor {
             await resetRepository()
             semaphore.signal()
         }
-        return semaphore.wait(timeout: .now() + Self.syncBridgeTimeoutSeconds) == .success
+        return semaphore.wait(timeout: .now() + syncBridgeTimeoutSeconds) == .success
     }
 
     // MARK: - Error Recording
