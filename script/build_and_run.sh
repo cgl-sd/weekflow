@@ -163,7 +163,11 @@ fi
 # stable code-signing identifier so macOS does not treat every rebuild as a
 # completely unrelated executable when remembering Files & Folders consent.
 if [[ "$BUILD_CONFIGURATION" == "debug" ]]; then
-  /usr/bin/codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP_BUNDLE"
+  # Give the ad-hoc DEBUG build an explicit, content-independent designated
+  # requirement. macOS can then remember the user's one-time Desktop-folder
+  # consent across rebuilds instead of treating every new cdhash as a new app.
+  /usr/bin/codesign --force --deep --sign - --identifier "$BUNDLE_ID" \
+    --requirements "=designated => identifier \"$BUNDLE_ID\"" "$APP_BUNDLE"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 fi
 

@@ -78,7 +78,7 @@ extension WeekflowStore {
         var cascadesForward = false
         var changed = false
 
-        for entry in tasks(on: day) {
+        for entry in dailyPlanningTasks(on: day) {
             let reference = TaskReference(goalID: entry.goal.id, taskID: entry.task.id)
             let isNewlyAssigned = reference == newlyAssigned
             let duration = isNewlyAssigned
@@ -138,7 +138,7 @@ extension WeekflowStore {
             value: dailyPlanningStartMinutes(on: day),
             to: day
         ) ?? day
-        for entry in tasks(on: day) {
+        for entry in dailyPlanningTasks(on: day) {
             let explicit = entry.task.startTime.flatMap { startTime in
                 let components = calendar.dateComponents([.hour, .minute], from: startTime)
                 return calendar.date(

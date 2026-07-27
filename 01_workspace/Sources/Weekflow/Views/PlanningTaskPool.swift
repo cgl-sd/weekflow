@@ -309,7 +309,7 @@ func planningDisplayedEntries(
     date: Date,
     preview: PlanningPoolDropPreview?
 ) -> [(goal: WeeklyGoal, task: WeekTask)] {
-    var entries = store.tasks(on: date)
+    var entries = store.dailyPlanningTasks(on: date)
     guard let preview,
           let goal = store.goals.first(where: { $0.id == preview.token.goalID }),
           let task = goal.tasks.first(where: { $0.id == preview.token.taskID }) else {

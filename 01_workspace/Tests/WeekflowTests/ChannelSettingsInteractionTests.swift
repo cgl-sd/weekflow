@@ -245,8 +245,51 @@ import Testing
     #expect(!settings.contains("SettingsInteractiveRow"))
     #expect(!settings.contains("RGBField"))
     #expect(settings.contains(".frame(width: availableSize.width, height: availableSize.height)"))
-    #expect(settings.contains("monitoredEventMask: .leftMouseUp"))
+    #expect(settings.components(separatedBy: ".zIndex(10)").count - 1 >= 4)
+    #expect(settings.contains(".allowsHitTesting(activeChannelPaletteID == nil && activeChannelIconID == nil)"))
+    #expect(settings.contains(".allowsHitTesting(activeFocusPaletteID == nil && activeFocusIconID == nil)"))
+    #expect(settings.contains("!isColorPalettePresented"))
+    #expect(settings.contains("&& !isThemeColorPalettePresented"))
     #expect(settings.contains("preference.applyToApplication()"))
+}
+
+@Test func continuousColorPanelLeavesDragRecognitionToItsTwoInteractiveSurfaces() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let source = try String(
+        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/SettingsColorPickers.swift"),
+        encoding: .utf8
+    )
+    #expect(!source.contains(".simultaneousGesture("))
+    #expect(source.components(separatedBy: "DragGesture(minimumDistance: 0)").count - 1 == 2)
+    #expect(source.components(separatedBy: "interactionChanged(true)").count - 1 == 2)
+    #expect(source.components(separatedBy: "interactionChanged(false)").count - 1 == 2)
+    #expect(source.components(separatedBy: ".allowsHitTesting(false)").count >= 3)
+    #expect(source.contains("mouse events never fall"))
+    #expect(source.contains(".onTapGesture {}"))
+}
+
+@Test func settingsUseAnInWindowOutsideClickDismissLayer() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let content = try String(
+        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/ContentView.swift"),
+        encoding: .utf8
+    )
+    let settings = try String(
+        contentsOf: packageRoot.appendingPathComponent("Sources/Weekflow/Views/ChannelSettingsView.swift"),
+        encoding: .utf8
+    )
+    #expect(content.contains("if let settingsSection = presentedSettingsSection"))
+    #expect(content.contains(".allowsHitTesting(presentedSettingsSection == nil)"))
+    #expect(content.contains(".onTapGesture { presentedSettingsSection = nil }"))
+    #expect(content.contains("onDismiss: { presentedSettingsSection = nil }"))
+    #expect(!content.contains(".sheet(item: $presentedSettingsSection)"))
+    #expect(!settings.contains("Full-screen click-catching layer"))
 }
 
 @MainActor

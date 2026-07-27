@@ -46,6 +46,7 @@ enum SidebarRowVisualState: Equatable {
 struct AppSidebarView: View {
     @Bindable var store: WeekflowStore
     @Binding var destination: AppDestination
+    var openSettings: () -> Void = {}
     @State private var activeMenuPanel: WorkspaceMenuPanel?
     @State private var isWorkspaceMenuPresented = false
     @State private var isWorkspaceHeaderHovering = false
@@ -122,6 +123,10 @@ struct AppSidebarView: View {
 
     private func openMenuPanel(_ panel: WorkspaceMenuPanel) {
         isWorkspaceMenuPresented = false
+        if panel == .settings {
+            openSettings()
+            return
+        }
         DispatchQueue.main.async {
             activeMenuPanel = panel
         }

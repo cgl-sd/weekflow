@@ -365,6 +365,13 @@ struct HomeDayColumn: View {
                                         )
                                     }
                                 ),
+                                deleteAction: {
+                                    store.removeTaskFromHome(
+                                        goalID: entry.goal.id,
+                                        taskID: entry.task.id,
+                                        date: date
+                                    )
+                                },
                                 timerExpansionRequested: {
                                     if let scrollDistance = timerPanelPresentationScrollDistance(
                                         taskID: entry.task.id,
@@ -970,4 +977,3 @@ struct HomeDayColumn: View {
         }
     }
 }
-

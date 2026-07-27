@@ -44,6 +44,74 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 }
 
 @MainActor
+@Test func weeklyPoolUsesTheGoalOnlyUntilItHasNonemptySubgoals() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowVisibleSubgoals-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    let goalID = store.addGoal(title: "完成发布", outcome: "", endDate: .now)
+
+    #expect(store.weeklyPlanningPoolEntries.filter { $0.goal.id == goalID }.count == 1)
+
+    var goal = try #require(store.goals.first(where: { $0.id == goalID }))
+    goal.subgoals.append(GoalSubgoal(title: "   ", detail: "只有描述"))
+    store.updateGoal(goal)
+    #expect(store.weeklyPlanningPoolEntries.filter { $0.goal.id == goalID }.count == 1)
+
+    _ = store.addSubgoal(to: goalID, title: "完成验收")
+    #expect(store.weeklyPlanningPoolEntries.filter { $0.goal.id == goalID }.count == 1)
+    _ = store.addSubgoal(to: goalID, title: "整理说明")
+    #expect(store.weeklyPlanningPoolEntries.filter { $0.goal.id == goalID }.count == 2)
+}
+
+@MainActor
+@Test func subgoalCategoryIsIndependentAndAppearsOnlyWhenSelected() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowSubgoalCategory-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    let goalID = store.addGoal(title: "完成发布", outcome: "", endDate: .now, channelID: "work")
+    let subgoalID = try #require(store.addSubgoal(to: goalID, title: "完成验收"))
+    let original = try #require(
+        store.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.subgoalID == subgoalID })
+    )
+    #expect(original.channelID == nil)
+
+    var updated = original
+    updated.channelID = "research"
+    _ = store.saveEditedTask(updated, original: original, goalID: goalID)
+
+    let goal = try #require(store.goals.first(where: { $0.id == goalID }))
+    #expect(goal.subgoals.first(where: { $0.id == subgoalID })?.channelID == "research")
+    #expect(store.weeklyPlanningPoolEntries.first(where: { $0.task.id == original.id })?.task.channelID == "research")
+}
+
+@MainActor
+@Test func homeAndDailyPlanningRemovalStayIndependentFromEachOtherAndWeeklyPlanning() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowWorkspaceIsolation-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    let goalID = store.addGoal(title: "完成发布", outcome: "", endDate: .now)
+    let subgoalID = try #require(store.addSubgoal(to: goalID, title: "完成验收"))
+    let taskID = try #require(
+        store.goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.subgoalID == subgoalID })?.id
+    )
+    let day = Calendar.current.startOfDay(for: .now)
+    store.assignTask(goalID: goalID, taskID: taskID, to: day)
+
+    store.removeTaskFromHome(goalID: goalID, taskID: taskID, date: day)
+    #expect(!store.tasks(on: day).contains { $0.task.id == taskID })
+    #expect(store.dailyPlanningTasks(on: day).contains { $0.task.id == taskID })
+    #expect(store.weeklyPlanningTasks(on: day).contains { $0.task.id == taskID })
+
+    store.removeTaskFromDailyPlanning(goalID: goalID, taskID: taskID, date: day)
+    #expect(!store.dailyPlanningTasks(on: day).contains { $0.task.id == taskID })
+    #expect(store.weeklyPlanningTasks(on: day).contains { $0.task.id == taskID })
+    #expect(store.goals.first(where: { $0.id == goalID })?.subgoals.contains { $0.id == subgoalID } == true)
+}
+
+@MainActor
 @Test func weeklyRelationshipGoalCentersNeverOverlap() {
     let centers = WeeklyRelationshipLayout.nonOverlappingCenters(
         desiredCenters: [45, 117, 189],
@@ -710,9 +778,9 @@ private let weeklyRefinementPackageRoot = URL(fileURLWithPath: #filePath)
 
     #expect(weeklySource.contains("store.weeklyPlanningPoolEntries"))
     #expect(weeklySource.contains("entries: store.weeklyPlanningTasks(on: date)"))
-    #expect(storeSource.contains("if goal.subgoals.isEmpty"))
+    #expect(storeSource.contains("if visibleSubgoals.isEmpty"))
     #expect(storeSource.contains("return primaryTask.map { [(goal, $0)] } ?? []"))
-    #expect(storeSource.contains("return goal.subgoals.compactMap { subgoal in"))
+    #expect(storeSource.contains("return visibleSubgoals.compactMap { subgoal in"))
     #expect(weeklySource.contains("Text(subgoalTitle)"))
     #expect(weeklySource.contains("Text(relationshipTitle)"))
     #expect(weeklySource.contains("entry.task.subgoalID == nil ? \" \" : entry.goal.title"))

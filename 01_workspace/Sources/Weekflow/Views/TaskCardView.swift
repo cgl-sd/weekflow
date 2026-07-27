@@ -14,6 +14,7 @@ struct SunsamaTaskCard: View {
     let auxiliaryActionSymbol: String?
     let auxiliaryActionHelp: String
     let auxiliaryAction: (() -> Void)?
+    let deleteAction: () -> Void
     @State private var showsChannelPopover = false
     private let externalChannelMenu: Binding<Bool>?
     @State private var showsDatePopover = false
@@ -54,6 +55,7 @@ struct SunsamaTaskCard: View {
         auxiliaryActionSymbol: String? = nil,
         auxiliaryActionHelp: String = "",
         auxiliaryAction: (() -> Void)? = nil,
+        deleteAction: (() -> Void)? = nil,
         timerExpansionRequested: @escaping () -> Void = {},
         expansionHeightChanged: @escaping (CGFloat) -> Void = { _ in },
         dragStarted: @escaping (TaskDragToken) -> Void = { _ in },
@@ -76,6 +78,9 @@ struct SunsamaTaskCard: View {
         self.auxiliaryActionSymbol = auxiliaryActionSymbol
         self.auxiliaryActionHelp = auxiliaryActionHelp
         self.auxiliaryAction = auxiliaryAction
+        self.deleteAction = deleteAction ?? {
+            store.deleteTask(goalID: entry.goal.id, taskID: entry.task.id)
+        }
         self.timerExpansionRequested = timerExpansionRequested
         self.expansionHeightChanged = expansionHeightChanged
         self.dragStarted = dragStarted
@@ -395,7 +400,7 @@ struct SunsamaTaskCard: View {
                     },
                     canPaste: store.hasTaskClipboard,
                     delete: {
-                        store.deleteTask(goalID: entry.goal.id, taskID: entry.task.id)
+                        deleteAction()
                         showsContextPopover = false
                     }
                 )
@@ -424,7 +429,7 @@ struct SunsamaTaskCard: View {
                 },
                 delete: {
                     selectForCommand()
-                    store.deleteTask(goalID: entry.goal.id, taskID: entry.task.id)
+                    deleteAction()
                     showsContextPopover = false
                 }
             )
@@ -928,4 +933,3 @@ struct SunsamaTaskCard: View {
         CGFloat(displayedSubtasks.count) * WeekflowLayout.taskCardSubtaskRowHeight
     }
 }
-

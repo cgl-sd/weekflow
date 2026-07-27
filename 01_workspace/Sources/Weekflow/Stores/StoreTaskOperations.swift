@@ -84,7 +84,7 @@ extension WeekflowStore {
                 notes: detail,
                 milestoneID: nil,
                 subgoalID: subgoal.id,
-                channelID: goal.channelID,
+                channelID: nil,
                 sourceType: .weeklyObjective
             )
         }
@@ -122,7 +122,7 @@ extension WeekflowStore {
             goal.completedAt = allSubgoalsCompleted ? (goal.completedAt ?? .now) : nil
         }
         if goal.tasks[index].status != .completed { goal.completedAt = nil }
-        goal = goalService.applyPrimaryProjectionEdit(goal)
+        goal = goalService.applyTaskProjectionEdit(goal, taskID: taskID)
         replace(goal)
         if goal.tasks[index].status == .completed { createNextRecurringInstanceIfNeeded(for: goal.tasks[index], in: goal) }
         if persistImmediately { persist() }
@@ -153,6 +153,7 @@ extension WeekflowStore {
         persistImmediately: Bool = true
     ) {
         let override = automaticDistributionOverride(goalID: goalID, taskID: taskID)
+        let destinationDay = businessCalendar.day(containing: date)
         let saved = updateTask(
             goalID: goalID,
             taskID: taskID,
@@ -160,6 +161,8 @@ extension WeekflowStore {
             persistenceKind: override ?? .userEdit
         ) { [taskService] task in
             task = taskService.relocated(task, from: sourceDate, to: date)
+            task.homeHiddenDays.removeAll { $0 == destinationDay }
+            task.dailyPlanningHiddenDays.removeAll { $0 == destinationDay }
         }
         if saved, override != nil { removeAutomaticDistributionChange(goalID: goalID, taskID: taskID) }
     }
@@ -170,6 +173,38 @@ extension WeekflowStore {
             task.assignedDates.removeAll { businessCalendar.calendar.isDate($0, inSameDayAs: date) }
         }
         if saved, override != nil { removeAutomaticDistributionChange(goalID: goalID, taskID: taskID) }
+    }
+
+    /// Removes only the execution-facing occurrence for a weekly-planning
+    /// source. Its canonical pool entry and weekly assignment stay intact.
+    func removeTaskFromHome(goalID: UUID, taskID: UUID, date: Date) {
+        guard let current = task(goalID: goalID, taskID: taskID),
+              current.sourceType == .weeklyObjective else {
+            deleteTask(goalID: goalID, taskID: taskID)
+            return
+        }
+        let day = businessCalendar.day(containing: date)
+        updateTask(goalID: goalID, taskID: taskID) { task in
+            if !task.homeHiddenDays.contains(day) {
+                task.homeHiddenDays.append(day)
+                task.homeHiddenDays.sort()
+            }
+        }
+    }
+
+    func removeTaskFromDailyPlanning(goalID: UUID, taskID: UUID, date: Date) {
+        guard let current = task(goalID: goalID, taskID: taskID),
+              current.sourceType == .weeklyObjective else {
+            deleteTask(goalID: goalID, taskID: taskID)
+            return
+        }
+        let day = businessCalendar.day(containing: date)
+        updateTask(goalID: goalID, taskID: taskID) { task in
+            if !task.dailyPlanningHiddenDays.contains(day) {
+                task.dailyPlanningHiddenDays.append(day)
+                task.dailyPlanningHiddenDays.sort()
+            }
+        }
     }
 
     func unassignTask(goalID: UUID, taskID: UUID) {
@@ -253,7 +288,7 @@ extension WeekflowStore {
         if task.startTime == nil { task.calendarPlacement = .suggested }
         task.updatedAt = .now
         goal.tasks[index] = task
-        goal = goalService.applyPrimaryProjectionEdit(goal)
+        goal = goalService.applyTaskProjectionEdit(goal, taskID: updatedTask.id)
         replace(goal)
         persistDebounced()
     }
@@ -373,7 +408,7 @@ extension WeekflowStore {
         // struct before the task array COW is triggered.
         goals[gIdx].tasks[index] = task
         var goal = goals[gIdx]
-        goal = goalService.applyPrimaryProjectionEdit(goal)
+        goal = goalService.applyTaskProjectionEdit(goal, taskID: updatedTask.id)
         goals[gIdx] = goal
         if updatedTask.priority.isHigher(than: original.priority),
            let plannedDate = updatedTask.plannedDate {

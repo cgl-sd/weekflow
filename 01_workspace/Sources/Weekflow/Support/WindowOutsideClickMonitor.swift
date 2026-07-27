@@ -56,6 +56,10 @@ struct WindowOutsideClickMonitor: NSViewRepresentable {
 }
 
 final class OutsideClickProbeView: NSView {
+    // SwiftUI geometry uses a top-left origin. Keep this bridge in the same
+    // coordinate direction so protected rectangles can be compared directly.
+    override var isFlipped: Bool { true }
+
     /// SwiftUI buttons commit on mouse-up. Observing that same phase keeps a
     /// stale/animated anchor from dismissing on mouse-down and letting the
     /// button reopen its menu when the click is released.

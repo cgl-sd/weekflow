@@ -32,6 +32,7 @@ enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
 struct ChannelSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var store: WeekflowStore
+    let onDismiss: (() -> Void)?
     @State private var newChannelName = ""
     @State private var newChannelIconName = "number"
     @State private var newChannelColorName = "gray"
@@ -58,9 +59,11 @@ struct ChannelSettingsView: View {
 
     init(
         store: WeekflowStore,
-        initialSection: WorkspaceSettingsSection = .channels
+        initialSection: WorkspaceSettingsSection = .channels,
+        onDismiss: (() -> Void)? = nil
     ) {
         self.store = store
+        self.onDismiss = onDismiss
         _selectedSection = State(initialValue: initialSection)
     }
 
@@ -68,7 +71,7 @@ struct ChannelSettingsView: View {
         ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    WeekflowButton { dismiss() } label: {
+                    WeekflowButton { closeSettings() } label: {
                         Label("返回工作区", systemImage: "chevron.left")
                             .padding(.horizontal, 8)
                             .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
@@ -113,19 +116,17 @@ struct ChannelSettingsView: View {
                 .padding(30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-
-            // Full-screen click-catching layer: closes only the topmost popup
-            if activeChannelPaletteID != nil || activeChannelIconID != nil
-                || isGeneralColorPalettePresented || isGeneralThemePalettePresented
-                || isGeneralChartPalettePresented
-                || activeFocusPaletteID != nil || activeFocusIconID != nil {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { dismissTopmostPopup() }
-            }
         }
         .frame(width: 860, height: 620, alignment: .topLeading)
         .background(WeekflowPalette.canvas)
+    }
+
+    private func closeSettings() {
+        if let onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
     }
 
     private func dismissTopmostPopup() {
@@ -225,6 +226,7 @@ struct ChannelSettingsView: View {
                     .scrollIndicators(.automatic)
                     Spacer()
                 }
+                .allowsHitTesting(activeChannelPaletteID == nil && activeChannelIconID == nil)
 
                 if let channelID = activeChannelPaletteID,
                    let anchor = channelPaletteAnchors[channelID] {
@@ -262,12 +264,6 @@ struct ChannelSettingsView: View {
             y: min(anchor.maxY + 6, availableSize.height - panelSize.height - 6)
         )
         return ZStack(alignment: .topLeading) {
-            // Transparent tap layer: clicking anywhere outside the panel dismisses it
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { activeChannelPaletteID = nil }
-                .frame(width: availableSize.width, height: availableSize.height)
-
             WindowOutsideClickMonitor(
                 protectedRects: [anchor, CGRect(origin: origin, size: panelSize)],
                 monitoredEventMask: .leftMouseUp,
@@ -297,6 +293,8 @@ struct ChannelSettingsView: View {
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: origin.x, y: origin.y)
+            .contentShape(Rectangle())
+            .zIndex(10)
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
     }
@@ -333,6 +331,8 @@ struct ChannelSettingsView: View {
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: origin.x, y: origin.y)
+            .contentShape(Rectangle())
+            .zIndex(10)
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
     }
@@ -405,6 +405,7 @@ struct ChannelSettingsView: View {
                     .scrollIndicators(.automatic)
                     Spacer()
                 }
+                .allowsHitTesting(activeFocusPaletteID == nil && activeFocusIconID == nil)
 
                 if let modeID = activeFocusPaletteID,
                    let anchor = focusPaletteAnchors[modeID] {
@@ -442,11 +443,6 @@ struct ChannelSettingsView: View {
             y: min(anchor.maxY + 6, availableSize.height - panelSize.height - 6)
         )
         return ZStack(alignment: .topLeading) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { activeFocusPaletteID = nil }
-                .frame(width: availableSize.width, height: availableSize.height)
-
             WindowOutsideClickMonitor(
                 protectedRects: [anchor, CGRect(origin: origin, size: panelSize)],
                 monitoredEventMask: .leftMouseUp,
@@ -477,6 +473,8 @@ struct ChannelSettingsView: View {
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: origin.x, y: origin.y)
+            .contentShape(Rectangle())
+            .zIndex(10)
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
     }
@@ -895,6 +893,11 @@ struct GeneralSettingsView: View {
                     .background(SystemOverlayScroller())
                 }
                 .scrollIndicators(.automatic)
+                .allowsHitTesting(
+                    !isColorPalettePresented
+                        && !isThemeColorPalettePresented
+                        && !isChartPalettePresented
+                )
 
                 if isColorPalettePresented {
                     colorPaletteOverlay(in: proxy.size)
@@ -1306,11 +1309,6 @@ struct GeneralSettingsView: View {
             y: min(colorPaletteAnchor.maxY + 6, availableSize.height - panelSize.height - 6)
         )
         return ZStack(alignment: .topLeading) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { isColorPalettePresented = false }
-                .frame(width: availableSize.width, height: availableSize.height)
-
             WindowOutsideClickMonitor(
                 protectedRects: [
                     colorPaletteAnchor,
@@ -1328,6 +1326,8 @@ struct GeneralSettingsView: View {
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: panelOrigin.x, y: panelOrigin.y)
+            .contentShape(Rectangle())
+            .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
@@ -1350,11 +1350,6 @@ struct GeneralSettingsView: View {
             )
         )
         return ZStack(alignment: .topLeading) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { isThemeColorPalettePresented = false }
-                .frame(width: availableSize.width, height: availableSize.height)
-
             WindowOutsideClickMonitor(
                 protectedRects: [
                     themeColorPaletteAnchor,
@@ -1372,6 +1367,8 @@ struct GeneralSettingsView: View {
             )
             .frame(width: panelSize.width, height: panelSize.height)
             .offset(x: panelOrigin.x, y: panelOrigin.y)
+            .contentShape(Rectangle())
+            .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)

@@ -391,7 +391,7 @@ final class WeekflowStore {
             goal.tasks[index].calendarPlacement = .suggested
         }
         goal.tasks[index].updatedAt = .now
-        goal = goalService.applyPrimaryProjectionEdit(goal)
+        goal = goalService.applyTaskProjectionEdit(goal, taskID: taskID)
         replace(goal)
         if persistImmediately {
             // R13: O(1) targeted persist of the edited task plus its goal envelope,

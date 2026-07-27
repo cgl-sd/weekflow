@@ -76,7 +76,10 @@ extension WeekflowStore {
             return cached
         }
         let computed = activeGoals.flatMap { goal -> [(goal: WeeklyGoal, task: WeekTask)] in
-            if goal.subgoals.isEmpty {
+            let visibleSubgoals = goal.subgoals.filter {
+                !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if visibleSubgoals.isEmpty {
                 let primaryTask = goal.primaryTaskID.flatMap { primaryTaskID in
                     goal.tasks.first(where: {
                         $0.id == primaryTaskID
@@ -99,7 +102,7 @@ extension WeekflowStore {
                 return (subgoalID, task)
             }
             let tasksBySubgoal = Dictionary(keepingFirst: taskPairs)
-            return goal.subgoals.compactMap { subgoal in
+            return visibleSubgoals.compactMap { subgoal in
                 tasksBySubgoal[subgoal.id].map { (goal, $0) }
             }
         }
@@ -117,8 +120,9 @@ extension WeekflowStore {
                 TaskReference(goalID: $0.goal.id, taskID: $0.task.id)
             }
         )
-        let computed = tasks(on: date).filter {
+        let computed = activeTasks.filter {
             allowedReferences.contains(TaskReference(goalID: $0.goal.id, taskID: $0.task.id))
+                && ($0.task.plannedDay == day || $0.task.assignedDays.contains(day))
         }
         weeklyPlanningTasksByDayCache[day] = computed
         return computed
@@ -175,7 +179,8 @@ extension WeekflowStore {
         }
         let computed = activeTasks.filter { entry in
             let directlyPlanned = entry.task.plannedDay == day
-            return directlyPlanned || entry.task.assignedDays.contains(day)
+            return (directlyPlanned || entry.task.assignedDays.contains(day))
+                && !entry.task.homeHiddenDays.contains(day)
         }
         .sorted {
             if $0.task.sortOrder != $1.task.sortOrder { return $0.task.sortOrder < $1.task.sortOrder }
@@ -190,6 +195,19 @@ extension WeekflowStore {
         let entries = tasks(on: date)
         guard channelID != "all" else { return entries }
         return entries.filter { $0.task.channelID == channelID }
+    }
+
+    func dailyPlanningTasks(on date: Date) -> [(goal: WeeklyGoal, task: WeekTask)] {
+        let day = businessCalendar.day(containing: date)
+        return activeTasks.filter {
+            ($0.task.plannedDay == day || $0.task.assignedDays.contains(day))
+                && !$0.task.dailyPlanningHiddenDays.contains(day)
+        }
+        .sorted {
+            if $0.task.sortOrder != $1.task.sortOrder { return $0.task.sortOrder < $1.task.sortOrder }
+            return ($0.task.startTime ?? $0.task.plannedDate ?? .distantFuture)
+                < ($1.task.startTime ?? $1.task.plannedDate ?? .distantFuture)
+        }
     }
 
     func completionCreditTasks(on date: Date) -> [(goal: WeeklyGoal, task: WeekTask)] {

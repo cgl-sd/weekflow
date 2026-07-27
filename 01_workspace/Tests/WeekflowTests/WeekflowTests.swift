@@ -1100,7 +1100,7 @@ private func taskDetailScrollViews(in view: NSView) -> [NSScrollView] {
     let linkedTask = try #require(updatedGoal.tasks.first(where: { $0.subgoalID == subgoalID }))
     #expect(linkedTask.isUnassigned)
     #expect(updatedGoal.subgoals.first(where: { $0.id == subgoalID })?.channelID == nil)
-    #expect(linkedTask.channelID == updatedGoal.channelID)
+    #expect(linkedTask.channelID == nil)
 
     let targetDate = Calendar.current.startOfDay(for: .now)
     store.assignTask(goalID: goal.id, taskID: linkedTask.id, to: targetDate)

@@ -315,13 +315,27 @@ struct CompactColorPalettePanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            SaturationBrightnessField(selection: selectionBinding)
+        ZStack {
+            // Own the whole floating surface so mouse events never fall
+            // through to settings controls underneath the palette.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {}
+
+            VStack(spacing: 8) {
+                SaturationBrightnessField(
+                    selection: selectionBinding,
+                    interactionChanged: interactionChanged
+                )
                 .frame(height: WeekflowLayout.colorPickerFieldHeight)
-            HueSelectionTrack(selection: selectionBinding)
+                HueSelectionTrack(
+                    selection: selectionBinding,
+                    interactionChanged: interactionChanged
+                )
                 .frame(height: WeekflowLayout.colorPickerHueTrackHeight)
+            }
+            .padding(10)
         }
-        .padding(10)
         .frame(
             width: WeekflowLayout.colorPickerPanelWidth,
             height: WeekflowLayout.colorPickerPanelHeight
@@ -330,15 +344,9 @@ struct CompactColorPalettePanel: View {
         .overlay {
             WeekflowRoundedRectangle(cornerRadius: 10)
                 .stroke(WeekflowPalette.borderStrong, lineWidth: 1)
+                .allowsHitTesting(false)
         }
         .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in interactionChanged(true) }
-                .onEnded { _ in
-                    DispatchQueue.main.async { interactionChanged(false) }
-                }
-        )
         .onChange(of: selectedToken) { _, token in
             guard token != selection.encodedToken else { return }
             selection = HSBColorSelection(token: token)
@@ -358,6 +366,7 @@ struct CompactColorPalettePanel: View {
 
 struct SaturationBrightnessField: View {
     @Binding var selection: HSBColorSelection
+    var interactionChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         GeometryReader { proxy in
@@ -389,6 +398,7 @@ struct SaturationBrightnessField: View {
             .overlay {
                 WeekflowRoundedRectangle(cornerRadius: 8)
                     .stroke(WeekflowPalette.borderStrong.opacity(0.72), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
             .pointingHandCursor()
         }
@@ -405,15 +415,18 @@ struct SaturationBrightnessField: View {
     private func selectionGesture(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                interactionChanged(true)
                 guard size.width > 0, size.height > 0 else { return }
                 selection.saturation = min(max(Double(value.location.x / size.width), 0), 1)
                 selection.brightness = min(max(1 - Double(value.location.y / size.height), 0), 1)
             }
+            .onEnded { _ in interactionChanged(false) }
     }
 }
 
 struct HueSelectionTrack: View {
     @Binding var selection: HSBColorSelection
+    var interactionChanged: (Bool) -> Void = { _ in }
 
     private let hueColors: [Color] = [
         Color(hue: 0, saturation: 1, brightness: 1),
@@ -452,6 +465,7 @@ struct HueSelectionTrack: View {
             .overlay {
                 WeekflowRoundedRectangle(cornerRadius: 7)
                     .stroke(WeekflowPalette.borderStrong.opacity(0.72), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
             .pointingHandCursor()
         }
@@ -461,9 +475,11 @@ struct HueSelectionTrack: View {
     private func hueGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                interactionChanged(true)
                 guard width > 0 else { return }
                 selection.hue = min(max(Double(value.location.x / width), 0), 1)
             }
+            .onEnded { _ in interactionChanged(false) }
     }
 }
 

@@ -382,11 +382,11 @@ private func withPersistenceActor<Result: Sendable>(
     let projectedTask = try #require(normalized.tasks.first)
     #expect(projectedTask.title == item.title)
     #expect(projectedTask.description == item.detail)
-    #expect(projectedTask.channelID == goal.channelID)
+    #expect(projectedTask.channelID == item.channelID)
     let projection = service.weeklyPlanningProjection(normalized)
     #expect(projection.items.first?.title == item.title)
     #expect(projection.items.first?.detail == item.detail)
-    #expect(projection.items.first?.channelID == goal.channelID)
+    #expect(projection.items.first?.channelID == item.channelID)
 }
 
 @MainActor

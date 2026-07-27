@@ -132,6 +132,13 @@ struct PlanningTaskList: View {
                                                 get: { presentedPriorityTaskIDs.contains(entry.task.id) },
                                                 set: { setPriorityMenuPresented($0, taskID: entry.task.id) }
                                             ),
+                                            deleteAction: {
+                                                store.removeTaskFromDailyPlanning(
+                                                    goalID: entry.goal.id,
+                                                    taskID: entry.task.id,
+                                                    date: date
+                                                )
+                                            },
                                             timerExpansionRequested: {
                                                 if let scrollDistance = timerPanelPresentationScrollDistance(
                                                     taskID: entry.task.id,
@@ -822,4 +829,3 @@ struct PlanningSortMenuRow: View {
         .onHover { isHovering = $0 }
     }
 }
-

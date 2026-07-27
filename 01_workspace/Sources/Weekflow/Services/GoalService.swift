@@ -28,6 +28,7 @@ struct ReviewProjection: Equatable {
 protocol GoalServicing {
     func project(_ goal: WeeklyGoal, now: Date) -> WeeklyGoal
     func applyPrimaryProjectionEdit(_ goal: WeeklyGoal, now: Date) -> WeeklyGoal
+    func applyTaskProjectionEdit(_ goal: WeeklyGoal, taskID: UUID, now: Date) -> WeeklyGoal
     func weeklyPlanningProjection(_ goal: WeeklyGoal) -> WeeklyPlanningProjection
     func reviewProjection(_ goal: WeeklyGoal) -> ReviewProjection
 }
@@ -39,6 +40,9 @@ extension GoalServicing {
     func project(_ goal: WeeklyGoal) -> WeeklyGoal { project(goal, now: .now) }
     func applyPrimaryProjectionEdit(_ goal: WeeklyGoal) -> WeeklyGoal {
         applyPrimaryProjectionEdit(goal, now: .now)
+    }
+    func applyTaskProjectionEdit(_ goal: WeeklyGoal, taskID: UUID) -> WeeklyGoal {
+        applyTaskProjectionEdit(goal, taskID: taskID, now: .now)
     }
 }
 
@@ -63,8 +67,8 @@ extension GoalServicing {
 /// P1-6 fixes:
 /// - `project` is a pure function: the timestamp is injected via `now`, it
 ///   never reads `Date.now` internally.
-/// - Subgoal `channelID` is preserved (no longer forcibly cleared); a subgoal
-///   task inherits its own subgoal channel, falling back to the goal channel.
+/// - Subgoal `channelID` is preserved independently. An unclassified subgoal
+///   remains unclassified instead of inheriting the weekly goal's channel.
 /// - Projection no longer resets an in-progress task back to `.planned`; it
 ///   only marks completion, preserving the existing execution status.
 struct GoalService: GoalServicing {
@@ -129,8 +133,7 @@ struct GoalService: GoalServicing {
             task.description = item.detail
             task.notes = item.detail
             task.dueDate = goal.endDate
-            // P1-6 fix: prefer the subgoal's own channel, fall back to goal.
-            task.channelID = item.channelID ?? goal.channelID
+            task.channelID = item.channelID
             task.sourceType = .weeklyObjective
             // P1-6 fix: only reflect completion; preserve in-progress/other
             // execution status instead of resetting to `.planned`.
@@ -150,7 +153,7 @@ struct GoalService: GoalServicing {
                 notes: item.detail,
                 description: item.detail,
                 subgoalID: item.id,
-                channelID: item.channelID ?? goal.channelID,
+                channelID: item.channelID,
                 sourceType: .weeklyObjective,
                 sortOrder: nextOrder
             ))
@@ -187,6 +190,22 @@ struct GoalService: GoalServicing {
         return project(goal, now: now)
     }
 
+    func applyTaskProjectionEdit(_ source: WeeklyGoal, taskID: UUID, now: Date) -> WeeklyGoal {
+        guard let task = source.tasks.first(where: { $0.id == taskID }),
+              let subgoalID = task.subgoalID,
+              let subgoalIndex = source.subgoals.firstIndex(where: { $0.id == subgoalID }) else {
+            return applyPrimaryProjectionEdit(source, now: now)
+        }
+        var goal = source
+        goal.subgoals[subgoalIndex].title = task.title
+        goal.subgoals[subgoalIndex].detail = task.description
+        goal.subgoals[subgoalIndex].channelID = task.channelID
+        goal.subgoals[subgoalIndex].isCompleted = task.status == .completed
+        let complete = !goal.subgoals.isEmpty && goal.subgoals.allSatisfy(\.isCompleted)
+        goal.completedAt = complete ? (goal.completedAt ?? now) : nil
+        return project(goal, now: now)
+    }
+
     func weeklyPlanningProjection(_ goal: WeeklyGoal) -> WeeklyPlanningProjection {
         let projected = project(goal)
         return WeeklyPlanningProjection(
@@ -203,7 +222,7 @@ struct GoalService: GoalServicing {
                     completed: item.isCompleted,
                     plannedDay: task.plannedDay,
                     assignedDays: task.assignedDays,
-                    channelID: goal.channelID
+                    channelID: item.channelID
                 )
             }
         )

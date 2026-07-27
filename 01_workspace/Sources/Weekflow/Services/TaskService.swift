@@ -36,7 +36,9 @@ struct TaskService {
         recurringRule: RecurringRule? = nil,
         existingTasks: [WeekTask]
     ) -> WeekTask {
-        let inheritedChannel = channelID ?? defaultChannelID
+        let inheritedChannel = sourceType == .weeklyObjective && subgoalID != nil
+            ? channelID
+            : (channelID ?? defaultChannelID)
         let sortOrder = existingTasks.filter { task in
             guard let taskDate = task.plannedDate, let plannedDate else { return false }
             return businessCalendar.calendar.isDate(taskDate, inSameDayAs: plannedDate)
@@ -95,7 +97,7 @@ struct TaskService {
             mutableGoal.completedAt = nil
         }
 
-        return goalService.applyPrimaryProjectionEdit(mutableGoal)
+        return goalService.applyTaskProjectionEdit(mutableGoal, taskID: taskID)
     }
 
     /// Checks if a completed task needs a recurring instance created.

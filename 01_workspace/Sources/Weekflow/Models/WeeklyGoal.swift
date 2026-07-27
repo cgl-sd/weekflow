@@ -215,6 +215,12 @@ struct WeekTask: Identifiable, Codable, Hashable {
     /// Weekly task-pool sources can be referenced by multiple daily plans
     /// without being removed from the pool.
     var assignedDays: [LocalDay]
+    /// Occurrences dismissed from Home. Daily and Weekly Planning keep their
+    /// own visibility so editing one workspace cannot remove another's card.
+    var homeHiddenDays: [LocalDay]
+    /// Occurrences removed from Daily Planning. Weekly Planning assignments
+    /// remain canonical and Home stays independent.
+    var dailyPlanningHiddenDays: [LocalDay]
     var startLocalTime: LocalTime?
     /// Retains the civil day of an explicit time when a task is still in the
     /// weekly pool. Once planned, `plannedDay` is the authoritative anchor.
@@ -300,6 +306,8 @@ struct WeekTask: Identifiable, Codable, Hashable {
         title: String,
         plannedDate: Date? = nil,
         assignedDates: [Date] = [],
+        homeHiddenDates: [Date] = [],
+        dailyPlanningHiddenDates: [Date] = [],
         startTime: Date? = nil,
         calendarPlacement: TaskCalendarPlacement = .suggested,
         dueDate: Date? = nil,
@@ -335,6 +343,8 @@ struct WeekTask: Identifiable, Codable, Hashable {
         self.title = title
         plannedDay = plannedDate.map(SystemBusinessCalendar.current.day(containing:))
         assignedDays = Array(Set(assignedDates.map(SystemBusinessCalendar.current.day(containing:)))).sorted()
+        homeHiddenDays = Array(Set(homeHiddenDates.map(SystemBusinessCalendar.current.day(containing:)))).sorted()
+        dailyPlanningHiddenDays = Array(Set(dailyPlanningHiddenDates.map(SystemBusinessCalendar.current.day(containing:)))).sorted()
         startLocalTime = startTime.map { LocalTime($0, calendar: SystemBusinessCalendar.current.calendar) }
         startTimeDay = startTime.map(SystemBusinessCalendar.current.day(containing:))
         self.calendarPlacement = calendarPlacement
@@ -370,7 +380,7 @@ struct WeekTask: Identifiable, Codable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, plannedDay, plannedDate, assignedDays, assignedDates, startLocalTime, startTimeDay, startTime, calendarPlacement, dueDay, dueDate, executionWeekStartDay, executionWeekStart, estimatedMinutes, actualMinutes, actualSeconds, status, archivedAt, notes, description, milestoneID, parentTaskID, subgoalID, channelID, contextID, priority, sourceType, sourceURL, links, comments, changeRecords, subtasks, recurringRule, recurrenceRootID, rolloverCount, completionCredits, createdAt, updatedAt, sortOrder
+        case id, title, plannedDay, plannedDate, assignedDays, assignedDates, homeHiddenDays, dailyPlanningHiddenDays, startLocalTime, startTimeDay, startTime, calendarPlacement, dueDay, dueDate, executionWeekStartDay, executionWeekStart, estimatedMinutes, actualMinutes, actualSeconds, status, archivedAt, notes, description, milestoneID, parentTaskID, subgoalID, channelID, contextID, priority, sourceType, sourceURL, links, comments, changeRecords, subtasks, recurringRule, recurrenceRootID, rolloverCount, completionCredits, createdAt, updatedAt, sortOrder
     }
 
     init(from decoder: Decoder) throws {
@@ -384,6 +394,8 @@ struct WeekTask: Identifiable, Codable, Hashable {
             ?? container.decodeIfPresent([Date].self, forKey: .assignedDates)?
                 .map(SystemBusinessCalendar.current.day(containing:))
             ?? []
+        homeHiddenDays = try container.decodeIfPresent([LocalDay].self, forKey: .homeHiddenDays) ?? []
+        dailyPlanningHiddenDays = try container.decodeIfPresent([LocalDay].self, forKey: .dailyPlanningHiddenDays) ?? []
         let legacyStartTime = try container.decodeIfPresent(Date.self, forKey: .startTime)
         startLocalTime = try container.decodeIfPresent(LocalTime.self, forKey: .startLocalTime)
             ?? legacyStartTime.map { LocalTime($0, calendar: SystemBusinessCalendar.current.calendar) }
@@ -436,6 +448,8 @@ struct WeekTask: Identifiable, Codable, Hashable {
         try container.encode(title, forKey: .title)
         try container.encodeIfPresent(plannedDay, forKey: .plannedDay)
         try container.encode(assignedDays, forKey: .assignedDays)
+        try container.encode(homeHiddenDays, forKey: .homeHiddenDays)
+        try container.encode(dailyPlanningHiddenDays, forKey: .dailyPlanningHiddenDays)
         try container.encodeIfPresent(startLocalTime, forKey: .startLocalTime)
         try container.encodeIfPresent(startTimeDay, forKey: .startTimeDay)
         try container.encode(calendarPlacement, forKey: .calendarPlacement)

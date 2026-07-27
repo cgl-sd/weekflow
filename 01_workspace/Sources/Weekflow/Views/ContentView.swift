@@ -52,6 +52,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             workspaceLayout
+                .allowsHitTesting(presentedSettingsSection == nil)
 
             if showingTaskForm {
                 Color.clear
@@ -72,14 +73,31 @@ struct ContentView: View {
             }
 
             taskDetailOverlay
+
+            if let settingsSection = presentedSettingsSection {
+                Color.black.opacity(0.08)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { presentedSettingsSection = nil }
+
+                ChannelSettingsView(
+                    store: store,
+                    initialSection: settingsSection,
+                    onDismiss: { presentedSettingsSection = nil }
+                )
+                .clipShape(WeekflowRoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    WeekflowRoundedRectangle(cornerRadius: 12)
+                        .stroke(WeekflowPalette.borderStrong, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
+                .transition(.scale(scale: 0.985).combined(with: .opacity))
+                .zIndex(110)
+            }
         }
         .background(TitlebarSidebarToggle(isCollapsed: $isSidebarCollapsed))
         .sheet(isPresented: $showingShortcutHelp) { ShortcutHelpView() }
-        .sheet(item: $presentedSettingsSection) { section in
-            ChannelSettingsView(store: store, initialSection: section)
-        }
-
-
         .alert("操作失败", isPresented: Binding(
             get: { planImportError != nil },
             set: { if !$0 { planImportError = nil } }
@@ -286,7 +304,11 @@ struct ContentView: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 0) {
             if !isSidebarCollapsed {
-                AppSidebarView(store: store, destination: destinationBinding)
+                AppSidebarView(
+                    store: store,
+                    destination: destinationBinding,
+                    openSettings: { presentedSettingsSection = .general }
+                )
                     .frame(width: WeekflowLayout.sidebarWidth, height: size.height, alignment: .top)
                     .zIndex(10)
                 Divider()
