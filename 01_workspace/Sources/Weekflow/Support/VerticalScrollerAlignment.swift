@@ -90,6 +90,7 @@ private final class ScrollerProbeView: NSView {
             appliedScrollerVisibility = nil
         }
         applyBaseConfigurationIfNeeded(to: scrollView)
+        enforceLegacyScrollerStyle(in: scrollView)
         applyScrollerVisibilityIfNeeded(to: scrollView)
         if applyPendingScrollRequest {
             applyScrollRequestIfNeeded(to: scrollView)
@@ -106,9 +107,18 @@ private final class ScrollerProbeView: NSView {
         let zeroInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         scrollView.contentInsets = zeroInsets
         scrollView.scrollerInsets = zeroInsets
-        scrollView.scrollerStyle = .legacy
         scrollView.wantsLayer = true
         scrollView.layer?.masksToBounds = false
+    }
+
+    /// SwiftUI/AppKit can re-apply the user's global overlay-scroller preference
+    /// after the representable's initial configuration. Reassert the reserved
+    /// legacy style only when it actually drifted, then rebuild visibility once;
+    /// this keeps geometry deterministic without tiling on every animation frame.
+    private func enforceLegacyScrollerStyle(in scrollView: NSScrollView) {
+        guard scrollView.scrollerStyle != .legacy else { return }
+        scrollView.scrollerStyle = .legacy
+        appliedScrollerVisibility = nil
     }
 
     private func applyScrollerVisibilityIfNeeded(to scrollView: NSScrollView) {
