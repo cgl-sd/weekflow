@@ -76,7 +76,7 @@ struct LocalStorage: @unchecked Sendable {
         } catch {
             // C-1 fix: log backup failure instead of silent swallow.
             // Backup is best-effort; failure does not block startup.
-            NSLog("[Weekflow] 数据库滚动备份失败: \(error.localizedDescription)")
+            NSLog("[Weekflow] 数据库滚动备份失败: %@", DiagnosticRedactor.redact(error.localizedDescription))
         }
     }
 

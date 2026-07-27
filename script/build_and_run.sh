@@ -10,6 +10,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/01_workspace"
 DIST_DIR="$ROOT_DIR/dist"
 RELEASE_DIR="$ROOT_DIR/release"
+RELEASE_NOTES_SOURCE="$ROOT_DIR/RELEASE_NOTES.md"
 VERSION_FILE="$ROOT_DIR/VERSION"
 BUILD_CONFIGURATION="debug"
 PACKAGE_TEMP_DIR=""
@@ -60,6 +61,19 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 run_release_checks() {
   swift test
   swift build -c release
+}
+
+validate_formal_release_source() {
+  local exact_tag
+  if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=no)" ]]; then
+    printf 'Formal release requires a clean tracked worktree.\n' >&2
+    exit 1
+  fi
+  exact_tag="$(git -C "$ROOT_DIR" describe --tags --exact-match 2>/dev/null || true)"
+  if [[ "$exact_tag" != "v$APP_VERSION" ]]; then
+    printf 'Formal release requires exact tag v%s (current: %s).\n' "$APP_VERSION" "${exact_tag:-none}" >&2
+    exit 1
+  fi
 }
 
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
@@ -119,6 +133,16 @@ validate_bundle() {
 }
 validate_bundle
 
+verify_bundle_cleanliness() {
+  local forbidden
+  forbidden="$(find "$APP_BUNDLE" \( -name '.data' -o -name 'Backups' -o -name 'RestoreSafety' -o -name '*.store' -o -name '*.store-wal' -o -name '*.store-shm' -o -name 'backup-status.json' -o -name 'persistence-failure.json' \) -print)"
+  if [[ -n "$forbidden" ]]; then
+    printf 'Release bundle contains forbidden runtime data:\n%s\n' "$forbidden" >&2
+    exit 1
+  fi
+}
+verify_bundle_cleanliness
+
 validate_release_security_inputs() {
   /usr/bin/plutil -lint "$ENTITLEMENTS" "$CONTAINER_MIGRATION" >/dev/null
   local sandbox network user_files migration_source
@@ -149,17 +173,36 @@ open_fixture_app() { /usr/bin/open -n "$APP_BUNDLE" --args --development-fixture
 create_artifacts() {
   local archive="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.zip"
   local disk_image="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.dmg"
-  local checksums="$RELEASE_DIR/SHA256SUMS"
   PACKAGE_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/weekflow-package.XXXXXX")"
   mkdir -p "$RELEASE_DIR" "$PACKAGE_TEMP_DIR/image"
-  rm -f "$archive" "$disk_image" "$checksums"
+  rm -f "$archive" "$disk_image"
   /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$archive"
   /usr/bin/ditto "$APP_BUNDLE" "$PACKAGE_TEMP_DIR/image/$APP_NAME.app"
   ln -s /Applications "$PACKAGE_TEMP_DIR/image/Applications"
   /usr/bin/hdiutil create -volname "$APP_NAME" -srcfolder "$PACKAGE_TEMP_DIR/image" -format UDZO -ov "$disk_image" >/dev/null
   /usr/bin/hdiutil verify "$disk_image" >/dev/null
+  printf '%s\n%s\n' "$archive" "$disk_image"
+}
+
+write_release_metadata() {
+  local archive="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.zip"
+  local disk_image="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.dmg"
+  local checksums="$RELEASE_DIR/SHA256SUMS"
+  local manifest="$RELEASE_DIR/BUILD-MANIFEST.json"
+  local commit swift_version xcode_version
+  commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+  swift_version="$(swift --version)"
+  swift_version="${swift_version%%$'\n'*}"
+  xcode_version="$(xcodebuild -version)"
+  xcode_version="${xcode_version%%$'\n'*}"
   (cd "$RELEASE_DIR" && /usr/bin/shasum -a 256 "$(basename "$archive")" "$(basename "$disk_image")" > "$(basename "$checksums")")
-  printf '%s\n%s\n%s\n' "$archive" "$disk_image" "$checksums"
+  printf '{\n  "schemaVersion": 1,\n  "version": "%s",\n  "build": "%s",\n  "commit": "%s",\n  "minimumMacOS": "%s",\n  "swift": "%s",\n  "xcode": "%s"\n}\n' \
+    "$APP_VERSION" "$BUILD_NUMBER" "$commit" "$MIN_SYSTEM_VERSION" "$swift_version" "$xcode_version" > "$manifest"
+  chmod 644 "$checksums" "$manifest"
+  if [[ -f "$RELEASE_NOTES_SOURCE" ]]; then
+    cp "$RELEASE_NOTES_SOURCE" "$RELEASE_DIR/RELEASE_NOTES.md"
+  fi
+  printf '%s\n%s\n%s\n%s\n' "$archive" "$disk_image" "$checksums" "$manifest"
 }
 
 package_preview() {
@@ -170,11 +213,13 @@ package_preview() {
     | /usr/bin/plutil -extract 'com\.apple\.security\.app-sandbox' raw -o - - \
     | /usr/bin/grep -qx true
   create_artifacts
+  write_release_metadata
 }
 
 package_release() {
   : "${WEEKFLOW_DEVELOPER_ID:?Set WEEKFLOW_DEVELOPER_ID to a Developer ID Application identity}"
   : "${WEEKFLOW_NOTARY_PROFILE:?Set WEEKFLOW_NOTARY_PROFILE to a notarytool keychain profile}"
+  validate_formal_release_source
   /usr/bin/codesign --force --deep --strict --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" --sign "$WEEKFLOW_DEVELOPER_ID" "$APP_BUNDLE"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
@@ -189,6 +234,15 @@ package_release() {
   rm -rf "$PACKAGE_TEMP_DIR"
   PACKAGE_TEMP_DIR=""
   create_artifacts
+  local disk_image="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.dmg"
+  /usr/bin/codesign --force --timestamp --sign "$WEEKFLOW_DEVELOPER_ID" "$disk_image"
+  /usr/bin/codesign --verify --strict "$disk_image"
+  /usr/bin/xcrun notarytool submit "$disk_image" \
+    --keychain-profile "$WEEKFLOW_NOTARY_PROFILE" --wait
+  /usr/bin/xcrun stapler staple "$disk_image"
+  /usr/bin/xcrun stapler validate "$disk_image"
+  /usr/bin/hdiutil verify "$disk_image" >/dev/null
+  write_release_metadata
 }
 
 case "$MODE" in

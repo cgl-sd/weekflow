@@ -152,7 +152,7 @@ struct DatabaseBackupService: @unchecked Sendable {
             try data.write(to: statusURL, options: .atomic)
             try setPrivateFilePermissions(at: statusURL)
         } catch {
-            NSLog("[Weekflow] 无法保存备份状态: \(error.localizedDescription)")
+            NSLog("[Weekflow] 无法保存备份状态: %@", DiagnosticRedactor.redact(error.localizedDescription))
         }
     }
 

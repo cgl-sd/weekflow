@@ -146,8 +146,8 @@ actor PersistenceActor {
             schemaVersion: SwiftDataPersistenceRepository.schemaVersion,
             failedAt: .now,
             operation: operation,
-            databaseURL: storeURL.path,
-            reason: error.localizedDescription
+            databaseURL: "Database/\(storeURL.lastPathComponent)",
+            reason: DiagnosticRedactor.redact(error.localizedDescription)
         )
         let url = storeURL.deletingLastPathComponent()
             .appendingPathComponent("persistence-failure.json")
@@ -161,7 +161,7 @@ actor PersistenceActor {
         let report = PersistenceMigrationFailureReport(
             schemaVersion: SwiftDataPersistenceRepository.schemaVersion,
             failedAt: .now,
-            reason: error.localizedDescription
+            reason: DiagnosticRedactor.redact(error.localizedDescription)
         )
         let url = storeURL.deletingLastPathComponent()
             .appendingPathComponent("migration-failure.json")

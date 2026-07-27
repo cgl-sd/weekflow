@@ -1047,6 +1047,19 @@ struct GeneralSettingsView: View {
                 .pointingHandCursor()
             }
 
+            SettingsLayoutRow {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("诊断支持信息")
+                    Text("仅包含版本、系统、数据库计数与文件大小；不包含任务标题或正文。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(WeekflowPalette.secondaryText)
+                }
+                Spacer()
+                Button("导出诊断") { exportDiagnosticSupportBundle() }
+                    .buttonStyle(.bordered)
+                    .pointingHandCursor()
+            }
+
             if let dataOperationMessage {
                 Text(dataOperationMessage)
                     .font(.system(size: 12))
@@ -1125,6 +1138,22 @@ struct GeneralSettingsView: View {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
         pendingImportURL = panel.url
+    }
+
+    private func exportDiagnosticSupportBundle() {
+        let panel = NSSavePanel()
+        panel.title = "导出 Weekflow 诊断支持信息"
+        panel.prompt = "导出"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "Weekflow-Diagnostics-\(Date.now.formatted(.iso8601.year().month().day())).json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try store.exportDiagnosticSupportBundle(to: url)
+            dataOperationMessage = "诊断支持信息已导出：\(url.lastPathComponent)"
+        } catch {
+            dataOperationMessage = "失败：\(error.localizedDescription)"
+        }
     }
 
     private func confirmFullDataImport() {

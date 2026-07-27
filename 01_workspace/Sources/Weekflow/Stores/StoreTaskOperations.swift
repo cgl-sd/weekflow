@@ -417,7 +417,7 @@ extension WeekflowStore {
             source: .manual
         )
         // P1-6 fix: direct indexed mutation.
-        goals[gIdx].tasks[index].changeRecords.append(record)
+        goals[gIdx].tasks[index].appendChangeRecord(record)
         goals[gIdx].tasks[index].updatedAt = now
         if persistImmediately { persist() }
         return record

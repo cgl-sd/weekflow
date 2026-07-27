@@ -65,6 +65,10 @@ extension WeekflowStore {
         try FullDataArchiveService().write(snapshot: makeApplicationSnapshot(), to: url)
     }
 
+    func exportDiagnosticSupportBundle(to url: URL) throws {
+        try DiagnosticSupportService().write(storage: storage, to: url)
+    }
+
     /// Imports one validated, complete application snapshot. The existing store is
     /// backed up first, and the replacement is committed as one SwiftData
     /// transaction before any in-memory collection changes.

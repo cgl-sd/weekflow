@@ -158,6 +158,7 @@ struct WeekflowApp: App {
                 idealWidth: WeekflowLayout.windowWidth,
                 minHeight: WeekflowLayout.windowHeight
             )
+            .weekflowReducedMotion()
             .tint(AppThemePreferences.color(for: themeColorToken))
             .onChange(of: appearanceRawValue) { _, _ in
                 appearancePreference.applyToApplication()

@@ -111,7 +111,7 @@ extension WeekflowStore {
             task.actualMinutes = outcome.newActualMinutes
             task.actualSeconds = outcome.newActualSeconds
             task.status = .planned
-            task.changeRecords.append(outcome.changeRecord)
+            task.appendChangeRecord(outcome.changeRecord)
             if let credit = outcome.completionCredit {
                 task.completionCredits.append(credit)
             }
@@ -200,7 +200,7 @@ extension WeekflowStore {
         updateTask(goalID: reference.goalID, taskID: reference.taskID) { task in
             task.actualMinutes = newActualMinutes
             task.actualSeconds = newActualSeconds
-            task.changeRecords.append(TaskChangeRecord(
+            task.appendChangeRecord(TaskChangeRecord(
                 date: now,
                 field: "实际时间",
                 oldValue: current.actualMinutes.hourMinuteClockText,

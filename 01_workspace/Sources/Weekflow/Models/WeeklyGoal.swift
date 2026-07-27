@@ -137,6 +137,14 @@ struct TaskChangeRecord: Identifiable, Codable, Hashable {
     var source: TaskChangeSource
 }
 
+enum TaskEmbeddedHistoryPolicy {
+    /// Task detail only presents recent edit/timer audit entries. Keeping this
+    /// bounded prevents one long-lived task from growing its encoded payload
+    /// forever. User-authored notes, comments, links, subtasks and completion
+    /// credits are deliberately outside this cleanup policy.
+    static let maximumChangeRecords = 500
+}
+
 struct GoalSubgoal: Identifiable, Codable, Hashable {
     var id = UUID()
     var title: String
@@ -483,6 +491,14 @@ struct WeekTask: Identifiable, Codable, Hashable {
     var hasCompletionCredit: Bool { !completionCredits.isEmpty }
     var isArchived: Bool { archivedAt != nil || status == .archived }
     var isDeleted: Bool { status == .deleted }
+}
+
+extension WeekTask {
+    mutating func appendChangeRecord(_ record: TaskChangeRecord) {
+        changeRecords.append(record)
+        let overflow = changeRecords.count - TaskEmbeddedHistoryPolicy.maximumChangeRecords
+        if overflow > 0 { changeRecords.removeFirst(overflow) }
+    }
 }
 
 extension WeekTask {

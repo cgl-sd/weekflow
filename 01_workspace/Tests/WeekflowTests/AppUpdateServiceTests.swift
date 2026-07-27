@@ -19,6 +19,14 @@ struct AppUpdateServiceTests {
         #expect(AppUpdateService.compareVersions("1.2", "1.2.0") == .orderedSame)
     }
 
+    @Test func semanticVersionPrereleasesUseReleaseOrdering() {
+        #expect(AppUpdateService.compareVersions("1.0.0-beta.2", "1.0.0-beta.11") == .orderedAscending)
+        #expect(AppUpdateService.compareVersions("1.0.0-rc.1", "1.0.0") == .orderedAscending)
+        #expect(AppUpdateService.compareVersions("1.0.0", "1.0.0-rc.1") == .orderedDescending)
+        #expect(AppUpdateService.compareVersions("v1.2.3+build.8", "1.2.3+build.9") == .orderedSame)
+        #expect(AppUpdateService.versionComponents("1.0.0-01") == nil)
+    }
+
     @Test func rejectsUntrustedReleaseURL() async {
         let service = makeService(
             tag: "v0.8.0",

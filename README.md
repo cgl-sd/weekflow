@@ -59,17 +59,18 @@ Weekflow 把“目标—任务—日期—投入—回顾”放在同一个数�
 ## 系统与数据
 
 - 支持 macOS 14 或更高版本。
-- 正式安装版的用户数据保存在本机 `~/Library/Application Support/Weekflow`。
+- 正式安装版启用 App Sandbox，用户数据保存在本机 `~/Library/Containers/com.weekflow.app/Data/Library/Application Support/Weekflow`；从早期非沙盒版本升级时由系统容器迁移规则接管原目录。
 - 开发阶段的 DEBUG 构建仅使用项目内 `01_workspace/.data` 保存业务数据，不会读写正式安装版数据；该目录已被 Git 忽略。
 - 开发版使用独立 Bundle ID `com.weekflow.app.debug`，正式安装版使用 `com.weekflow.app`，因此 macOS 管理的窗口与界面偏好也不会串用。
 - Release 安装包不包含用户数据；首次运行时才会在本机创建数据存储。
 - 当前不接入 iCloud、Apple Calendar、Reminders 或外部 AI API。
 - 计划日、每日总结和周边界以无时区业务日期保存，旅行或切换系统时区不会改写原安排。
 - SwiftData 数据库升级前会创建可恢复备份；损坏或迁移失败时应用进入只读保护，而不是用空数据覆盖原库。
+- 详细的数据与网络边界见 [隐私说明](PRIVACY.md)。
 
 ## 本地发布
 
-当前只使用本机生成 Release 安装包，不依赖 GitHub Actions 或远程发布流水线。生成的 DMG、ZIP 和 `SHA256SUMS` 位于项目的 `release/` 目录；该目录不会提交到 Git。
+当前只使用本机生成 Release 安装包，不依赖 GitHub Actions 或远程发布流水线。生成的 DMG、ZIP、`SHA256SUMS`、`BUILD-MANIFEST.json` 和发布说明位于项目的 `release/` 目录；该目录不会提交到 Git。正式发布验收与回滚矩阵见 [企业级发布验收基线](docs/ENTERPRISE_RELEASE_ACCEPTANCE.md) 和 [安装、升级与回滚](docs/ROLLBACK_AND_UPGRADE.md)。
 
 ## 开发构建
 
@@ -92,6 +93,8 @@ swift test
 ```
 
 使用本机钥匙串中的 Developer ID 和公证凭据生成正式 DMG 与 ZIP：
+
+正式发布前，当前提交必须无未提交修改，并创建与 `VERSION` 一致的精确 Git 标签（例如 `v0.8.0`）。
 
 ```bash
 WEEKFLOW_DEVELOPER_ID="Developer ID Application: …" \

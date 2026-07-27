@@ -134,36 +134,14 @@ struct AppUpdateService: Sendable {
     }
 
     static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
-        guard var left = versionComponents(lhs), var right = versionComponents(rhs) else {
+        guard let left = SemanticVersion(lhs), let right = SemanticVersion(rhs) else {
             return .orderedSame
         }
-        let count = max(left.count, right.count)
-        left.append(contentsOf: repeatElement(0, count: count - left.count))
-        right.append(contentsOf: repeatElement(0, count: count - right.count))
-        for (leftPart, rightPart) in zip(left, right) where leftPart != rightPart {
-            return leftPart < rightPart ? .orderedAscending : .orderedDescending
-        }
-        return .orderedSame
+        return left.compare(to: right)
     }
 
     static func versionComponents(_ version: String) -> [Int]? {
-        var normalized = version.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized.lowercased().hasPrefix("v") {
-            normalized.removeFirst()
-        }
-        guard !normalized.isEmpty, normalized.count <= 64 else { return nil }
-        let core = normalized.split(separator: "-", maxSplits: 1).first.map(String.init) ?? normalized
-        let parts = core.split(separator: ".", omittingEmptySubsequences: false)
-        guard (1...4).contains(parts.count) else { return nil }
-        var components: [Int] = []
-        for part in parts {
-            guard !part.isEmpty,
-                  part.allSatisfy(\.isNumber),
-                  let value = Int(part),
-                  value <= 999_999 else { return nil }
-            components.append(value)
-        }
-        return components
+        SemanticVersion(version)?.core
     }
 
     private static func defaultLoader() -> Loader {
@@ -211,6 +189,85 @@ struct AppUpdateService: Sendable {
             && url.path.hasPrefix("/cgl-sd/weekflow/releases/tag/")
             && url.query == nil
             && url.fragment == nil
+    }
+}
+
+private struct SemanticVersion {
+    let core: [Int]
+    let prerelease: [String]
+
+    init?(_ rawValue: String) {
+        var normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.lowercased().hasPrefix("v") { normalized.removeFirst() }
+        guard !normalized.isEmpty, normalized.count <= 64 else { return nil }
+
+        let withoutBuild = normalized.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false)
+        guard !withoutBuild[0].isEmpty,
+              withoutBuild.count == 1 || Self.validIdentifiers(String(withoutBuild[1]), allowLeadingZero: true)
+        else { return nil }
+        let versionAndPrerelease = withoutBuild[0].split(
+            separator: "-",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        let coreParts = versionAndPrerelease[0].split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...4).contains(coreParts.count) else { return nil }
+        var parsedCore: [Int] = []
+        for part in coreParts {
+            guard !part.isEmpty,
+                  part.allSatisfy(\.isNumber),
+                  (part.count == 1 || part.first != "0"),
+                  let value = Int(part),
+                  value <= 999_999 else { return nil }
+            parsedCore.append(value)
+        }
+        var parsedPrerelease: [String] = []
+        if versionAndPrerelease.count == 2 {
+            let value = String(versionAndPrerelease[1])
+            guard Self.validIdentifiers(value, allowLeadingZero: false) else { return nil }
+            parsedPrerelease = value.split(separator: ".").map(String.init)
+        }
+        core = parsedCore
+        prerelease = parsedPrerelease
+    }
+
+    func compare(to other: SemanticVersion) -> ComparisonResult {
+        let count = max(core.count, other.core.count)
+        for index in 0..<count {
+            let left = index < core.count ? core[index] : 0
+            let right = index < other.core.count ? other.core[index] : 0
+            if left != right { return left < right ? .orderedAscending : .orderedDescending }
+        }
+        if prerelease.isEmpty && other.prerelease.isEmpty { return .orderedSame }
+        if prerelease.isEmpty { return .orderedDescending }
+        if other.prerelease.isEmpty { return .orderedAscending }
+        for (left, right) in zip(prerelease, other.prerelease) where left != right {
+            let leftNumber = Int(left)
+            let rightNumber = Int(right)
+            switch (leftNumber, rightNumber) {
+            case let (.some(lhs), .some(rhs)):
+                return lhs < rhs ? .orderedAscending : .orderedDescending
+            case (.some, .none):
+                return .orderedAscending
+            case (.none, .some):
+                return .orderedDescending
+            case (.none, .none):
+                return left < right ? .orderedAscending : .orderedDescending
+            }
+        }
+        if prerelease.count == other.prerelease.count { return .orderedSame }
+        return prerelease.count < other.prerelease.count ? .orderedAscending : .orderedDescending
+    }
+
+    private static func validIdentifiers(_ value: String, allowLeadingZero: Bool) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard !parts.isEmpty else { return false }
+        return parts.allSatisfy { part in
+            guard !part.isEmpty,
+                  part.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+            else { return false }
+            return allowLeadingZero || !part.allSatisfy(\.isNumber) || part.count == 1 || part.first != "0"
+        }
     }
 }
 
