@@ -226,7 +226,7 @@ struct ChannelSettingsView: View {
                     .scrollIndicators(.automatic)
                     Spacer()
                 }
-                .allowsHitTesting(activeChannelPaletteID == nil && activeChannelIconID == nil)
+                .allowsHitTesting(activeChannelIconID == nil)
 
                 if let channelID = activeChannelPaletteID,
                    let anchor = channelPaletteAnchors[channelID] {
@@ -292,7 +292,7 @@ struct ChannelSettingsView: View {
                 interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: origin.x, y: origin.y)
+            .position(x: origin.x + panelSize.width / 2, y: origin.y + panelSize.height / 2)
             .contentShape(Rectangle())
             .zIndex(10)
         }
@@ -330,7 +330,7 @@ struct ChannelSettingsView: View {
                 }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: origin.x, y: origin.y)
+            .position(x: origin.x + panelSize.width / 2, y: origin.y + panelSize.height / 2)
             .contentShape(Rectangle())
             .zIndex(10)
         }
@@ -405,7 +405,7 @@ struct ChannelSettingsView: View {
                     .scrollIndicators(.automatic)
                     Spacer()
                 }
-                .allowsHitTesting(activeFocusPaletteID == nil && activeFocusIconID == nil)
+                .allowsHitTesting(activeFocusIconID == nil)
 
                 if let modeID = activeFocusPaletteID,
                    let anchor = focusPaletteAnchors[modeID] {
@@ -472,7 +472,7 @@ struct ChannelSettingsView: View {
                 interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: origin.x, y: origin.y)
+            .position(x: origin.x + panelSize.width / 2, y: origin.y + panelSize.height / 2)
             .contentShape(Rectangle())
             .zIndex(10)
         }
@@ -510,7 +510,7 @@ struct ChannelSettingsView: View {
                 }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: origin.x, y: origin.y)
+            .position(x: origin.x + panelSize.width / 2, y: origin.y + panelSize.height / 2)
         }
         .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
     }
@@ -893,11 +893,6 @@ struct GeneralSettingsView: View {
                     .background(SystemOverlayScroller())
                 }
                 .scrollIndicators(.automatic)
-                .allowsHitTesting(
-                    !isColorPalettePresented
-                        && !isThemeColorPalettePresented
-                        && !isChartPalettePresented
-                )
 
                 if isColorPalettePresented {
                     colorPaletteOverlay(in: proxy.size)
@@ -1325,7 +1320,7 @@ struct GeneralSettingsView: View {
                 interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: panelOrigin.x, y: panelOrigin.y)
+            .position(x: panelOrigin.x + panelSize.width / 2, y: panelOrigin.y + panelSize.height / 2)
             .contentShape(Rectangle())
             .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
@@ -1366,7 +1361,7 @@ struct GeneralSettingsView: View {
                 interactionChanged: { _ in }
             )
             .frame(width: panelSize.width, height: panelSize.height)
-            .offset(x: panelOrigin.x, y: panelOrigin.y)
+            .position(x: panelOrigin.x + panelSize.width / 2, y: panelOrigin.y + panelSize.height / 2)
             .contentShape(Rectangle())
             .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))

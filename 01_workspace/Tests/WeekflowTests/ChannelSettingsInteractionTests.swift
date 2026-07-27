@@ -225,6 +225,7 @@ import Testing
     #expect(settings.contains("SaturationBrightnessField"))
     #expect(settings.contains("HueSelectionTrack"))
     #expect(settings.contains("DragGesture(minimumDistance: 0)"))
+    #expect(settings.contains("highPriorityGesture"))
     #expect(settings.contains("interactionChanged(true)"))
     #expect(settings.contains("WindowOutsideClickMonitor("))
     #expect(settings.contains("protectedRects:"))
@@ -246,10 +247,9 @@ import Testing
     #expect(!settings.contains("RGBField"))
     #expect(settings.contains(".frame(width: availableSize.width, height: availableSize.height)"))
     #expect(settings.components(separatedBy: ".zIndex(10)").count - 1 >= 4)
-    #expect(settings.contains(".allowsHitTesting(activeChannelPaletteID == nil && activeChannelIconID == nil)"))
-    #expect(settings.contains(".allowsHitTesting(activeFocusPaletteID == nil && activeFocusIconID == nil)"))
-    #expect(settings.contains("!isColorPalettePresented"))
-    #expect(settings.contains("&& !isThemeColorPalettePresented"))
+    #expect(settings.contains(".allowsHitTesting(activeChannelIconID == nil)"))
+    #expect(settings.contains(".allowsHitTesting(activeFocusIconID == nil)"))
+    #expect(!settings.contains(".allowsHitTesting(\n                    !isColorPalettePresented"))
     #expect(settings.contains("preference.applyToApplication()"))
 }
 
@@ -264,11 +264,10 @@ import Testing
     )
     #expect(!source.contains(".simultaneousGesture("))
     #expect(source.components(separatedBy: "DragGesture(minimumDistance: 0)").count - 1 == 2)
+    #expect(source.components(separatedBy: "highPriorityGesture").count - 1 == 2)
     #expect(source.components(separatedBy: "interactionChanged(true)").count - 1 == 2)
     #expect(source.components(separatedBy: "interactionChanged(false)").count - 1 == 2)
     #expect(source.components(separatedBy: ".allowsHitTesting(false)").count >= 3)
-    #expect(source.contains("mouse events never fall"))
-    #expect(source.contains(".onTapGesture {}"))
 }
 
 @Test func settingsUseAnInWindowOutsideClickDismissLayer() throws {

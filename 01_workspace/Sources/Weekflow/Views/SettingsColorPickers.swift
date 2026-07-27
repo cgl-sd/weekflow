@@ -316,12 +316,6 @@ struct CompactColorPalettePanel: View {
 
     var body: some View {
         ZStack {
-            // Own the whole floating surface so mouse events never fall
-            // through to settings controls underneath the palette.
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {}
-
             VStack(spacing: 8) {
                 SaturationBrightnessField(
                     selection: selectionBinding,
@@ -392,7 +386,7 @@ struct SaturationBrightnessField: View {
 
                 Color.clear
                     .contentShape(Rectangle())
-                    .gesture(selectionGesture(in: proxy.size))
+                    .highPriorityGesture(selectionGesture(in: proxy.size))
             }
             .clipShape(WeekflowRoundedRectangle(cornerRadius: 8))
             .overlay {
@@ -400,7 +394,6 @@ struct SaturationBrightnessField: View {
                     .stroke(WeekflowPalette.borderStrong.opacity(0.72), lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .pointingHandCursor()
         }
         .accessibilityLabel("颜色明暗与饱和度")
     }
@@ -459,7 +452,7 @@ struct HueSelectionTrack: View {
 
                 Color.clear
                     .contentShape(Rectangle())
-                    .gesture(hueGesture(width: proxy.size.width))
+                    .highPriorityGesture(hueGesture(width: proxy.size.width))
             }
             .clipShape(WeekflowRoundedRectangle(cornerRadius: 7))
             .overlay {
@@ -467,7 +460,6 @@ struct HueSelectionTrack: View {
                     .stroke(WeekflowPalette.borderStrong.opacity(0.72), lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .pointingHandCursor()
         }
         .accessibilityLabel("色相")
     }
