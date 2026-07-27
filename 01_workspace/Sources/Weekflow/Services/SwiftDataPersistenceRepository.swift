@@ -27,6 +27,16 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         self.storeURL = storeURL
         businessCalendar = BusinessCalendar(calendar: calendar)
         self.faultInjector = faultInjector
+        let databaseDirectory = storeURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: databaseDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o700))],
+            ofItemAtPath: databaseDirectory.path
+        )
         let schema = Schema(versionedSchema: WeekflowSchemaV2.self)
         let configuration = ModelConfiguration(
             "Weekflow",
@@ -42,6 +52,16 @@ final class SwiftDataPersistenceRepository: WeekflowPersistenceRepository {
         )
         context = ModelContext(container)
         context.autosaveEnabled = false
+        for url in [
+            storeURL,
+            URL(fileURLWithPath: storeURL.path + "-wal"),
+            URL(fileURLWithPath: storeURL.path + "-shm")
+        ] where FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: url.path
+            )
+        }
         try recordSuccessfulSchemaMigrationIfNeeded()
         try pruneRedundantMigrationHistoryIfNeeded()
     }

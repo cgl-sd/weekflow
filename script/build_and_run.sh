@@ -54,6 +54,7 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_SOURCE="$PACKAGE_DIR/Resources/WeekflowIcon.icns"
 ENTITLEMENTS="$ROOT_DIR/script/Weekflow.entitlements"
+CONTAINER_MIGRATION="$ROOT_DIR/script/container-migration.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 run_release_checks() {
@@ -77,6 +78,9 @@ mkdir -p "$APP_MACOS" "$APP_CONTENTS/Resources"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 cp "$ICON_SOURCE" "$APP_CONTENTS/Resources/WeekflowIcon.icns"
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  cp "$CONTAINER_MIGRATION" "$APP_CONTENTS/Resources/container-migration.plist"
+fi
 
 /usr/libexec/PlistBuddy -c 'Clear dict' "$INFO_PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $APP_NAME" "$INFO_PLIST"
@@ -115,6 +119,22 @@ validate_bundle() {
 }
 validate_bundle
 
+validate_release_security_inputs() {
+  /usr/bin/plutil -lint "$ENTITLEMENTS" "$CONTAINER_MIGRATION" >/dev/null
+  local sandbox network user_files migration_source
+  sandbox="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$ENTITLEMENTS")"
+  network="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$ENTITLEMENTS")"
+  user_files="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.files.user-selected.read-write' "$ENTITLEMENTS")"
+  migration_source="$(/usr/libexec/PlistBuddy -c 'Print :Move:0' "$CONTAINER_MIGRATION")"
+  [[ "$sandbox" == "true" && "$network" == "true" && "$user_files" == "true" ]]
+  [[ "$migration_source" == '${ApplicationSupport}/Weekflow' ]]
+  [[ -f "$APP_CONTENTS/Resources/container-migration.plist" ]]
+}
+
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  validate_release_security_inputs
+fi
+
 # Debug builds read project-local data. Give the reconstructed app bundle a
 # stable code-signing identifier so macOS does not treat every rebuild as a
 # completely unrelated executable when remembering Files & Folders consent.
@@ -143,8 +163,12 @@ create_artifacts() {
 }
 
 package_preview() {
-  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+  /usr/bin/codesign --force --deep --options runtime \
+    --entitlements "$ENTITLEMENTS" --sign - "$APP_BUNDLE"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+  /usr/bin/codesign -d --entitlements :- "$APP_BUNDLE" 2>/dev/null \
+    | /usr/bin/plutil -extract 'com\.apple\.security\.app-sandbox' raw -o - - \
+    | /usr/bin/grep -qx true
   create_artifacts
 }
 

@@ -377,6 +377,10 @@ extension LocalStorage {
             } else {
                 try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
             }
+            try fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o700))],
+                ofItemAtPath: rootDirectory.path
+            )
 
             var createdDataDirectory = false
             if fileManager.fileExists(atPath: dataDirectory.path, isDirectory: &isDirectory) {
@@ -387,6 +391,10 @@ extension LocalStorage {
                 try fileManager.createDirectory(at: dataDirectory, withIntermediateDirectories: false)
                 createdDataDirectory = true
             }
+            try fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o700))],
+                ofItemAtPath: dataDirectory.path
+            )
 
             let probe = dataDirectory.appendingPathComponent(".weekflow-health-\(UUID().uuidString)")
             defer {

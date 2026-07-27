@@ -43,6 +43,29 @@ struct AppDataLocationTests {
         #expect(AppDataLocation.projectDataDirectory(startingAt: root) == nil)
     }
 
+    @Test("local persistence directories are private to the current user")
+    func localPersistenceDirectoriesUsePrivatePermissions() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: root.path
+        )
+
+        let storage = LocalStorage(baseDirectory: root)
+        #expect(storage.initializationError == nil)
+        try storage.savePlans([])
+
+        let rootPermissions = try #require(
+            FileManager.default.attributesOfItem(atPath: root.path)[.posixPermissions] as? NSNumber
+        )
+        let databasePermissions = try #require(
+            FileManager.default.attributesOfItem(atPath: storage.dataDirectoryURL.path)[.posixPermissions] as? NSNumber
+        )
+        #expect(rootPermissions.intValue & 0o777 == 0o700)
+        #expect(databasePermissions.intValue & 0o777 == 0o700)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Weekflow-AppDataLocationTests-\(UUID().uuidString)", isDirectory: true)
