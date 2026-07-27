@@ -28,20 +28,24 @@ struct WeeklyGoalTreeCard: View {
         return primaryTask
     }
 
+    private var displayableSubgoals: [GoalSubgoal] {
+        goal.displayableSubgoals
+    }
+
     private var totalEstimatedMinutes: Int {
-        guard !goal.subgoals.isEmpty else {
+        guard !displayableSubgoals.isEmpty else {
             return primaryTask?.estimatedMinutes ?? goal.plannedMinutes
         }
-        return goal.subgoals.reduce(0) { total, subgoal in
+        return displayableSubgoals.reduce(0) { total, subgoal in
             total + estimatedMinutes(for: subgoal)
         }
     }
 
     private var completionCountText: String {
-        if goal.subgoals.isEmpty {
+        if displayableSubgoals.isEmpty {
             return "\(goal.completedAt == nil ? 0 : 1)/1"
         }
-        return "\(goal.subgoals.filter(\.isCompleted).count)/\(goal.subgoals.count)"
+        return "\(displayableSubgoals.filter(\.isCompleted).count)/\(displayableSubgoals.count)"
     }
 
     private func estimatedMinutes(for subgoal: GoalSubgoal) -> Int {
@@ -85,7 +89,7 @@ struct WeeklyGoalTreeCard: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
-                    .padding(.bottom, goal.subgoals.isEmpty ? 10 : 6)
+                    .padding(.bottom, displayableSubgoals.isEmpty ? 10 : 6)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
@@ -106,7 +110,7 @@ struct WeeklyGoalTreeCard: View {
                 .help(goal.progress >= 1 ? "标记为未完成" : "标记为已完成")
             }
 
-            ForEach(goal.subgoals) { subgoal in
+            ForEach(displayableSubgoals) { subgoal in
                 ZStack(alignment: .leading) {
                     WeekflowButton(action: edit) {
                         HStack(spacing: 12) {
@@ -503,4 +507,3 @@ struct WeeklyTaskPoolDayRow: View {
         .accessibilityValue(selected ? "已选择" : "未选择")
     }
 }
-

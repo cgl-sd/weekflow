@@ -151,6 +151,12 @@ struct GoalSubgoal: Identifiable, Codable, Hashable {
     var detail = ""
     var channelID: String?
     var isCompleted = false
+
+    /// Empty editor drafts stay in the canonical goal data so the detail view
+    /// can reopen them, but they are not work items until they have a title.
+    var isDisplayable: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 enum RecurringFrequency: String, Codable, CaseIterable, Identifiable {
@@ -609,11 +615,14 @@ struct WeeklyGoal: Identifiable, Codable, Hashable {
     private var visibleTasks: [WeekTask] {
         tasks.filter { !$0.isArchived && !$0.isDeleted }
     }
+    var displayableSubgoals: [GoalSubgoal] {
+        subgoals.filter(\.isDisplayable)
+    }
     var completedTaskCount: Int { visibleTasks.filter { $0.status == .completed }.count }
     var progress: Double {
         if completedAt != nil { return 1 }
-        guard !subgoals.isEmpty else { return 0 }
-        return Double(subgoals.filter(\.isCompleted).count) / Double(subgoals.count)
+        guard !displayableSubgoals.isEmpty else { return 0 }
+        return Double(displayableSubgoals.filter(\.isCompleted).count) / Double(displayableSubgoals.count)
     }
     var overdueTasks: [WeekTask] { tasks.filter(\.isOverdue) }
     var plannedMinutes: Int {

@@ -396,6 +396,10 @@ struct WeeklyReviewGoalCard: View {
     @Bindable var store: WeekflowStore
     @State private var showsSubgoals = true
 
+    private var displayableSubgoals: [GoalSubgoal] {
+        goal.displayableSubgoals
+    }
+
     private var reviewTasks: [WeekTask] {
         goal.tasks.filter { !$0.isDeleted && ($0.status == .completed || !$0.isArchived) }
     }
@@ -440,11 +444,11 @@ struct WeeklyReviewGoalCard: View {
                 reviewValue("计划时间", plannedMinutes.hourMinuteClockText)
                 reviewValue("实际时间", actualMinutes.hourMinuteClockText)
                 Spacer()
-                if !goal.subgoals.isEmpty {
+                if !displayableSubgoals.isEmpty {
                     WeekflowButton {
                         showsSubgoals.toggle()
                     } label: {
-                        Label("\(goal.subgoals.count) 个子目标", systemImage: showsSubgoals ? "chevron.up" : "chevron.down")
+                        Label("\(displayableSubgoals.count) 个子目标", systemImage: showsSubgoals ? "chevron.up" : "chevron.down")
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
@@ -454,7 +458,7 @@ struct WeeklyReviewGoalCard: View {
             }
 
             if showsSubgoals {
-                ForEach(goal.subgoals) { subgoal in
+                ForEach(displayableSubgoals) { subgoal in
                     HStack(spacing: 8) {
                         Image(systemName: subgoal.isCompleted ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(subgoal.isCompleted ? WeekflowPalette.complete : WeekflowPalette.iconDefault)

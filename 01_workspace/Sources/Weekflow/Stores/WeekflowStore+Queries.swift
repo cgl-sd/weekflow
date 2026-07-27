@@ -76,9 +76,7 @@ extension WeekflowStore {
             return cached
         }
         let computed = activeGoals.flatMap { goal -> [(goal: WeeklyGoal, task: WeekTask)] in
-            let visibleSubgoals = goal.subgoals.filter {
-                !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
+            let visibleSubgoals = goal.displayableSubgoals
             if visibleSubgoals.isEmpty {
                 let primaryTask = goal.primaryTaskID.flatMap { primaryTaskID in
                     goal.tasks.first(where: {

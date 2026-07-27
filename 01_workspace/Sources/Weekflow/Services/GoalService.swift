@@ -185,7 +185,7 @@ struct GoalService: GoalServicing {
                 isCompleted: subtask.completed
             )
         }
-        let complete = !goal.subgoals.isEmpty && goal.subgoals.allSatisfy(\.isCompleted)
+        let complete = !goal.displayableSubgoals.isEmpty && goal.displayableSubgoals.allSatisfy(\.isCompleted)
         goal.completedAt = task.status == .completed || complete ? (goal.completedAt ?? now) : nil
         return project(goal, now: now)
     }
@@ -201,7 +201,7 @@ struct GoalService: GoalServicing {
         goal.subgoals[subgoalIndex].detail = task.description
         goal.subgoals[subgoalIndex].channelID = task.channelID
         goal.subgoals[subgoalIndex].isCompleted = task.status == .completed
-        let complete = !goal.subgoals.isEmpty && goal.subgoals.allSatisfy(\.isCompleted)
+        let complete = !goal.displayableSubgoals.isEmpty && goal.displayableSubgoals.allSatisfy(\.isCompleted)
         goal.completedAt = complete ? (goal.completedAt ?? now) : nil
         return project(goal, now: now)
     }
@@ -212,7 +212,7 @@ struct GoalService: GoalServicing {
             id: goal.id,
             title: goal.title,
             outcome: goal.outcome,
-            items: goal.subgoals.compactMap { item in
+            items: goal.displayableSubgoals.compactMap { item in
                 guard let task = projected.tasks.first(where: { $0.subgoalID == item.id && !$0.isDeleted }) else { return nil }
                 return DailyTaskProjection(
                     id: item.id,
@@ -231,8 +231,8 @@ struct GoalService: GoalServicing {
     func reviewProjection(_ goal: WeeklyGoal) -> ReviewProjection {
         ReviewProjection(
             goalID: goal.id,
-            completedItemCount: goal.subgoals.filter(\.isCompleted).count,
-            totalItemCount: goal.subgoals.count,
+            completedItemCount: goal.displayableSubgoals.filter(\.isCompleted).count,
+            totalItemCount: goal.displayableSubgoals.count,
             actualSeconds: goal.tasks.reduce(0) { $0 + $1.actualSeconds }
         )
     }
