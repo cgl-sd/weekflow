@@ -2,77 +2,62 @@
 
 **把一周真正想完成的事，变成每天可以执行的安排。**
 
-Weekflow 是一款原生 macOS 周计划与执行工具。它不从零散待办开始，而是先确定本周目标，再把子目标转化为任务池、分配到每天，并通过专注计时和回顾形成完整闭环。
+Weekflow 是一款原生 macOS 周计划与执行应用。它从本周目标出发，把目标拆成任务、安排到每天，再用专注计时和回顾形成完整闭环。
 
-![Weekflow 首页：按日期组织的任务执行视图](assets/readme/home.png)
+<p align="center">
+  <img src="assets/readme/home.png" alt="Weekflow 首页" width="720" />
+</p>
 
-## 支持什么
+## 主要功能
 
-- **周目标规划**：建立周目标和子目标，统一管理预计时间、完成数量、频道和进度。
-- **任务池与每日分配**：任务从周目标产生，可以手动安排、拖拽到具体日期，也可以自动分配并撤销本次结果。
-- **每日计划**：从任务池选择明日事项，设置工作截止时间，并在同一页面查看日历时间轴。
-- **日常执行**：按日期查看任务、安排开始时间、记录预计与实际投入，并通过 Channel 区分不同方向。
-- **专注模式**：提供禅定、学习和休闲等专注方式，将专注时间纳入每日和每周统计。
-- **每日与每周回顾**：查看任务完成、时间投入、频道分布和目标进度，决定归档或继续到下一周。
-- **归档与垃圾桶**：归档和删除使用独立生命周期，内容可以恢复，彻底删除需要再次确认。
-
-## 能形成什么效果
-
-Weekflow 把“目标—任务—日期—投入—回顾”放在同一个数据链路中。周计划的分配结果会进入每日计划；每日新增的计划外任务不会反向污染周目标；完成状态、实际时间和专注记录会自动进入回顾统计。
+- **周目标规划**：建立目标和子目标，管理预计时间、完成数量、频道与进度。
+- **任务池与每日分配**：手动拖拽或自动分配任务，并可撤销自动分配结果。
+- **每日计划**：选择明日事项、设置截止时间，并在时间轴中安排任务。
+- **专注执行**：记录任务实际投入，支持禅定、学习、休闲等专注模式。
+- **每日与每周回顾**：查看任务完成、时间投入、频道分布和目标进度。
+- **归档与恢复**：归档、垃圾桶和彻底删除具有明确边界，重要操作需要确认。
 
 <table>
   <tr>
-    <td><img src="assets/readme/weekly-planning.png" alt="周目标、任务池与每日分配" /></td>
-    <td><img src="assets/readme/daily-planning.png" alt="每日计划与日历时间轴" /></td>
+    <td width="50%" align="center">
+      <img src="assets/readme/weekly-planning.png" alt="周目标规划" width="440" />
+    </td>
+    <td width="50%" align="center">
+      <img src="assets/readme/daily-planning.png" alt="每日计划" width="440" />
+    </td>
   </tr>
   <tr>
-    <td align="center">周目标 → 任务池 → 每日分配</td>
-    <td align="center">选择明日事项并安排到时间轴</td>
+    <td align="center">周目标、任务池与每日分配</td>
+    <td align="center">每日计划与时间轴</td>
   </tr>
 </table>
 
-## 一个典型案例
+<p align="center">
+  <img src="assets/readme/focus-mode.png" alt="Weekflow 专注模式" width="600" />
+</p>
 
-假设本周目标是“完成研究汇报”：
+## 系统要求
 
-1. 建立“整理资料、形成框架、制作演示”三个子目标。
-2. Weekflow 为子目标生成任务池卡片，并记录各自预计时间。
-3. 把资料整理安排到周一、框架安排到周二、演示安排到周三；未安排任务可以自动分配到剩余日期。
-4. 每天在首页执行任务，用专注模式记录实际投入。
-5. 每日回顾当天结果；周末在每周回顾中查看计划与实际偏差，把未完成事项继续到下周或归档。
+- macOS 14 或更高版本
+- Apple Silicon 或 Intel Mac
+- 不需要登录账号，不依赖云端服务
 
-## 它的特点
+## 数据与隐私
 
-- **目标驱动**：任务不是孤立条目，每项周任务都能追溯到目标或子目标。
-- **两种周视图**：既可以使用分区视图管理内容，也可以用关系图理解目标、任务池与日期之间的联系。
-- **数据一致**：首页、每日计划、每周计划和回顾读取同一份任务记录，避免多处副本互相冲突。
-- **操作可恢复**：自动分配支持撤销；归档、垃圾桶与彻底删除拥有明确边界。
-- **原生与本地优先**：使用 SwiftUI 和 SwiftData 构建，数据保存在本机，不依赖外部服务。
-- **可自定义**：支持频道颜色、主题色、进度条颜色、图表配色和任务卡片显示偏好。
+Weekflow 本地优先，不包含广告、分析统计或遥测 SDK。
 
-## 专注模式
+- 正式版数据保存在 macOS 沙盒目录 `~/Library/Containers/com.weekflow.app/Data/Library/Application Support/Weekflow`。
+- DEBUG 构建只使用项目内的 `01_workspace/.data`，不会读取正式版数据；该目录不会提交到 Git。
+- 安装包和 Git 仓库均不包含用户数据，首次运行时才创建本地存储。
+- 只有用户主动点击“检查更新”时才连接 GitHub，且不会上传任务、计划或专注记录。
+- 当前不接入 iCloud、系统日历、提醒事项或 AI API。
+- 数据库升级前会生成可恢复备份；导入完整归档前会校验并备份现有数据。
 
-![Weekflow 专注模式](assets/readme/focus-mode.png)
+完整说明见 [隐私说明](PRIVACY.md)。
 
-专注记录会和任务实际时间、每日回顾及每周回顾联动，但不同专注模式仍保留各自独立的时长记录。
+## 开发
 
-## 系统与数据
-
-- 支持 macOS 14 或更高版本。
-- 正式安装版启用 App Sandbox，用户数据保存在本机 `~/Library/Containers/com.weekflow.app/Data/Library/Application Support/Weekflow`；从早期非沙盒版本升级时由系统容器迁移规则接管原目录。
-- 开发阶段的 DEBUG 构建仅使用项目内 `01_workspace/.data` 保存业务数据，不会读写正式安装版数据；该目录已被 Git 忽略。
-- 开发版使用独立 Bundle ID `com.weekflow.app.debug`，正式安装版使用 `com.weekflow.app`，因此 macOS 管理的窗口与界面偏好也不会串用。
-- Release 安装包不包含用户数据；首次运行时才会在本机创建数据存储。
-- 当前不接入 iCloud、Apple Calendar、Reminders 或外部 AI API。
-- 计划日、每日总结和周边界以无时区业务日期保存，旅行或切换系统时区不会改写原安排。
-- SwiftData 数据库升级前会创建可恢复备份；损坏或迁移失败时应用进入只读保护，而不是用空数据覆盖原库。
-- 详细的数据与网络边界见 [隐私说明](PRIVACY.md)。
-
-## 本地发布
-
-当前只使用本机生成 Release 安装包，不依赖 GitHub Actions 或远程发布流水线。生成的 DMG、ZIP、`SHA256SUMS`、`BUILD-MANIFEST.json` 和发布说明位于项目的 `release/` 目录；该目录不会提交到 Git。正式发布验收与回滚矩阵见 [企业级发布验收基线](docs/ENTERPRISE_RELEASE_ACCEPTANCE.md) 和 [安装、升级与回滚](docs/ROLLBACK_AND_UPGRADE.md)。
-
-## 开发构建
+Weekflow 使用 Swift、SwiftUI、SwiftData 和 macOS 系统框架构建，没有第三方 Swift Package 运行时依赖。
 
 ```bash
 cd 01_workspace
@@ -80,24 +65,32 @@ swift build
 swift test
 ```
 
-构建并启动应用：
+从仓库根目录构建并运行：
 
 ```bash
 ./script/build_and_run.sh
 ```
 
-生成仅供本机验证的 ad-hoc 预览 ZIP 与 DMG：
+执行发布前本地验证：
+
+```bash
+./script/build_and_run.sh --verify
+```
+
+生成仅供本机测试的 ad-hoc ZIP 和 DMG：
 
 ```bash
 ./script/build_and_run.sh --package
 ```
 
-使用本机钥匙串中的 Developer ID 和公证凭据生成正式 DMG 与 ZIP：
-
-正式发布前，当前提交必须无未提交修改，并创建与 `VERSION` 一致的精确 Git 标签（例如 `v0.8.0`）。
+正式公开发行还需要 Apple Developer ID 证书和公证凭据。发布脚本只允许从干净工作树和与 `VERSION` 完全一致的 Git 标签运行：
 
 ```bash
 WEEKFLOW_DEVELOPER_ID="Developer ID Application: …" \
 WEEKFLOW_NOTARY_PROFILE=weekflow-local \
 ./script/build_and_run.sh --release
 ```
+
+## 版本
+
+当前产品基线为 **Weekflow 1.0.0**。后续版本从此基线继续迭代；每版变化记录在 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
