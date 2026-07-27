@@ -704,6 +704,7 @@ import SwiftUI
     defer { try? FileManager.default.removeItem(at: folder) }
     let store = WeekflowStore.testing(storage: LocalStorage(baseDirectory: folder))
     let entry = try #require(store.todayTasks.first)
+    let originalCount = entry.task.subtasks.count
 
     let firstID = store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "")
     let secondID = store.addSubtask(goalID: entry.goal.id, taskID: entry.task.id, title: "")
@@ -712,7 +713,31 @@ import SwiftUI
         .tasks.first(where: { $0.id == entry.task.id }))
 
     #expect(firstID != secondID)
+    #expect(stored.subtasks.count == originalCount + 2)
     #expect(stored.subtasks.suffix(2).allSatisfy { $0.title.isEmpty })
+}
+
+@MainActor
+@Test func weeklyGoalDetailCanAppendABlankSubgoalDraft() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowBlankSubgoal-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let store = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    let goalID = store.addGoal(title: "发布新版本", outcome: "", endDate: .now)
+    let primaryTaskID = try #require(store.ensurePrimaryTask(forGoalID: goalID))
+
+    let subgoalID = store.addSubtask(
+        goalID: goalID,
+        taskID: primaryTaskID,
+        title: "",
+        persistImmediately: false
+    )
+    let goal = try #require(store.goals.first(where: { $0.id == goalID }))
+
+    #expect(goal.subgoals.contains(where: { $0.id == subgoalID && $0.title.isEmpty }))
+    #expect(goal.tasks
+        .first(where: { $0.id == primaryTaskID })?
+        .subtasks.contains(where: { $0.id == subgoalID && $0.title.isEmpty }) == true)
 }
 
 @MainActor

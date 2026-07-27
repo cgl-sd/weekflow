@@ -10,9 +10,7 @@ extension WeekflowStore {
         title: String,
         persistImmediately: Bool = true
     ) -> UUID {
-        // P1-5 fix: delegate to TaskService for title trimming + creation.
         let subtask = TaskSubtask(title: title.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard !subtask.title.isEmpty else { return subtask.id }
         updateTask(goalID: goalID, taskID: taskID, persistImmediately: persistImmediately) {
             $0.subtasks.append(subtask)
         }
