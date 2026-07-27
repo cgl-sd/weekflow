@@ -338,7 +338,11 @@ extension WeekflowStore {
                         session: session
                     )
                 },
-                commit: { applyPersistedBaseline(for: affectedGoalIDs) },
+                commit: {
+                    applyPersistedBaseline(
+                        writtenGoals: goals.filter { affectedGoalIDs.contains($0.id) }
+                    )
+                },
                 rollback: {
                     goals = persistedGoals
                     invalidateGoalIndex()
@@ -359,7 +363,6 @@ extension WeekflowStore {
         let currentGoals = goals.filter { affectedGoalIDs.contains($0.id) }
         let baselineGoals = persistedGoals.filter { affectedGoalIDs.contains($0.id) }
         let session = activeTaskTimer
-        let affected = affectedGoalIDs
         persistenceCoordinator.enqueue(
             domain: "goalsTimer",
             label: "任务与活动计时",
@@ -375,7 +378,13 @@ extension WeekflowStore {
                 )
             },
             commit: { [weak self] in
-                self?.applyPersistedBaseline(for: affected)
+                // Advance the baseline to exactly the snapshot that completed
+                // its database transaction. Reading `self.goals` here would be
+                // unsafe: the user may have made a newer, still-debounced edit
+                // while this write was in flight. Marking that newer value as
+                // persisted would make its later diff empty and lose it after
+                // restart.
+                self?.applyPersistedBaseline(writtenGoals: currentGoals)
             },
             rollback: { [weak self] in
                 self?.goals = self?.persistedGoals ?? []
@@ -387,11 +396,13 @@ extension WeekflowStore {
 
     /// Update the persisted baseline for just the given goals (their current in-memory
     /// state), leaving every other goal's baseline untouched.
-    private func applyPersistedBaseline(for goalIDs: Set<UUID>) {
-        for id in goalIDs {
-            guard let current = goals.first(where: { $0.id == id }),
-                  let index = persistedGoals.firstIndex(where: { $0.id == id }) else { continue }
-            persistedGoals[index] = current
+    private func applyPersistedBaseline(writtenGoals: [WeeklyGoal]) {
+        for writtenGoal in writtenGoals {
+            if let index = persistedGoals.firstIndex(where: { $0.id == writtenGoal.id }) {
+                persistedGoals[index] = writtenGoal
+            } else {
+                persistedGoals.append(writtenGoal)
+            }
         }
     }
 

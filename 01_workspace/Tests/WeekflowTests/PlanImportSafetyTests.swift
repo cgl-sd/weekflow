@@ -72,3 +72,44 @@ import Testing
     try expected.write(to: valid)
     #expect(try PlanImportService.readData(from: valid) == expected)
 }
+
+@MainActor
+@Test func exportedCrossYearPlanRoundTripsJanuaryTaskDate() throws {
+    let start = try #require(PlanImportService.parseDatePublic("2026-12-29"))
+    let end = try #require(PlanImportService.parseDatePublic("2027-01-04"))
+    let januaryTaskDate = try #require(PlanImportService.parseDatePublic("2027-01-02"))
+    let plan = WeeklyPlan(title: "跨年周", startDate: start, endDate: end)
+    let goal = WeeklyGoal(
+        title: "跨年目标",
+        outcome: "导入导出日期一致",
+        startDate: start,
+        endDate: end,
+        tasks: [WeekTask(title: "一月任务", plannedDate: januaryTaskDate, estimatedMinutes: 30)],
+        planID: plan.id
+    )
+    let data = try #require(PlanImportService.exportPlan(plan, goals: [goal]))
+    let payload: PlanImportService.PlanImportPayload
+    switch PlanImportService.parse(data: data) {
+    case let .success(value): payload = value
+    case let .failure(error):
+        Issue.record("跨年导出内容无法重新解析：\(error.localizedDescription)")
+        return
+    }
+
+    let fixture = WeekflowDevelopmentFixture(
+        identifier: "cross-year-import",
+        referenceDate: start,
+        goals: [],
+        channels: TaskChannel.defaults,
+        calendarEvents: []
+    )
+    let store = WeekflowStore(developmentFixture: fixture)
+    _ = PlanImportService.importIntoStore(payload, store: store, archiveExisting: false)
+    let importedDate = try #require(store.goals.first?.tasks.first?.plannedDate)
+
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    #expect(calendar.component(.year, from: importedDate) == 2027)
+    #expect(calendar.component(.month, from: importedDate) == 1)
+    #expect(calendar.component(.day, from: importedDate) == 2)
+}

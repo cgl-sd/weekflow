@@ -75,13 +75,8 @@ struct PlanImportService {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let shortDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.isLenient = false
         return f
     }()
 
@@ -151,7 +146,11 @@ struct PlanImportService {
                         return .failure(.invalidValue("任务时长必须在 1 到 \(maximumTaskMinutes) 分钟之间"))
                     }
                     if let day = task.day {
-                        guard let taskDate = parseShortDate(day, in: startDate) else {
+                        guard let taskDate = parseShortDate(
+                            day,
+                            from: startDate,
+                            through: endDate
+                        ) else {
                             return .failure(.dateParseFailed(day))
                         }
                         guard taskDate >= startDate && taskDate <= endDate else {
@@ -224,7 +223,9 @@ struct PlanImportService {
             let tasks = (goalPayload.tasks ?? []).enumerated().map { taskOffset, taskPayload in
                 WeekTask(
                     title: trimmed(taskPayload.title),
-                    plannedDate: taskPayload.day.flatMap { parseShortDate($0, in: startDate) },
+                    plannedDate: taskPayload.day.flatMap {
+                        parseShortDate($0, from: startDate, through: endDate)
+                    },
                     estimatedMinutes: taskPayload.minutes ?? 60,
                     sortOrder: taskOffset
                 )
@@ -266,17 +267,39 @@ struct PlanImportService {
         parseDate(string)
     }
 
-    /// Parses "MM-dd" format relative to the plan's start year.
-    private static func parseShortDate(_ string: String, in referenceDate: Date) -> Date? {
-        let calendar = Calendar.current
-        let year = calendar.component(.year, from: referenceDate)
-        if let date = shortDateFormatter.date(from: string) {
-            var components = calendar.dateComponents([.month, .day], from: date)
-            components.year = year
-            return calendar.date(from: components)
+    /// Parses an exported `MM-dd` task date inside the plan's actual range.
+    /// Both boundary years are considered so a Dec–Jan plan round-trips without
+    /// interpreting its January tasks as belonging to the previous January.
+    private static func parseShortDate(
+        _ string: String,
+        from rangeStart: Date,
+        through rangeEnd: Date
+    ) -> Date? {
+        if let fullDate = dateFormatter.date(from: string) {
+            return fullDate
         }
-        // Try full format as fallback
-        return dateFormatter.date(from: string)
+
+        let pieces = string.split(separator: "-", omittingEmptySubsequences: false)
+        guard pieces.count == 2,
+              let month = Int(pieces[0]),
+              let day = Int(pieces[1]) else { return nil }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .autoupdatingCurrent
+        let startDay = calendar.startOfDay(for: rangeStart)
+        let endDay = calendar.startOfDay(for: rangeEnd)
+        let startYear = calendar.component(.year, from: startDay)
+        let endYear = calendar.component(.year, from: endDay)
+        let candidateYears = startYear == endYear ? [startYear] : [startYear, endYear]
+
+        for year in candidateYears {
+            let components = DateComponents(year: year, month: month, day: day)
+            guard let candidate = calendar.date(from: components),
+                  calendar.dateComponents([.year, .month, .day], from: candidate) == components
+            else { continue }
+            if candidate >= startDay && candidate <= endDay { return candidate }
+        }
+        return nil
     }
 
     // MARK: - Export

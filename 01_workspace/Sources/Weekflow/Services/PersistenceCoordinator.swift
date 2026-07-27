@@ -105,6 +105,17 @@ final class PersistenceCoordinator: @unchecked Sendable {
         }
     }
 
+    /// Waits only for the writer that has already been claimed. Unlike
+    /// `flush()`, this remains safe while a sync barrier is raised: writes that
+    /// arrive during the wait stay pending behind the barrier and therefore do
+    /// not make this method spin forever. Termination cancels those pending
+    /// writes again before capturing its authoritative full snapshot.
+    func drainActiveWriter() async {
+        if let task = withState({ writerTask }) {
+            await task.value
+        }
+    }
+
     func cancelPending(for domain: String) {
         withState { cancelPendingLocked(for: domain) }
     }

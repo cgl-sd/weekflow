@@ -54,3 +54,45 @@ import Testing
     )
     #expect(withSubgoals.primaryTaskID == nil)
 }
+
+@MainActor
+@Test func indexedTaskEntryLookupAvoidsRebuildingLifecycleCollections() throws {
+    let day = SystemBusinessCalendar.current.date(
+        for: LocalDay(year: 2026, month: 7, day: 20)
+    )
+    let goals = (0..<5_000).map { index in
+        var goal = WeeklyGoal(
+            title: "目标 \(index)",
+            outcome: "索引查询",
+            startDate: day,
+            endDate: day,
+            tasks: [WeekTask(title: "任务 \(index)", estimatedMinutes: 10)]
+        )
+        if index.isMultiple(of: 3) { goal.archivedAt = .now }
+        if index.isMultiple(of: 5) { goal.deletedAt = .now }
+        return goal
+    }
+    let fixture = WeekflowDevelopmentFixture(
+        identifier: "indexed-task-entry",
+        referenceDate: day,
+        goals: goals,
+        channels: TaskChannel.defaults,
+        calendarEvents: []
+    )
+    let store = WeekflowStore(developmentFixture: fixture)
+    let targetGoal = goals[4_999]
+    let targetTask = try #require(targetGoal.tasks.first)
+
+    // Warm the goal index once, then repeated detail redraw lookups should only
+    // inspect the selected goal's own tasks, irrespective of lifecycle state.
+    _ = try #require(store.taskEntry(goalID: targetGoal.id, taskID: targetTask.id))
+    let clock = ContinuousClock()
+    let duration = clock.measure {
+        for _ in 0..<20_000 {
+            _ = store.taskEntry(goalID: targetGoal.id, taskID: targetTask.id)
+        }
+    }
+
+    #expect(duration < .seconds(2))
+    #expect(store.taskEntry(goalID: targetGoal.id, taskID: targetTask.id)?.task.title == targetTask.title)
+}

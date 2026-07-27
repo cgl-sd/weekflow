@@ -299,7 +299,11 @@ extension WeekflowStore {
         // Keep the barrier raised until every already-claimed write has finished
         // its disk operation. Otherwise a delayed stale operation could land after
         // the authoritative exit snapshot.
-        await persistenceCoordinator.flush()
+        await persistenceCoordinator.drainActiveWriter()
+        // UI callbacks may enqueue another write while the async drain is
+        // suspended. It cannot run behind the barrier, and the full snapshot
+        // below supersedes it, so remove it before final persistence.
+        persistenceCoordinator.cancelAllPending()
         defer { persistenceCoordinator.endSyncWrite() }
 
         let snapshot = makeApplicationSnapshot()

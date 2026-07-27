@@ -455,7 +455,16 @@ final class WeekflowStore {
             goals[goalIndex].tasks[taskIndex].sortOrder = sortOrder
         }
     }
-    func task(goalID: UUID, taskID: UUID) -> WeekTask? { goals.first(where: { $0.id == goalID })?.tasks.first(where: { $0.id == taskID }) }
+    func taskEntry(goalID: UUID, taskID: UUID) -> (goal: WeeklyGoal, task: WeekTask)? {
+        guard let goalIndex = goalIndex(for: goalID) else { return nil }
+        let goal = goals[goalIndex]
+        guard let task = goal.tasks.first(where: { $0.id == taskID }) else { return nil }
+        return (goal, task)
+    }
+
+    func task(goalID: UUID, taskID: UUID) -> WeekTask? {
+        taskEntry(goalID: goalID, taskID: taskID)?.task
+    }
     /// Non-blocking persist for interactive edits (P1-7). The diff is computed
     /// on the MainActor (fast in-memory scan of value types) and disk I/O is
     /// suspended via the PersistenceActor so the run loop stays responsive.

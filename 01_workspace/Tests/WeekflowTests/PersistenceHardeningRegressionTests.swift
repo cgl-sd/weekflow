@@ -5,6 +5,33 @@ import Testing
 
 private struct InjectedPersistenceFailure: Error {}
 
+private final class OneShotPersistenceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didBlock = false
+    private let arrived = DispatchSemaphore(value: 0)
+    private let release = DispatchSemaphore(value: 0)
+
+    func intercept(_ point: PersistenceFaultPoint) {
+        guard point == .afterTaskWrite else { return }
+        let shouldBlock = lock.withLock {
+            guard !didBlock else { return false }
+            didBlock = true
+            return true
+        }
+        guard shouldBlock else { return }
+        arrived.signal()
+        release.wait()
+    }
+
+    func waitForArrival(timeout: TimeInterval = 2) -> Bool {
+        arrived.wait(timeout: .now() + timeout) == .success
+    }
+
+    func resume() {
+        release.signal()
+    }
+}
+
 @Test func startupPreloadCacheIsConsumedOnlyOnce() throws {
     let goal = WeeklyGoal(
         title: "启动快照",
@@ -24,6 +51,69 @@ private struct InjectedPersistenceFailure: Error {}
     case .unavailable: break
     case .value: Issue.record("preload value was returned more than once")
     }
+}
+
+@MainActor
+@Test func timerWriteCommitDoesNotMarkNewerDebouncedEditAsPersisted() async throws {
+    let folder = hardeningFolder("TimerSnapshotBaseline")
+    defer { try? FileManager.default.removeItem(at: folder) }
+
+    var seed: WeekflowStore? = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    seed?.synchronousPersistence = true
+    let seedStore = try #require(seed)
+    let goalID = seedStore.addGoal(title: "计时基线", outcome: "", endDate: .now)
+    let taskID = try #require(seed?.goals.first(where: { $0.id == goalID })?.tasks.first?.id)
+    seed = nil
+
+    let gate = OneShotPersistenceGate()
+    let storage = LocalStorage(baseDirectory: folder) { point in
+        gate.intercept(point)
+    }
+    let store = WeekflowStore(storage: storage)
+    let goalIndex = try #require(store.goals.firstIndex(where: { $0.id == goalID }))
+    let taskIndex = try #require(store.goals[goalIndex].tasks.firstIndex(where: { $0.id == taskID }))
+
+    store.goals[goalIndex].tasks[taskIndex].notes = "已进入写盘的快照"
+    store.persistTaskAndActiveTimer(rollbackSession: nil, affectedGoalIDs: [goalID])
+    #expect(gate.waitForArrival())
+
+    // Simulate a text edit still inside its debounce window while the timer
+    // transaction is in flight. It has changed memory but has not enqueued its
+    // own write yet.
+    store.goals[goalIndex].tasks[taskIndex].notes = "写盘期间产生的较新编辑"
+    gate.resume()
+    await store.persistenceCoordinator.flush()
+
+    store.persist()
+    await store.persistenceCoordinator.flush()
+
+    let reloaded = WeekflowStore(storage: LocalStorage(baseDirectory: folder))
+    let reloadedNotes = reloaded.goals
+        .first(where: { $0.id == goalID })?.tasks
+        .first(where: { $0.id == taskID })?.notes
+    #expect(reloadedNotes == "写盘期间产生的较新编辑")
+}
+
+@Test func taskDetailDebouncedAutosaveRequestsDurablePersistence() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let source = try String(
+        contentsOf: packageRoot.appendingPathComponent(
+            "Sources/Weekflow/Views/TaskDetailActions.swift"
+        ),
+        encoding: .utf8
+    )
+    let saveStart = try #require(source.range(of: "func save(_ entry:"))
+    let saveEnd = try #require(source.range(
+        of: "func editedTaskSnapshot(",
+        range: saveStart.upperBound..<source.endIndex
+    ))
+    let saveSection = source[saveStart.lowerBound..<saveEnd.lowerBound]
+
+    #expect(saveSection.contains("persistImmediately: true"))
+    #expect(!saveSection.contains("persistImmediately: false"))
 }
 
 @MainActor

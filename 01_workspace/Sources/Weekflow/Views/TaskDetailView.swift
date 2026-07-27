@@ -37,17 +37,10 @@ struct TaskDetailView: View {
     @State var isClosing = false
 
     var entry: (goal: WeeklyGoal, task: WeekTask)? {
-        store.activeTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
-            ?? store.archivedTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
-            ?? store.deletedTasks.first { $0.goal.id == target.goalID && $0.task.id == target.taskID }
-            ?? directEntry
-    }
-
-    /// Fallback: find task directly in goals (covers archived/deleted goals whose tasks aren't individually archived).
-    private var directEntry: (goal: WeeklyGoal, task: WeekTask)? {
-        guard let goal = store.goals.first(where: { $0.id == target.goalID }),
-              let task = goal.tasks.first(where: { $0.id == target.taskID }) else { return nil }
-        return (goal, task)
+        // The detail view redraws on every draft-field change. Resolve through
+        // the Store's goal index instead of rebuilding and sorting the active,
+        // archived and deleted task collections on each redraw.
+        store.taskEntry(goalID: target.goalID, taskID: target.taskID)
     }
 
     init(

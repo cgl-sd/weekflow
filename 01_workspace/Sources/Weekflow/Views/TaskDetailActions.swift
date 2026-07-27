@@ -536,7 +536,11 @@ extension TaskDetailView {
             original: initialTask,
             goalID: entry.goal.id,
             recordChanges: false,
-            persistImmediately: false
+            // A debounced autosave must reach durable storage, not merely the
+            // Store's in-memory model. The editing-session history remains
+            // consolidated when the detail closes, but a crash while it is
+            // open must not discard the latest quiet-period edit.
+            persistImmediately: true
         )
         guard !records.isEmpty else { return }
         self.initialTask = store.goals

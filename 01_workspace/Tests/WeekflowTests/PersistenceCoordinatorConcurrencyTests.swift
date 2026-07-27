@@ -232,6 +232,40 @@ private struct TestWriteFailure: Error {}
 }
 
 @MainActor
+@Test func terminationDrainDoesNotWaitForeverForWritesQueuedBehindBarrier() async {
+    let coordinator = PersistenceCoordinator()
+    let recorder = ConcurrencyRecorder()
+    let gate = PhaseGate()
+
+    coordinator.enqueue(
+        domain: "claimed",
+        label: "已开始写入",
+        operation: { await gate.arriveAndWait() },
+        commit: { recorder.commits.append("claimed") },
+        rollback: {}
+    )
+    await gate.waitForArrival()
+    coordinator.beginSyncWrite()
+    coordinator.enqueue(
+        domain: "late-ui-edit",
+        label: "退出等待期间的新编辑",
+        operation: {},
+        commit: { recorder.commits.append("late") },
+        rollback: {}
+    )
+
+    await gate.release()
+    await coordinator.drainActiveWriter()
+    coordinator.cancelAllPending()
+    coordinator.endSyncWrite()
+    await coordinator.flush()
+
+    // The termination barrier invalidates the claimed write's callback and the
+    // late pending write is superseded by the final application snapshot.
+    #expect(recorder.commits.isEmpty)
+}
+
+@MainActor
 @Test func blockingDrainWaitsForInvalidatedDiskOperationWithoutMainActorDeadlock() {
     let coordinator = PersistenceCoordinator()
     let recorder = ConcurrencyRecorder()
