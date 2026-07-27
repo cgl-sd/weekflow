@@ -4,15 +4,24 @@ import Testing
 
 struct AppUpdateServiceTests {
     @Test func reportsNewerRelease() async throws {
-        let service = makeService(tag: "v0.8.0")
+        let service = makeService(tags: ["v0.7.1", "v0.8.0"])
         let result = try await service.check(currentVersion: "0.7.1")
 
         #expect(result.isUpdateAvailable)
         #expect(result.latestVersion == "v0.8.0")
     }
 
+    @Test func unifiedReleaseFeedIncludesGitHubPrereleasesAndSelectsHighestVersion() async throws {
+        let service = makeService(tags: ["v0.7.1", "v1.0.1", "v1.0.0"])
+        let result = try await service.check(currentVersion: "1.0.0")
+
+        #expect(result.isUpdateAvailable)
+        #expect(result.latestVersion == "v1.0.1")
+        #expect(result.releaseURL.absoluteString == "https://github.com/cgl-sd/weekflow/releases/tag/v1.0.1")
+    }
+
     @Test func treatsEquivalentVersionsAsCurrent() async throws {
-        let service = makeService(tag: "v0.7.1")
+        let service = makeService(tags: ["v0.7.1"])
         let result = try await service.check(currentVersion: "0.7.1")
 
         #expect(!result.isUpdateAvailable)
@@ -28,10 +37,9 @@ struct AppUpdateServiceTests {
     }
 
     @Test func rejectsUntrustedReleaseURL() async {
-        let service = makeService(
-            tag: "v0.8.0",
-            releaseURL: "https://example.com/cgl-sd/weekflow/releases/tag/v0.8.0"
-        )
+        let service = makeService(releaseURLs: [
+            "https://example.com/cgl-sd/weekflow/releases/tag/v0.8.0"
+        ])
 
         await #expect(throws: AppUpdateError.invalidRelease) {
             try await service.check(currentVersion: "0.7.1")
@@ -91,49 +99,50 @@ struct AppUpdateServiceTests {
         }
     }
 
-    @Test func fallsBackToTrustedReleasePageWhenAPIRateLimited() async throws {
+    @Test func rejectsUntrustedFeedRedirect() async {
         let service = AppUpdateService { request in
-            if request.url == AppUpdateService.latestReleaseEndpoint {
-                let response = HTTPURLResponse(
-                    url: request.url!,
-                    statusCode: 403,
-                    httpVersion: nil,
-                    headerFields: nil
-                )!
-                return (Data(), response)
-            }
-            #expect(request.url == AppUpdateService.latestReleasePage)
-            #expect(request.httpMethod == "HEAD")
-            let releaseURL = URL(string: "https://github.com/cgl-sd/weekflow/releases/tag/v0.8.0")!
             let response = HTTPURLResponse(
-                url: releaseURL,
+                url: URL(string: "https://example.com/releases.atom")!,
                 statusCode: 200,
                 httpVersion: nil,
                 headerFields: nil
             )!
-            return (Data(), response)
+            return (Data(Self.feed(releaseURLs: [
+                "https://github.com/cgl-sd/weekflow/releases/tag/v1.0.1"
+            ]).utf8), response)
         }
 
-        let result = try await service.check(currentVersion: "0.7.1")
-        #expect(result.isUpdateAvailable)
-        #expect(result.latestVersion == "v0.8.0")
+        await #expect(throws: AppUpdateError.invalidResponse) {
+            try await service.check(currentVersion: "1.0.0")
+        }
     }
 
     private func makeService(
-        tag: String,
-        releaseURL: String = "https://github.com/cgl-sd/weekflow/releases/tag/v0.8.0"
+        tags: [String]
     ) -> AppUpdateService {
+        makeService(releaseURLs: tags.map {
+            "https://github.com/cgl-sd/weekflow/releases/tag/\($0)"
+        })
+    }
+
+    private func makeService(releaseURLs: [String]) -> AppUpdateService {
         AppUpdateService { request in
-            let body = """
-            {"tag_name":"\(tag)","html_url":"\(releaseURL)"}
-            """
+            #expect(request.url == AppUpdateService.releaseFeedEndpoint)
+            #expect(request.httpMethod == "GET")
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 200,
                 httpVersion: nil,
-                headerFields: ["Content-Type": "application/json"]
+                headerFields: ["Content-Type": "application/atom+xml"]
             )!
-            return (Data(body.utf8), response)
+            return (Data(Self.feed(releaseURLs: releaseURLs).utf8), response)
         }
+    }
+
+    private static func feed(releaseURLs: [String]) -> String {
+        let entries = releaseURLs.map { url in
+            "<entry><link rel=\"alternate\" href=\"\(url)\"/></entry>"
+        }.joined()
+        return "<?xml version=\"1.0\"?><feed>\(entries)</feed>"
     }
 }

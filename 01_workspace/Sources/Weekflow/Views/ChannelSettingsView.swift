@@ -1230,7 +1230,7 @@ struct GeneralSettingsView: View {
                 let result = try await AppUpdateService().check(currentVersion: currentVersion)
                 updateCheckState = result.isUpdateAvailable
                     ? .updateAvailable(version: result.latestVersion, releaseURL: result.releaseURL)
-                    : .upToDate(version: result.latestVersion)
+                    : .upToDate(version: result.currentVersion)
             } catch is CancellationError {
                 updateCheckState = .idle
             } catch {

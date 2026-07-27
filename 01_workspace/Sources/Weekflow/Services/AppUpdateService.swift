@@ -36,11 +36,8 @@ enum AppUpdateError: LocalizedError, Equatable {
 struct AppUpdateService: Sendable {
     typealias Loader = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
-    static let latestReleaseEndpoint = URL(
-        string: "https://api.github.com/repos/cgl-sd/weekflow/releases/latest"
-    )!
-    static let latestReleasePage = URL(
-        string: "https://github.com/cgl-sd/weekflow/releases/latest"
+    static let releaseFeedEndpoint = URL(
+        string: "https://github.com/cgl-sd/weekflow/releases.atom"
     )!
     static let maximumResponseBytes = 64 * 1_024
 
@@ -56,26 +53,22 @@ struct AppUpdateService: Sendable {
         }
 
         var request = URLRequest(
-            url: Self.latestReleaseEndpoint,
+            url: Self.releaseFeedEndpoint,
             cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: 12
         )
         request.httpMethod = "GET"
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("application/atom+xml", forHTTPHeaderField: "Accept")
         request.setValue("Weekflow-Update-Checker", forHTTPHeaderField: "User-Agent")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
 
         let (data, response) = try await load(request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AppUpdateError.invalidResponse
         }
-        if httpResponse.statusCode == 403 || httpResponse.statusCode == 429 {
-            return try await checkReleasePage(currentVersion: currentVersion)
-        }
         guard httpResponse.statusCode == 200 else {
             throw AppUpdateError.requestFailed(httpResponse.statusCode)
         }
-        guard Self.isTrustedAPIResponse(httpResponse.url) else {
+        guard Self.isTrustedFeedResponse(httpResponse.url) else {
             throw AppUpdateError.invalidResponse
         }
         if let declaredLength = httpResponse.value(forHTTPHeaderField: "Content-Length"),
@@ -87,49 +80,19 @@ struct AppUpdateService: Sendable {
             throw AppUpdateError.responseTooLarge
         }
 
-        let release: LatestRelease
-        do {
-            release = try JSONDecoder().decode(LatestRelease.self, from: data)
-        } catch {
-            throw AppUpdateError.invalidRelease
+        let releases = ReleaseFeedParser.releases(in: data).filter {
+            Self.versionComponents($0.tagName) != nil
+                && Self.isTrustedReleaseURL($0.htmlURL)
         }
-        guard Self.versionComponents(release.tagName) != nil,
-              Self.isTrustedReleaseURL(release.htmlURL) else {
-            throw AppUpdateError.invalidRelease
+        let release = releases.max {
+            Self.compareVersions($0.tagName, $1.tagName) == .orderedAscending
         }
+        guard let release else { throw AppUpdateError.invalidRelease }
 
         return AppUpdateResult(
             currentVersion: currentVersion,
             latestVersion: release.tagName,
             releaseURL: release.htmlURL
-        )
-    }
-
-    private func checkReleasePage(currentVersion: String) async throws -> AppUpdateResult {
-        var request = URLRequest(
-            url: Self.latestReleasePage,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: 12
-        )
-        request.httpMethod = "HEAD"
-        request.setValue("Weekflow-Update-Checker", forHTTPHeaderField: "User-Agent")
-        let (_, response) = try await load(request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AppUpdateError.invalidResponse
-        }
-        guard httpResponse.statusCode == 200 else {
-            throw AppUpdateError.requestFailed(httpResponse.statusCode)
-        }
-        guard let releaseURL = httpResponse.url,
-              Self.isTrustedReleaseURL(releaseURL),
-              let latestVersion = releaseURL.pathComponents.last,
-              Self.versionComponents(latestVersion) != nil else {
-            throw AppUpdateError.invalidRelease
-        }
-        return AppUpdateResult(
-            currentVersion: currentVersion,
-            latestVersion: latestVersion,
-            releaseURL: releaseURL
         )
     }
 
@@ -176,11 +139,13 @@ struct AppUpdateService: Sendable {
         return data
     }
 
-    private static func isTrustedAPIResponse(_ url: URL?) -> Bool {
+    private static func isTrustedFeedResponse(_ url: URL?) -> Bool {
         guard let url else { return false }
         return url.scheme?.lowercased() == "https"
-            && url.host?.lowercased() == "api.github.com"
-            && url.path == "/repos/cgl-sd/weekflow/releases/latest"
+            && url.host?.lowercased() == "github.com"
+            && url.path == "/cgl-sd/weekflow/releases.atom"
+            && url.query == nil
+            && url.fragment == nil
     }
 
     private static func isTrustedReleaseURL(_ url: URL) -> Bool {
@@ -271,13 +236,57 @@ private struct SemanticVersion {
     }
 }
 
-private struct LatestRelease: Decodable {
+private struct LatestRelease {
     let tagName: String
     let htmlURL: URL
+}
 
-    enum CodingKeys: String, CodingKey {
-        case tagName = "tag_name"
-        case htmlURL = "html_url"
+private final class ReleaseFeedParser: NSObject, XMLParserDelegate {
+    private var isInsideEntry = false
+    private var entryURL: URL?
+    private(set) var parsedReleases: [LatestRelease] = []
+
+    static func releases(in data: Data) -> [LatestRelease] {
+        let delegate = ReleaseFeedParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse() else { return [] }
+        return delegate.parsedReleases
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        if elementName == "entry" {
+            isInsideEntry = true
+            entryURL = nil
+        } else if isInsideEntry,
+                  elementName == "link",
+                  attributeDict["rel"] == "alternate",
+                  let href = attributeDict["href"] {
+            entryURL = URL(string: href)
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        guard elementName == "entry" else { return }
+        if let entryURL,
+           let tagName = entryURL.pathComponents.last,
+           !tagName.isEmpty {
+            parsedReleases.append(LatestRelease(tagName: tagName, htmlURL: entryURL))
+        }
+        isInsideEntry = false
+        entryURL = nil
     }
 }
 
