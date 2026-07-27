@@ -161,6 +161,13 @@ extension LocalStorage {
         try await writeAsync { try $0.saveApplicationSnapshot(snapshot, kind: kind) }
     }
 
+    func makeBackupAsync() async throws {
+        let service = backupService
+        _ = try await Task.detached(priority: .utility) {
+            try service.makeBackup()
+        }.value
+    }
+
     func saveDailyPlanAndCalendarEventsAsync(
         states: [DailyPlanningState],
         events: [CalendarEvent]

@@ -63,7 +63,10 @@ struct LocalStorage: @unchecked Sendable {
     /// 应在创建 Store 之前调用——此时数据库处于静止状态（上一会话关闭时已做 WAL
     /// 检查点），备份只读取主库文件，不会干扰任何打开中的连接，也不会与并发写入竞争。
     static func backupDefaultDatabase(fileManager: FileManager = .default) {
-        let folder = AppDataLocation.systemDirectory(fileManager: fileManager)
+        // DEBUG must never inspect or mutate an installed Release build's data.
+        // `runtimeDirectory` resolves project-local `.data` in DEBUG and
+        // Application Support only in Release.
+        let folder = AppDataLocation.runtimeDirectory(fileManager: fileManager)
         let databaseURL = folder
             .appendingPathComponent("Database", isDirectory: true)
             .appendingPathComponent("Weekflow.store")
@@ -91,6 +94,10 @@ struct LocalStorage: @unchecked Sendable {
     /// 在成功加载后调用，保存一份当前良好状态的备份（轮转保留最近 N 份）。
     func makeBackup() throws {
         try backupService.makeBackup()
+    }
+
+    func backupStatus() -> DatabaseBackupStatus {
+        backupService.status()
     }
 
     /// 从最近一份良好备份恢复（库损坏时的兜底）。无备份返回 false。

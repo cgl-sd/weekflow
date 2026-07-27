@@ -40,6 +40,80 @@ extension WeekflowStore {
         try await storage.restoreBackupForRecovery(from: backup)
     }
 
+    func databaseBackupStatus() -> DatabaseBackupStatus {
+        storage.backupStatus()
+    }
+
+    /// Creates a verified backup only after all writers have stopped and the live
+    /// SwiftData context has been released. Normal persistence resumes regardless
+    /// of whether this best-effort backup succeeds.
+    func createVerifiedBackup() async throws {
+        let wasEnabled = persistenceEnabled
+        let previousIssue = persistenceIssue
+        await prepareForStorageRecovery()
+        defer {
+            if wasEnabled {
+                persistenceEnabled = true
+                persistenceIssue = previousIssue
+                persistenceCoordinator.reenable()
+            }
+        }
+        try await storage.makeBackupAsync()
+    }
+
+    func exportFullDataArchive(to url: URL) throws {
+        try FullDataArchiveService().write(snapshot: makeApplicationSnapshot(), to: url)
+    }
+
+    /// Imports one validated, complete application snapshot. The existing store is
+    /// backed up first, and the replacement is committed as one SwiftData
+    /// transaction before any in-memory collection changes.
+    func importFullDataArchive(from url: URL) async throws {
+        let archiveService = FullDataArchiveService()
+        let snapshot = try await Task.detached(priority: .userInitiated) {
+            try archiveService.read(from: url)
+        }.value
+
+        await prepareForStorageRecovery()
+        do {
+            try await storage.makeBackupAsync()
+            try await storage.saveApplicationSnapshotAsync(snapshot)
+        } catch {
+            persistenceIssue = "完整数据导入失败，本次会话已暂停保存。\n\n\(error.localizedDescription)"
+            persistenceEnabled = false
+            persistenceCoordinator.disable(reason: persistenceIssue)
+            throw error
+        }
+
+        goals = snapshot.goals
+        plans = snapshot.plans
+        channels = snapshot.channels
+        calendarEvents = snapshot.calendarEvents
+        dailyPlanningStates = snapshot.dailyPlanningStates
+        focusRecords = snapshot.focusRecords
+        dailySummaries = snapshot.dailySummaries
+        activeTaskTimer = nil
+        pendingTimerRecovery = snapshot.activeTimerSession.map {
+            InterruptedTaskTimerRecovery(
+                session: $0,
+                elapsedSeconds: max(Int(Date.now.timeIntervalSince($0.startedAt)), 0)
+            )
+        }
+        automaticDistributionChanges = []
+        selectedGoalID = goals.first?.id
+        persistedGoals = goals
+        persistedPlans = plans
+        persistedChannels = channels
+        persistedCalendarEvents = calendarEvents
+        persistedDailyPlanningStates = dailyPlanningStates
+        persistedFocusRecords = focusRecords
+        persistedDailySummaries = dailySummaries
+        invalidateGoalIndex()
+        persistenceIssue = nil
+        persistenceEnabled = true
+        persistenceCoordinator.reenable()
+    }
+
     func persist(kind: PersistenceMutationKind = .userEdit) {
         if synchronousPersistence {
             _ = persistSync(kind: kind)

@@ -1,6 +1,20 @@
 import Foundation
 import SQLite3
 
+struct DatabaseBackupStatus: Codable, Equatable, Sendable {
+    var lastAttemptAt: Date?
+    var lastSuccessAt: Date?
+    var latestFailure: String?
+    var backupCount: Int
+
+    static let empty = DatabaseBackupStatus(
+        lastAttemptAt: nil,
+        lastSuccessAt: nil,
+        latestFailure: nil,
+        backupCount: 0
+    )
+}
+
 /// Creates validated SQLite snapshots and restores them without discarding the
 /// current store before a replacement is known to be usable.
 struct DatabaseBackupService: @unchecked Sendable {
@@ -28,6 +42,7 @@ struct DatabaseBackupService: @unchecked Sendable {
     private let fileManager: FileManager
 
     private static let completionMarkerName = "complete"
+    private static let statusFileName = "backup-status.json"
 
     init(
         databaseURL: URL,
@@ -51,6 +66,9 @@ struct DatabaseBackupService: @unchecked Sendable {
     private var applicationDataDirectory: URL {
         databaseURL.deletingLastPathComponent().deletingLastPathComponent()
     }
+    private var statusURL: URL {
+        applicationDataDirectory.appendingPathComponent(Self.statusFileName)
+    }
     private var legacyPlansURL: URL {
         applicationDataDirectory.appendingPathComponent("plans.json")
     }
@@ -60,38 +78,81 @@ struct DatabaseBackupService: @unchecked Sendable {
     @discardableResult
     func makeBackup(timestamp: Date = .now) throws -> URL? {
         guard fileManager.fileExists(atPath: databaseURL.path) else { return nil }
-        try createPrivateDirectory(at: backupsDirectory)
-        try checkpointWAL()
-
-        let temporary = backupsDirectory.appendingPathComponent(
-            ".partial-\(UUID().uuidString)",
-            isDirectory: true
-        )
         do {
+            try createPrivateDirectory(at: backupsDirectory)
+            try checkpointWAL()
+            let temporary = backupsDirectory.appendingPathComponent(
+                ".partial-\(UUID().uuidString)",
+                isDirectory: true
+            )
             try createPrivateDirectory(at: temporary)
-            let stagedStore = temporary.appendingPathComponent(databaseURL.lastPathComponent)
-            try fileManager.copyItem(at: databaseURL, to: stagedStore)
-            try validateSQLiteStore(at: stagedStore)
-            try setPrivateFilePermissions(at: stagedStore)
+            do {
+                let stagedStore = temporary.appendingPathComponent(databaseURL.lastPathComponent)
+                try fileManager.copyItem(at: databaseURL, to: stagedStore)
+                try validateSQLiteStore(at: stagedStore)
+                try setPrivateFilePermissions(at: stagedStore)
 
-            if fileManager.fileExists(atPath: legacyPlansURL.path) {
-                let stagedPlans = temporary.appendingPathComponent(legacyPlansURL.lastPathComponent)
-                try fileManager.copyItem(at: legacyPlansURL, to: stagedPlans)
-                try setPrivateFilePermissions(at: stagedPlans)
+                if fileManager.fileExists(atPath: legacyPlansURL.path) {
+                    let stagedPlans = temporary.appendingPathComponent(legacyPlansURL.lastPathComponent)
+                    try fileManager.copyItem(at: legacyPlansURL, to: stagedPlans)
+                    try setPrivateFilePermissions(at: stagedPlans)
+                }
+
+                let marker = temporary.appendingPathComponent(Self.completionMarkerName)
+                let manifest = "formatVersion=1\ncreatedAt=\(ISO8601DateFormatter().string(from: timestamp))\n"
+                try Data(manifest.utf8).write(to: marker, options: .atomic)
+                try setPrivateFilePermissions(at: marker)
+
+                let backupDirectory = nextBackupDirectory(timestamp: timestamp)
+                try fileManager.moveItem(at: temporary, to: backupDirectory)
+                try rotate()
+                recordStatus(
+                    DatabaseBackupStatus(
+                        lastAttemptAt: timestamp,
+                        lastSuccessAt: timestamp,
+                        latestFailure: nil,
+                        backupCount: backupCount()
+                    )
+                )
+                return backupDirectory
+            } catch {
+                try? fileManager.removeItem(at: temporary)
+                throw error
             }
-
-            let marker = temporary.appendingPathComponent(Self.completionMarkerName)
-            let manifest = "formatVersion=1\ncreatedAt=\(ISO8601DateFormatter().string(from: timestamp))\n"
-            try Data(manifest.utf8).write(to: marker, options: .atomic)
-            try setPrivateFilePermissions(at: marker)
-
-            let backupDirectory = nextBackupDirectory(timestamp: timestamp)
-            try fileManager.moveItem(at: temporary, to: backupDirectory)
-            try rotate()
-            return backupDirectory
         } catch {
-            try? fileManager.removeItem(at: temporary)
+            let previous = status()
+            recordStatus(
+                DatabaseBackupStatus(
+                    lastAttemptAt: timestamp,
+                    lastSuccessAt: previous.lastSuccessAt,
+                    latestFailure: error.localizedDescription,
+                    backupCount: backupCount()
+                )
+            )
             throw error
+        }
+    }
+
+    func status() -> DatabaseBackupStatus {
+        guard let data = try? Data(contentsOf: statusURL),
+              var decoded = try? JSONDecoder.weekflow.decode(DatabaseBackupStatus.self, from: data)
+        else {
+            var fallback = DatabaseBackupStatus.empty
+            fallback.backupCount = backupCount()
+            return fallback
+        }
+        decoded.backupCount = backupCount()
+        return decoded
+    }
+
+    private func recordStatus(_ status: DatabaseBackupStatus) {
+        do {
+            try createPrivateDirectory(at: applicationDataDirectory)
+            let data = try JSONEncoder.weekflow.encode(status)
+            try data.write(to: statusURL, options: .atomic)
+            try setPrivateFilePermissions(at: statusURL)
+        } catch {
+            NSLog("[Weekflow] 无法保存备份状态: \(error.localizedDescription)")
         }
     }
 

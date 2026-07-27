@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
     case general
@@ -95,6 +97,7 @@ struct ChannelSettingsView: View {
                     switch selectedSection {
                     case .general:
                         GeneralSettingsView(
+                            store: store,
                             isColorPalettePresented: $isGeneralColorPalettePresented,
                             isThemeColorPalettePresented: $isGeneralThemePalettePresented,
                             isChartPalettePresented: $isGeneralChartPalettePresented
@@ -606,6 +609,7 @@ enum ChannelSettingsDraftID {
 struct GeneralSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Bindable var store: WeekflowStore
     @Binding var isColorPalettePresented: Bool
     @Binding var isThemeColorPalettePresented: Bool
     @Binding var isChartPalettePresented: Bool
@@ -635,6 +639,10 @@ struct GeneralSettingsView: View {
     @State private var themeColorPaletteAnchor = CGRect.zero
     @State private var chartPaletteAnchor = CGRect.zero
     @State private var updateCheckState: UpdateCheckState = .idle
+    @State private var backupStatus = DatabaseBackupStatus.empty
+    @State private var dataOperationMessage: String?
+    @State private var pendingImportURL: URL?
+    @State private var isDataOperationRunning = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -878,6 +886,8 @@ struct GeneralSettingsView: View {
             }
             .frame(maxWidth: 480)
 
+            dataManagementCard
+
             updateSettingsCard
 
                     }
@@ -930,6 +940,20 @@ struct GeneralSettingsView: View {
                 isThemeColorPalettePresented = false
             }
         }
+        .task { refreshBackupStatus() }
+        .confirmationDialog(
+            "导入完整数据归档？",
+            isPresented: Binding(
+                get: { pendingImportURL != nil },
+                set: { if !$0 { pendingImportURL = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("备份当前数据并导入", role: .destructive) { confirmFullDataImport() }
+            Button("取消", role: .cancel) { pendingImportURL = nil }
+        } message: {
+            Text("导入会用归档中的全部目标、任务、规划、频道、日历、专注和总结数据替换当前内容；操作前会先创建可恢复备份。")
+        }
     }
 
     private var globalShortcutStatusText: String {
@@ -979,6 +1003,149 @@ struct GeneralSettingsView: View {
                 .stroke(WeekflowPalette.border, lineWidth: 1)
         }
         .frame(maxWidth: 480)
+    }
+
+    private var dataManagementCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("本地数据与备份")
+                .font(.system(size: 15, weight: .semibold))
+
+            SettingsLayoutRow {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("数据库备份")
+                    Text(backupStatusText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(backupStatus.latestFailure == nil ? WeekflowPalette.secondaryText : .orange)
+                }
+                Spacer()
+                SettingsHoverControl {
+                    Button("立即备份") { createBackup() }
+                        .buttonStyle(.bordered)
+                        .disabled(isDataOperationRunning)
+                        .pointingHandCursor()
+                }
+            }
+
+            Divider()
+
+            SettingsLayoutRow {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("完整数据归档")
+                    Text("包含目标、任务、规划、频道、日历、专注记录、每日总结和活动计时。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(WeekflowPalette.secondaryText)
+                }
+                Spacer()
+                HStack(spacing: 8) {
+                    Button("导入") { chooseFullDataArchive() }
+                        .buttonStyle(.bordered)
+                        .disabled(isDataOperationRunning)
+                    Button("导出") { exportFullDataArchive() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isDataOperationRunning)
+                }
+                .pointingHandCursor()
+            }
+
+            if let dataOperationMessage {
+                Text(dataOperationMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(dataOperationMessage.hasPrefix("失败") ? .orange : WeekflowPalette.secondaryText)
+                    .textSelection(.enabled)
+            }
+
+            Text("数据默认仅保存在本机；Weekflow 不会自动上传归档或备份。")
+                .font(.system(size: 12))
+                .foregroundStyle(WeekflowPalette.secondaryText)
+        }
+        .padding(18)
+        .background(WeekflowPalette.surface, in: WeekflowRoundedRectangle(cornerRadius: 8))
+        .overlay {
+            WeekflowRoundedRectangle(cornerRadius: 8)
+                .stroke(WeekflowPalette.border, lineWidth: 1)
+        }
+        .frame(maxWidth: 480)
+    }
+
+    private var backupStatusText: String {
+        if let failure = backupStatus.latestFailure {
+            return "最近备份失败：\(failure)"
+        }
+        if let date = backupStatus.lastSuccessAt {
+            return "最近成功 \(date.formatted(date: .abbreviated, time: .shortened)) · 共 \(backupStatus.backupCount) 份"
+        }
+        return backupStatus.backupCount > 0
+            ? "已有 \(backupStatus.backupCount) 份校验通过的备份"
+            : "尚未创建备份"
+    }
+
+    private func refreshBackupStatus() {
+        backupStatus = store.databaseBackupStatus()
+    }
+
+    private func createBackup() {
+        isDataOperationRunning = true
+        dataOperationMessage = "正在创建并校验备份…"
+        Task {
+            defer {
+                isDataOperationRunning = false
+                refreshBackupStatus()
+            }
+            do {
+                try await store.createVerifiedBackup()
+                dataOperationMessage = "备份已创建并通过完整性校验。"
+            } catch {
+                dataOperationMessage = "失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func exportFullDataArchive() {
+        let panel = NSSavePanel()
+        panel.title = "导出 Weekflow 完整数据"
+        panel.prompt = "导出"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "Weekflow-Data-\(Date.now.formatted(.iso8601.year().month().day())).weekflow.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try store.exportFullDataArchive(to: url)
+            dataOperationMessage = "完整数据已导出：\(url.lastPathComponent)"
+        } catch {
+            dataOperationMessage = "失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func chooseFullDataArchive() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 Weekflow 完整数据归档"
+        panel.prompt = "选择"
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        pendingImportURL = panel.url
+    }
+
+    private func confirmFullDataImport() {
+        guard let url = pendingImportURL else { return }
+        pendingImportURL = nil
+        isDataOperationRunning = true
+        dataOperationMessage = "正在校验、备份并导入…"
+        let accessedSecurityScope = url.startAccessingSecurityScopedResource()
+        Task {
+            defer {
+                if accessedSecurityScope { url.stopAccessingSecurityScopedResource() }
+                isDataOperationRunning = false
+                refreshBackupStatus()
+            }
+            do {
+                try await store.importFullDataArchive(from: url)
+                dataOperationMessage = "完整数据导入成功。"
+            } catch {
+                dataOperationMessage = "失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     @ViewBuilder
