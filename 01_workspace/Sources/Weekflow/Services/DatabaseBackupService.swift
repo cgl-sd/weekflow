@@ -24,6 +24,7 @@ struct DatabaseBackupService: @unchecked Sendable {
     let databaseURL: URL
     let backupsDirectory: URL
     let maxBackups: Int
+    let maxRestoreSafetyCopies: Int
     private let fileManager: FileManager
 
     private static let completionMarkerName = "complete"
@@ -32,6 +33,7 @@ struct DatabaseBackupService: @unchecked Sendable {
         databaseURL: URL,
         backupsDirectory: URL? = nil,
         maxBackups: Int = 5,
+        maxRestoreSafetyCopies: Int = 3,
         fileManager: FileManager = .default
     ) {
         self.databaseURL = databaseURL
@@ -40,6 +42,7 @@ struct DatabaseBackupService: @unchecked Sendable {
             .deletingLastPathComponent()
             .appendingPathComponent("Backups", isDirectory: true)
         self.maxBackups = max(1, maxBackups)
+        self.maxRestoreSafetyCopies = max(1, maxRestoreSafetyCopies)
         self.fileManager = fileManager
     }
 
@@ -177,10 +180,12 @@ struct DatabaseBackupService: @unchecked Sendable {
                 try Data("restoreSafetyVersion=1\n".utf8).write(to: marker, options: .atomic)
                 try setPrivateFilePermissions(at: marker)
             }
+            try rotateRestoreSafetyCopies()
         } catch {
             if let safetyDirectory {
                 try? restoreSafetyCopy(from: safetyDirectory)
             }
+            try? rotateRestoreSafetyCopies()
             throw error
         }
     }
@@ -230,6 +235,22 @@ struct DatabaseBackupService: @unchecked Sendable {
             } else {
                 try fileManager.moveItem(at: rollback, to: destination)
             }
+        }
+    }
+
+    /// Restore safety copies contain a full SQLite family and can otherwise grow
+    /// without bound after repeated recovery attempts. Keep the newest bounded
+    /// set, including an incomplete directory left by a failed attempt.
+    private func rotateRestoreSafetyCopies() throws {
+        let root = applicationDataDirectory.appendingPathComponent("RestoreSafety", isDirectory: true)
+        guard let directories = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let ordered = directories.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        for old in ordered.dropFirst(maxRestoreSafetyCopies) {
+            try fileManager.removeItem(at: old)
         }
     }
 

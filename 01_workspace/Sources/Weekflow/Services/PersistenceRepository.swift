@@ -136,8 +136,15 @@ enum MutationHistoryRetentionPolicy {
             value: -retentionDays,
             to: now
         ) ?? .distantPast
+        // Preserve the small migration audit trail and any currently undoable
+        // automatic distribution. Every other completed mutation is operational
+        // history and must obey the same count/age bounds; otherwise committed
+        // automatic distributions retain full before/after payloads forever.
         let ordinary = candidates
-            .filter { $0.kind == PersistenceMutationKind.userEdit.title && !$0.isUndoable }
+            .filter {
+                !$0.isUndoable
+                    && $0.kind != PersistenceMutationKind.migration.title
+            }
             .sorted { $0.createdAt > $1.createdAt }
         let retained = Set(ordinary.prefix(maximumCount).map(\.id))
         return Set(ordinary.lazy.filter {

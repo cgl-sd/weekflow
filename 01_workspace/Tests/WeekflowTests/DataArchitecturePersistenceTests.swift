@@ -269,6 +269,40 @@ import Testing
     #expect(candidates.count - removable.count == 1_001)
 }
 
+@MainActor
+@Test func committedAutomaticDistributionHistoryIsPrunableButAvailableUndoIsKept() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let committed = UUID()
+    let undoable = UUID()
+    let migration = UUID()
+    let removable = MutationHistoryRetentionPolicy.removableIDs(
+        from: [
+            MutationHistoryCandidate(
+                id: committed,
+                kind: PersistenceMutationKind.automaticDistribution(transactionID: committed).title,
+                createdAt: now.addingTimeInterval(-40 * 86_400),
+                isUndoable: false
+            ),
+            MutationHistoryCandidate(
+                id: undoable,
+                kind: PersistenceMutationKind.automaticDistribution(transactionID: undoable).title,
+                createdAt: now.addingTimeInterval(-40 * 86_400),
+                isUndoable: true
+            ),
+            MutationHistoryCandidate(
+                id: migration,
+                kind: PersistenceMutationKind.migration.title,
+                createdAt: now.addingTimeInterval(-400 * 86_400),
+                isUndoable: false
+            )
+        ],
+        now: now,
+        maximumCount: 1_000,
+        retentionDays: 30
+    )
+    #expect(removable == [committed])
+}
+
 /// P1-6 verification: performs 100,000 real database edits, triggers cleanup,
 /// restarts the store, and verifies database growth is bounded.
 @MainActor

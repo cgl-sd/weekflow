@@ -68,6 +68,31 @@ private func recordValues(at url: URL) throws -> [String] {
     #expect(try recordValues(at: safetyCopies[0].appendingPathComponent("Weekflow.store")) == ["original", "changed"])
 }
 
+@Test func repeatedRestoresKeepRestoreSafetyCopiesBounded() throws {
+    let fixture = try temporaryDatabase("RestoreSafetyRotation")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = DatabaseBackupService(
+        databaseURL: fixture.database,
+        maxRestoreSafetyCopies: 2
+    )
+    _ = try #require(try service.makeBackup())
+
+    for index in 0..<5 {
+        try executeSQL("INSERT INTO records VALUES ('change-\(index)');", at: fixture.database)
+        #expect(try service.restoreLatest())
+    }
+
+    let safetyRoot = fixture.root.appendingPathComponent("RestoreSafety")
+    let copies = try FileManager.default.contentsOfDirectory(
+        at: safetyRoot,
+        includingPropertiesForKeys: nil
+    )
+    #expect(copies.count == 2)
+    #expect(copies.allSatisfy {
+        FileManager.default.fileExists(atPath: $0.appendingPathComponent("complete").path)
+    })
+}
+
 @Test func backupAndRestoreIncludesLegacyPlansFile() throws {
     let fixture = try temporaryDatabase("Plans")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
