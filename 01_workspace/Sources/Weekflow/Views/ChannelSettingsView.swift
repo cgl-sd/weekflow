@@ -1,7 +1,5 @@
 import SwiftUI
 
-import SwiftUI
-
 enum WorkspaceSettingsSection: String, CaseIterable, Identifiable {
     case general
     case channels

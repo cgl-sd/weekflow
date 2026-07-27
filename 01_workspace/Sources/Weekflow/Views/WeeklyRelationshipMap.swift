@@ -38,7 +38,10 @@ struct WeeklyPlanningRelationshipMap: View {
     }
 
     private var displayedGoals: [WeeklyGoal] {
-        store.activeGoals.filter { goal in entries.contains { $0.goal.id == goal.id } }
+        WeeklyTaskGrouping.orderedGroups(
+            activeGoals: store.activeGoals,
+            entries: entries
+        ).map(\.goal)
     }
 
     private var relationshipDates: [Date] {
@@ -46,12 +49,12 @@ struct WeeklyPlanningRelationshipMap: View {
     }
 
     private var rawGoalCenters: [CGFloat] {
+        let boundsByGoalID = WeeklyTaskGrouping.indexBounds(for: entries)
         let desiredCenters = displayedGoals.map { displayedGoal in
-            let taskIndices = entries.indices.filter { entries[$0].goal.id == displayedGoal.id }
-            guard let first = taskIndices.first, let last = taskIndices.last else {
+            guard let bounds = boundsByGoalID[displayedGoal.id] else {
                 return goalNodeHeight / 2 + 12
             }
-            return (taskCenterY(at: first) + taskCenterY(at: last)) / 2
+            return (taskCenterY(at: bounds.lowerBound) + taskCenterY(at: bounds.upperBound)) / 2
         }
         return WeeklyRelationshipLayout.nonOverlappingCenters(
             desiredCenters: desiredCenters,
@@ -617,4 +620,3 @@ struct WeeklyRelationshipDateDropDelegate: DropDelegate {
         return true
     }
 }
-

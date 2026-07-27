@@ -244,8 +244,13 @@ struct WeeklyBoardView: View {
     private func taskPoolFlow(
         _ entries: [(goal: WeeklyGoal, task: WeekTask)]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(store.activeGoals.filter { goal in entries.contains { $0.goal.id == goal.id } }) { goal in
+        let groups = WeeklyTaskGrouping.orderedGroups(
+            activeGoals: store.activeGoals,
+            entries: entries
+        )
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(groups, id: \.goal.id) { group in
+                let goal = group.goal
                 let goalChannel = store.channel(for: goal.channelID)
                 let goalTint = goalChannel?.color ?? WeekflowPalette.iconDefault
                 VStack(alignment: .leading, spacing: 7) {
@@ -254,13 +259,13 @@ struct WeeklyBoardView: View {
                             .foregroundStyle(goalTint)
                         Text(goal.title)
                             .font(.system(size: 11.5, weight: .semibold))
-                        Text("\(entries.filter { $0.goal.id == goal.id }.count) 项")
+                        Text("\(group.entries.count) 项")
                             .font(.system(size: 10))
                             .foregroundStyle(WeekflowPalette.textMuted)
                     }
 
                     FlowLayout(spacing: 10) {
-                        ForEach(entries.filter { $0.goal.id == goal.id }, id: \.task.id) { entry in
+                        ForEach(group.entries, id: \.task.id) { entry in
                             WeeklyTaskPoolCard(
                                 entry: entry,
                                 tint: goalTint,
@@ -682,4 +687,3 @@ struct WeeklyHeaderUndoButton: View {
         .help("撤销最近一次自动分配")
     }
 }
-
