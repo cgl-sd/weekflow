@@ -14,6 +14,32 @@ final class GoalSnapshotBox: @unchecked Sendable {
 }
 
 extension WeekflowStore {
+    /// Stops every writer and releases SwiftData so a validated SQLite backup can
+    /// replace the live store without racing an open ModelContext.
+    private func prepareForStorageRecovery() async {
+        textInputDebouncer.cancelPending()
+        persistenceCoordinator.cancelAllPending()
+        persistenceCoordinator.beginSyncWrite()
+        await persistenceCoordinator.drainActiveWriter()
+        persistenceCoordinator.cancelAllPending()
+        persistenceCoordinator.disable(reason: "正在恢复本地数据库")
+        await storage.closeRepositoryForRecovery()
+        persistenceCoordinator.endSyncWrite()
+    }
+
+    func availableRecoveryBackups() async -> [URL] {
+        await storage.availableBackupsForRecovery()
+    }
+
+    func retryStorageConnection() async {
+        await prepareForStorageRecovery()
+    }
+
+    func restoreBackupForRecovery(from backup: URL) async throws {
+        await prepareForStorageRecovery()
+        try await storage.restoreBackupForRecovery(from: backup)
+    }
+
     func persist(kind: PersistenceMutationKind = .userEdit) {
         if synchronousPersistence {
             _ = persistSync(kind: kind)

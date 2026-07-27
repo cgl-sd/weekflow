@@ -3,6 +3,34 @@ import Foundation
 // Async I/O operations, legacy migration, and health validation.
 
 extension LocalStorage {
+    /// Releases the live SwiftData repository before an on-disk restore. Callers
+    /// must first stop and drain every persistence writer that can reach this
+    /// storage instance.
+    func closeRepositoryForRecovery() async {
+        await persistenceActor.resetRepository()
+    }
+
+    func availableBackupsForRecovery() async -> [URL] {
+        let service = backupService
+        return await Task.detached(priority: .userInitiated) {
+            service.availableBackups()
+        }.value
+    }
+
+    func restoreBackupForRecovery(from backup: URL) async throws {
+        let service = backupService
+        let allowed = service.availableBackups().map(\.standardizedFileURL)
+        let candidate = backup.standardizedFileURL
+        guard allowed.contains(candidate) else {
+            throw DatabaseBackupService.BackupError.missingStore(
+                candidate.appendingPathComponent(databaseURL.lastPathComponent)
+            )
+        }
+        try await Task.detached(priority: .userInitiated) {
+            try service.restore(from: candidate)
+        }.value
+    }
+
     // MARK: - Async startup reads
 
     func loadAsync() async throws -> [WeeklyGoal]? {

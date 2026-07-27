@@ -120,6 +120,12 @@ struct DatabaseBackupService: @unchecked Sendable {
         completeBackups().count
     }
 
+    /// Returns only complete, integrity-checked snapshots, newest first. Recovery
+    /// UI must never expose partial directories or an invalid SQLite store.
+    func availableBackups() -> [URL] {
+        completeBackups()
+    }
+
     /// Preflights and stages the replacement before touching the current store.
     /// The previous live SQLite family is retained under RestoreSafety.
     func restore(from backupDirectory: URL) throws {
@@ -232,7 +238,18 @@ struct DatabaseBackupService: @unchecked Sendable {
             throw BackupError.missingStore(url)
         }
         var db: OpaquePointer?
-        let result = sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil)
+        // A copied SwiftData store remains in WAL journal mode even after a
+        // successful checkpoint. Ordinary read-only open may still try to create
+        // `-shm` beside the snapshot and incorrectly report "unable to open".
+        // Immutable URI mode guarantees validation is side-effect free and reads
+        // the already-checkpointed main database exactly as it will be restored.
+        let uri = "file:\(url.path)?immutable=1"
+        let result = sqlite3_open_v2(
+            uri,
+            &db,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_URI,
+            nil
+        )
         guard result == SQLITE_OK, let handle = db else {
             let detail = db.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed: \(result)"
             if let db { sqlite3_close(db) }

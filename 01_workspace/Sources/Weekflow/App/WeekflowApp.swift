@@ -169,7 +169,11 @@ struct WeekflowApp: App {
 
     @ViewBuilder
     private func loadedContent(_ store: WeekflowStore) -> some View {
-        PersistenceProtectedContentView(store: store, focusTimer: focusTimer)
+        PersistenceProtectedContentView(
+            store: store,
+            focusTimer: focusTimer,
+            reloadStore: { await reloadStore() }
+        )
             .environment(\.businessCalendar, store.businessCalendar)
             .onAppear {
                 appearancePreference.applyToApplication()
@@ -189,6 +193,12 @@ struct WeekflowApp: App {
                     )
                 }
             }
+    }
+
+    @MainActor
+    private func reloadStore() async {
+        store = nil
+        await loadStoreIfNeeded()
     }
 
     @MainActor
@@ -228,12 +238,17 @@ struct WeekflowApp: App {
 private struct PersistenceProtectedContentView: View {
     @Bindable var store: WeekflowStore
     @Bindable var focusTimer: FocusTimerService
+    let reloadStore: @MainActor () async -> Void
 
     var body: some View {
         if let issue = store.persistenceIssue {
             // Dedicated read-only recovery interface (Section 5.1 requirement).
             // Replaces the previous alert-over-normal-UI approach.
-            PersistenceRecoveryView(issue: issue)
+            PersistenceRecoveryView(
+                issue: issue,
+                store: store,
+                reloadStore: reloadStore
+            )
         } else {
             ContentView(store: store, focusTimer: focusTimer)
         }
@@ -244,6 +259,12 @@ private struct PersistenceProtectedContentView: View {
 /// P2-2 Fix: Added actual recovery actions instead of just displaying error text.
 private struct PersistenceRecoveryView: View {
     let issue: String
+    let store: WeekflowStore
+    let reloadStore: @MainActor () async -> Void
+    @State private var availableBackups: [URL] = []
+    @State private var showsBackupSelection = false
+    @State private var isWorking = false
+    @State private var actionError: String?
     @Environment(\.openURL) private var openURL
     @State private var showDiagnostics = false
 
@@ -295,6 +316,18 @@ private struct PersistenceRecoveryView: View {
                 }
 
                 Button {
+                    showsBackupSelection = true
+                } label: {
+                    Label(
+                        availableBackups.isEmpty ? "没有可用备份" : "从备份恢复…",
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                    .frame(maxWidth: 200)
+                }
+                .buttonStyle(.bordered)
+                .disabled(availableBackups.isEmpty || isWorking)
+
+                Button {
                     NSApplication.shared.terminate(nil)
                 } label: {
                     Label("退出应用", systemImage: "xmark.circle")
@@ -307,6 +340,31 @@ private struct PersistenceRecoveryView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+        .task {
+            availableBackups = await store.availableRecoveryBackups()
+        }
+        .confirmationDialog(
+            "选择要恢复的备份",
+            isPresented: $showsBackupSelection,
+            titleVisibility: .visible
+        ) {
+            ForEach(availableBackups, id: \.path) { backup in
+                Button(backupDisplayName(backup), role: .destructive) {
+                    restore(backup)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("恢复前会保留当前数据库的安全副本。只有通过完整性校验的备份会显示在这里。")
+        }
+        .alert("恢复操作未完成", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("好", role: .cancel) { actionError = nil }
+        } message: {
+            Text(actionError ?? "未知错误")
+        }
     }
 
     private func openDataFolder() {
@@ -320,20 +378,35 @@ private struct PersistenceRecoveryView: View {
     }
 
     private func retryConnection() {
-        // P3-13 fix: The retry action terminates and relaunches the app so the
-        // Store is re-initialized from disk. A plain window close + relaunch is
-        // the safest recovery path for a corrupted persistence session.
-        let dataFolder = AppDataLocation.runtimeDirectory()
-        // Remove the failure marker so the next launch attempts a fresh connection.
-        let failureMarker = dataFolder.appendingPathComponent("Database/persistence-failure.json")
-        try? FileManager.default.removeItem(at: failureMarker)
-        // Relaunch: open a new instance then terminate the current one.
-        if let appURL = Bundle.main.bundleURL as URL? {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            task.arguments = [appURL.path]
-            try? task.run()
+        guard !isWorking else { return }
+        isWorking = true
+        Task { @MainActor in
+            await store.retryStorageConnection()
+            await reloadStore()
+            isWorking = false
         }
-        NSApplication.shared.terminate(nil)
+    }
+
+    private func restore(_ backup: URL) {
+        guard !isWorking else { return }
+        isWorking = true
+        Task { @MainActor in
+            do {
+                try await store.restoreBackupForRecovery(from: backup)
+                await reloadStore()
+            } catch {
+                actionError = error.localizedDescription
+            }
+            isWorking = false
+        }
+    }
+
+    private func backupDisplayName(_ backup: URL) -> String {
+        let raw = backup.lastPathComponent
+        guard raw.count >= 15 else { return raw }
+        let date = raw.prefix(8)
+        let time = raw.dropFirst(9).prefix(6)
+        return "\(date.prefix(4))-\(date.dropFirst(4).prefix(2))-\(date.suffix(2)) "
+            + "\(time.prefix(2)):\(time.dropFirst(2).prefix(2)):\(time.suffix(2))"
     }
 }

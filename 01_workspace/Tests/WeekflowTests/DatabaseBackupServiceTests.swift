@@ -137,3 +137,34 @@ private func recordValues(at url: URL) throws -> [String] {
     #expect(try service.makeBackup() == nil)
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Backups").path))
 }
+
+@MainActor
+@Test func recoveryClosesRepositoryAndRestoresOnlyAnEnumeratedBackup() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WeekflowRecoveryFlow-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(baseDirectory: root)
+    var originalGoals = WeekflowDevelopmentFixture.stageOne(referenceDate: .now).goals
+    originalGoals[0].title = "备份中的标题"
+    try storage.save(originalGoals)
+    await storage.closeRepositoryForRecovery()
+    try storage.makeBackup()
+    let backup = try #require(storage.backupService.latestBackup())
+
+    var changedGoals = originalGoals
+    changedGoals[0].title = "恢复前的标题"
+    try storage.save(changedGoals)
+    #expect(try storage.load()?.first?.title == "恢复前的标题")
+
+    let enumerated = await storage.availableBackupsForRecovery()
+    #expect(enumerated == [backup])
+    await storage.closeRepositoryForRecovery()
+    try await storage.restoreBackupForRecovery(from: backup)
+
+    let reopened = LocalStorage(baseDirectory: root)
+    #expect(try reopened.load()?.first?.title == "备份中的标题")
+
+    await #expect(throws: DatabaseBackupService.BackupError.self) {
+        try await reopened.restoreBackupForRecovery(from: root)
+    }
+}
