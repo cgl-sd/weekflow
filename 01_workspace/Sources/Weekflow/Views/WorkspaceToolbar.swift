@@ -29,6 +29,7 @@ struct WorkspaceToolbar: View {
     @Binding var weeklyPlanningPresentation: WeeklyPlanningPresentation
     @Binding var selectedTaskChannel: String
     @Binding var presentedMenu: WorkspaceToolbarMenu?
+    var referenceDate: Date = .now
 
     @Environment(\.businessCalendar) private var businessCalendar
     private var calendar: Calendar { businessCalendar.calendar }
@@ -43,8 +44,8 @@ struct WorkspaceToolbar: View {
         return calendar.date(
             byAdding: .day,
             value: Int(homeVisibleDayIndex.rounded()) - 7,
-            to: calendar.startOfDay(for: .now)
-        ) ?? .now
+            to: calendar.startOfDay(for: referenceDate)
+        ) ?? referenceDate
     }
 
     private var navigationStep: Double {
@@ -59,12 +60,13 @@ struct WorkspaceToolbar: View {
 
     private var contextualDateTitle: String? {
         if destination == .dailyPlanning {
-            if calendar.isDateInToday(selectedDate) { return "今日" }
-            if calendar.isDateInTomorrow(selectedDate) { return "明天" }
+            if calendar.isDate(selectedDate, inSameDayAs: referenceDate) { return "今日" }
+            if let tomorrow = calendar.date(byAdding: .day, value: 1, to: referenceDate),
+               calendar.isDate(selectedDate, inSameDayAs: tomorrow) { return "明天" }
             return nil
         }
         if destination == .weeklyPlanning || destination == .weeklyReview {
-            return WeeklyDateNavigation.isCurrentWeek(selectedDate)
+            return isReferenceWeek(selectedDate)
                 ? "本周"
                 : Date.weekRangeLabel(for: selectedDate)
         }
@@ -131,9 +133,9 @@ struct WorkspaceToolbar: View {
                     toggleMenu(.date)
                 } resetToday: {
                     if destination == .dailyPlanning {
-                        dailyPlanningDate = calendar.startOfDay(for: .now)
+                        dailyPlanningDate = calendar.startOfDay(for: referenceDate)
                     } else if destination == .weeklyPlanning || destination == .weeklyReview {
-                        weeklyReferenceDate = calendar.startOfDay(for: .now)
+                        weeklyReferenceDate = calendar.startOfDay(for: referenceDate)
                     } else {
                         homeVisibleDayIndex = 7
                     }
@@ -221,9 +223,19 @@ struct WorkspaceToolbar: View {
 
     private var isCurrentDatePeriod: Bool {
         if destination == .weeklyPlanning || destination == .weeklyReview {
-            return WeeklyDateNavigation.isCurrentWeek(selectedDate)
+            return isReferenceWeek(selectedDate)
         }
-        return calendar.isDateInToday(selectedDate)
+        return calendar.isDate(selectedDate, inSameDayAs: referenceDate)
+    }
+
+    private func isReferenceWeek(_ date: Date) -> Bool {
+        calendar.isDate(
+            WeeklyDateNavigation.weekStart(for: date, calendar: calendar),
+            inSameDayAs: WeeklyDateNavigation.weekStart(
+                for: referenceDate,
+                calendar: calendar
+            )
+        )
     }
 
     private func toggleMenu(_ menu: WorkspaceToolbarMenu) {

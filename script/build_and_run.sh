@@ -173,6 +173,7 @@ fi
 
 open_app() { /usr/bin/open -n "$APP_BUNDLE"; }
 open_fixture_app() { /usr/bin/open -n "$APP_BUNDLE" --args --development-fixtures; }
+open_marketing_app() { /usr/bin/open -n "$APP_BUNDLE" --args --marketing-fixtures; }
 
 create_artifacts() {
   local archive="$RELEASE_DIR/$APP_NAME-v$APP_VERSION-macOS.zip"
@@ -257,8 +258,10 @@ case "$MODE" in
   --verify|verify) open_app; sleep 1; pgrep -x "$APP_NAME" >/dev/null ;;
   --fixtures|fixtures) open_fixture_app ;;
   --verify-fixtures|verify-fixtures) open_fixture_app; sleep 1; pgrep -x "$APP_NAME" >/dev/null ;;
+  --marketing|marketing) open_marketing_app ;;
+  --verify-marketing|verify-marketing) open_marketing_app; sleep 1; pgrep -x "$APP_NAME" >/dev/null ;;
   --refresh-icon|refresh-icon) /usr/bin/killall Dock; open_app ;;
   --package|package) package_preview ;;
   --release|release) package_release ;;
-  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--fixtures|--verify-fixtures|--refresh-icon|--package|--release]" >&2; exit 2 ;;
+  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--fixtures|--verify-fixtures|--marketing|--verify-marketing|--refresh-icon|--package|--release]" >&2; exit 2 ;;
 esac

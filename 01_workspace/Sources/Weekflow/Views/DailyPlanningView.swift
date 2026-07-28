@@ -419,9 +419,11 @@ struct DailyPlanningView: View {
     }
 
     private func relativeDayTitle(_ date: Date) -> String {
-        if calendar.isDateInToday(date) { return "今天" }
-        if calendar.isDateInTomorrow(date) { return "明天" }
-        if let dayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: .now)),
+        let today = calendar.startOfDay(for: referenceDate)
+        if calendar.isDate(date, inSameDayAs: today) { return "今天" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today),
+           calendar.isDate(date, inSameDayAs: tomorrow) { return "明天" }
+        if let dayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: today),
            calendar.isDate(date, inSameDayAs: dayAfterTomorrow) {
             return "后天"
         }
@@ -536,4 +538,3 @@ struct WorkTimePickerMenuOverlay: View {
         return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
     }
 }
-

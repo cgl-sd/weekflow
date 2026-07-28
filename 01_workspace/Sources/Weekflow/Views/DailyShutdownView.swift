@@ -2,14 +2,16 @@ import SwiftUI
 
 struct DailyShutdownView: View {
     @Bindable var store: WeekflowStore
+    let referenceDate: Date
     @State private var phase = 0
     @State private var originalTaskIDs: Set<UUID> = []
     @State private var summary = ""
     @State private var hasLoadedSummary = false
     @State private var summarySaveTask: Task<Void, Never>?
 
-    init(store: WeekflowStore, initialPhase: Int = 0) {
+    init(store: WeekflowStore, initialPhase: Int = 0, referenceDate: Date = .now) {
         self.store = store
+        self.referenceDate = referenceDate
         _phase = State(initialValue: initialPhase)
     }
 
@@ -20,7 +22,7 @@ struct DailyShutdownView: View {
 
     private var shutdownSourceEntries: [(goal: WeeklyGoal, task: WeekTask)] {
         var seenTaskIDs = Set<UUID>()
-        return (store.todayTasks + store.completionCreditTasks(on: .now)).filter {
+        return (store.tasks(on: referenceDate) + store.completionCreditTasks(on: referenceDate)).filter {
             seenTaskIDs.insert($0.task.id).inserted
         }
     }
@@ -62,7 +64,7 @@ struct DailyShutdownView: View {
         }
         .onDisappear {
             summarySaveTask?.cancel()
-            if hasLoadedSummary { store.saveDailySummary(summary, on: .now) }
+            if hasLoadedSummary { store.saveDailySummary(summary, on: referenceDate) }
         }
         .background(WeekflowPalette.canvas)
     }
@@ -135,7 +137,8 @@ struct DailyShutdownView: View {
             ShutdownTaskGroupColumn(
                 entries: entries,
                 emptyText: emptyText,
-                store: store
+                store: store,
+                referenceDate: referenceDate
             )
         }
         .padding(.top, WeekflowLayout.dailyWorkspaceColumnTopInset)
@@ -175,11 +178,11 @@ struct DailyShutdownView: View {
     }
 
     private func prepareSummary() {
-        if let saved = store.dailySummary(on: .now), !saved.content.isEmpty {
+        if let saved = store.dailySummary(on: referenceDate), !saved.content.isEmpty {
             summary = saved.content
         } else {
             summary = summaryTemplate(reviewEntries)
-            store.saveDailySummary(summary, on: .now)
+            store.saveDailySummary(summary, on: referenceDate)
         }
         hasLoadedSummary = true
     }
@@ -190,13 +193,13 @@ struct DailyShutdownView: View {
         summarySaveTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
-            store.saveDailySummary(content, on: .now)
+            store.saveDailySummary(content, on: referenceDate)
         }
     }
 
     private func loadOrPrepareSummaryIfNeeded() {
         guard !hasLoadedSummary else { return }
-        if let saved = store.dailySummary(on: .now) {
+        if let saved = store.dailySummary(on: referenceDate) {
             summary = saved.content
             hasLoadedSummary = true
         } else if phase > 0 {
@@ -207,7 +210,7 @@ struct DailyShutdownView: View {
     private func summaryTemplate(_ entries: [(goal: WeeklyGoal, task: WeekTask)]) -> String {
         DailyShutdownSummaryBuilder.build(
             entries: entries,
-            focusMinutes: store.focusMinutes(on: .now),
+            focusMinutes: store.focusMinutes(on: referenceDate),
             channelTitle: { store.channel(for: $0)?.title ?? "未分类" }
         )
     }
@@ -217,6 +220,7 @@ struct ShutdownTaskGroupColumn: View {
     let entries: [(goal: WeeklyGoal, task: WeekTask)]
     let emptyText: String
     @Bindable var store: WeekflowStore
+    let referenceDate: Date
 
     var body: some View {
         GeometryReader { proxy in
@@ -240,7 +244,7 @@ struct ShutdownTaskGroupColumn: View {
                         SunsamaTaskCard(
                             entry: entry,
                             store: store,
-                            dragSourceDate: .now,
+                            dragSourceDate: referenceDate,
                             compactHeight: WeekflowLayout.homeTaskCardHeight,
                             showsDateControl: false,
                             showsEstimatedDurationMenu: .constant(false),
@@ -290,7 +294,7 @@ struct ShutdownTaskGroupColumn: View {
             store.rolloverTaskManually(
                 goalID: entry.goal.id,
                 taskID: entry.task.id,
-                from: .now,
+                from: referenceDate,
                 to: tomorrow
             )
         }
@@ -300,8 +304,8 @@ struct ShutdownTaskGroupColumn: View {
         SystemBusinessCalendar.current.calendar.date(
             byAdding: .day,
             value: 1,
-            to: SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
-        ) ?? .now
+            to: SystemBusinessCalendar.current.calendar.startOfDay(for: referenceDate)
+        ) ?? referenceDate
     }
 
     private func isScheduled(_ task: WeekTask, on date: Date) -> Bool {
@@ -447,4 +451,3 @@ struct PlanningSortMenuAnchorPreferenceKey: PreferenceKey {
         value = nextValue() ?? value
     }
 }
-

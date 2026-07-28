@@ -11,12 +11,8 @@ struct ContentView: View {
     @State private var showingTaskForm = false
     @State private var isSidebarCollapsed = false
     @State private var homeVisibleDayIndex = 7.0
-    @State private var dailyPlanningDate = SystemBusinessCalendar.current.calendar.date(
-        byAdding: .day,
-        value: 1,
-        to: SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
-    ) ?? .now
-    @State private var weeklyReferenceDate = SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
+    @State private var dailyPlanningDate: Date
+    @State private var weeklyReferenceDate: Date
     @State private var weeklyPlanningPresentation: WeeklyPlanningPresentation = .sections
     @State private var selectedTaskChannel = "all"
     @State private var presentedWorkspaceToolbarMenu: WorkspaceToolbarMenu?
@@ -25,10 +21,11 @@ struct ContentView: View {
     @State private var taskDetailMenuDismissToken = 0
     @State private var showingShortcutHelp = false
     @State private var presentedSettingsSection: WorkspaceSettingsSection?
-    @State private var dailyPlanningStep = 0
+    @State private var dailyPlanningStep: Int
     @State private var planImportError: String?
     @State private var pendingImportPayload: PlanImportService.PlanImportPayload?
     @State private var showsImportOverwriteConfirm = false
+    private let fixedReferenceDate: Date?
 
 
     init(
@@ -36,10 +33,20 @@ struct ContentView: View {
         focusTimer: FocusTimerService = FocusTimerService(),
         initialDestination: AppDestination = .home,
         initialWorkspaceView: WorkspaceView = .board,
-        initialAssistantPanelPresented: Bool = false
+        initialAssistantPanelPresented: Bool = false,
+        referenceDate: Date? = nil,
+        initialDailyPlanningStep: Int = 0
     ) {
         self.store = store
         self.focusTimer = focusTimer
+        let calendar = store.businessCalendar.calendar
+        let requestedReferenceDate = referenceDate ?? store.developmentFixture?.referenceDate
+        let resolvedReferenceDate = calendar.startOfDay(
+            for: requestedReferenceDate ?? .now
+        )
+        self.fixedReferenceDate = requestedReferenceDate.map {
+            calendar.startOfDay(for: $0)
+        }
         _coordinator = State(initialValue: AppCoordinator(
             navigation: NavigationStore(
                 destination: initialDestination,
@@ -47,6 +54,16 @@ struct ContentView: View {
             )
         ))
         _activeAssistantPanel = State(initialValue: initialAssistantPanelPresented ? .calendar : nil)
+        _dailyPlanningDate = State(
+            initialValue: calendar.date(byAdding: .day, value: 1, to: resolvedReferenceDate)
+                ?? resolvedReferenceDate
+        )
+        _weeklyReferenceDate = State(initialValue: resolvedReferenceDate)
+        _dailyPlanningStep = State(initialValue: initialDailyPlanningStep)
+    }
+
+    private var referenceDate: Date {
+        fixedReferenceDate ?? store.businessCalendar.calendar.startOfDay(for: .now)
     }
 
     var body: some View {
@@ -138,7 +155,11 @@ struct ContentView: View {
             handle(routed.command)
         }
         .onChange(of: homeVisibleDayIndex) { _, index in
-            store.activeDay = SystemBusinessCalendar.current.calendar.date(byAdding: .day, value: Int(index.rounded()) - 7, to: SystemBusinessCalendar.current.calendar.startOfDay(for: .now)) ?? .now
+            store.activeDay = SystemBusinessCalendar.current.calendar.date(
+                byAdding: .day,
+                value: Int(index.rounded()) - 7,
+                to: referenceDate
+            ) ?? referenceDate
         }
         .onChange(of: destination) { _, newDestination in
             presentedWorkspaceToolbarMenu = nil
@@ -151,13 +172,13 @@ struct ContentView: View {
                 dailyPlanningDate = SystemBusinessCalendar.current.calendar.date(
                     byAdding: .day,
                     value: 1,
-                    to: SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
-                ) ?? .now
+                    to: referenceDate
+                ) ?? referenceDate
             }
             guard newDestination == .home else { return }
             workspaceView = .board
             homeVisibleDayIndex = 7
-            store.activeDay = SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
+            store.activeDay = referenceDate
         }
         .onAppear {
             coordinator.activate()
@@ -256,7 +277,7 @@ struct ContentView: View {
         let calendar = SystemBusinessCalendar.current.calendar
         switch navigation {
         case .today:
-            dailyPlanningDate = calendar.startOfDay(for: .now)
+            dailyPlanningDate = referenceDate
         case .previous:
             dailyPlanningDate = calendar.date(
                 byAdding: .day,
@@ -286,7 +307,8 @@ struct ContentView: View {
             weeklyReferenceDate: $weeklyReferenceDate,
             weeklyPlanningPresentation: $weeklyPlanningPresentation,
             selectedTaskChannel: $selectedTaskChannel,
-            presentedMenu: $presentedWorkspaceToolbarMenu
+            presentedMenu: $presentedWorkspaceToolbarMenu,
+            referenceDate: referenceDate
         )
         .padding(
             .trailing,
@@ -399,7 +421,7 @@ struct ContentView: View {
     private func openCalendarDate(_ date: Date) {
         let calendar = SystemBusinessCalendar.current.calendar
         let selectedDate = calendar.startOfDay(for: date)
-        let today = calendar.startOfDay(for: .now)
+        let today = referenceDate
         let dayOffset = calendar.dateComponents([.day], from: today, to: selectedDate).day ?? 0
 
         presentedWorkspaceToolbarMenu = nil
@@ -417,7 +439,7 @@ struct ContentView: View {
     private func returnToDashboard(_ date: Date) {
         let calendar = SystemBusinessCalendar.current.calendar
         let selectedDate = calendar.startOfDay(for: date)
-        let today = calendar.startOfDay(for: .now)
+        let today = referenceDate
         let dayOffset = calendar.dateComponents([.day], from: today, to: selectedDate).day ?? 0
 
         presentedWorkspaceToolbarMenu = nil
@@ -519,7 +541,7 @@ struct ContentView: View {
             plan = active
             planGoals = store.goalsForPlan(active.id)
         } else {
-            let range = WeeklyPlanningRangePreferences.range(for: .now)
+            let range = WeeklyPlanningRangePreferences.range(for: referenceDate)
             plan = WeeklyPlan(title: "周规划", startDate: range.start, endDate: range.end)
             planGoals = store.activeGoals
         }
@@ -575,19 +597,24 @@ struct ContentView: View {
                     selectedChannelID: selectedTaskChannel,
                     additionalVisibleWidth: isSidebarCollapsed
                         ? WeekflowLayout.collapsedSidebarBoardWidthGain
-                        : 0
-                ) { date in
-                    quickTaskPlannedDate = date
-                    showingTaskForm = true
-                } openTask: { entry in
-                    store.highlightedTask = TaskReference(goalID: entry.goal.id, taskID: entry.task.id)
-                    presentedTask = TaskDetailTarget(goalID: entry.goal.id, taskID: entry.task.id)
-                } showCalendar: {
-                    activeAssistantPanel = .calendar
-                } planDay: { date in
-                    store.activeDay = SystemBusinessCalendar.current.calendar.startOfDay(for: date)
-                    destination = .dailyPlanning
-                }
+                        : 0,
+                    addTaskOnDate: { date in
+                        quickTaskPlannedDate = date
+                        showingTaskForm = true
+                    },
+                    openTask: { entry in
+                        store.highlightedTask = TaskReference(goalID: entry.goal.id, taskID: entry.task.id)
+                        presentedTask = TaskDetailTarget(goalID: entry.goal.id, taskID: entry.task.id)
+                    },
+                    showCalendar: {
+                        activeAssistantPanel = .calendar
+                    },
+                    planDay: { date in
+                        store.activeDay = SystemBusinessCalendar.current.calendar.startOfDay(for: date)
+                        destination = .dailyPlanning
+                    },
+                    referenceDate: referenceDate
+                )
             }
             else {
                 WorkspaceCalendarView(
@@ -605,9 +632,11 @@ struct ContentView: View {
                 showingTaskForm: $showingTaskForm,
                 plannedDate: $quickTaskPlannedDate,
                 finish: { destination = .home },
+                referenceDate: referenceDate,
                 planningDate: dailyPlanningDate
             )
-        case .dailyShutdown: DailyShutdownView(store: store)
+        case .dailyShutdown:
+            DailyShutdownView(store: store, referenceDate: referenceDate)
         case .weeklyPlanning:
             WeeklyBoardView(
                 store: store,
@@ -690,8 +719,8 @@ struct ContentView: View {
         SystemBusinessCalendar.current.calendar.date(
             byAdding: .day,
             value: Int(homeVisibleDayIndex.rounded()) - 7,
-            to: SystemBusinessCalendar.current.calendar.startOfDay(for: .now)
-        ) ?? .now
+            to: referenceDate
+        ) ?? referenceDate
     }
 
     private var toolbarVisibleDayCount: Int {

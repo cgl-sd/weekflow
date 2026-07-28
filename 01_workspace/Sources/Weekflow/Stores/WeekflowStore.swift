@@ -174,8 +174,8 @@ final class WeekflowStore {
             self.channels = developmentFixture.channels
             self.calendarEvents = developmentFixture.calendarEvents
             self.dailyPlanningStates = []
-            self.focusRecords = []
-            self.dailySummaries = []
+            self.focusRecords = developmentFixture.focusRecords
+            self.dailySummaries = developmentFixture.dailySummaries
             self.activeDay = developmentFixture.referenceDate
             self.persistenceIssue = nil
             self.persistenceEnabled = false
@@ -316,8 +316,8 @@ final class WeekflowStore {
         channels = developmentFixture.channels
         calendarEvents = developmentFixture.calendarEvents
         dailyPlanningStates = []
-        focusRecords = []
-        dailySummaries = []
+        focusRecords = developmentFixture.focusRecords
+        dailySummaries = developmentFixture.dailySummaries
         selectedGoalID = goals.first?.id
         highlightedTask = nil
         activeTaskTimer = nil

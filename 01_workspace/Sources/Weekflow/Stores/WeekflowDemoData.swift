@@ -4,12 +4,41 @@ import Foundation
 /// unless the caller opts in with `developmentFixture:`.
 struct WeekflowDevelopmentFixture {
     static let stageOneIdentifier = "weekflow-v4-stage-1"
+    static let marketingIdentifier = "weekflow-marketing-2026-07-28"
+
+    static let marketingReferenceDate: Date = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar.date(
+            from: DateComponents(year: 2026, month: 7, day: 28, hour: 12)
+        )!
+    }()
 
     let identifier: String
     let referenceDate: Date
     let goals: [WeeklyGoal]
     let channels: [TaskChannel]
     let calendarEvents: [CalendarEvent]
+    let focusRecords: [FocusRecord]
+    let dailySummaries: [DailySummary]
+
+    init(
+        identifier: String,
+        referenceDate: Date,
+        goals: [WeeklyGoal],
+        channels: [TaskChannel],
+        calendarEvents: [CalendarEvent],
+        focusRecords: [FocusRecord] = [],
+        dailySummaries: [DailySummary] = []
+    ) {
+        self.identifier = identifier
+        self.referenceDate = referenceDate
+        self.goals = goals
+        self.channels = channels
+        self.calendarEvents = calendarEvents
+        self.focusRecords = focusRecords
+        self.dailySummaries = dailySummaries
+    }
 
     static func stageOne(
         referenceDate: Date,
@@ -69,7 +98,270 @@ struct WeekflowDevelopmentFixture {
             referenceDate: sunday,
             goals: [goal],
             channels: TaskChannel.defaults,
-            calendarEvents: []
+            calendarEvents: [],
+            focusRecords: [],
+            dailySummaries: []
+        )
+    }
+
+    /// Stable, presentation-ready content used only for public product imagery.
+    /// The fixed Tuesday reference makes screenshots reproducible and lets the
+    /// story continue naturally through Wednesday and Thursday.
+    static func marketing(
+        referenceDate: Date = marketingReferenceDate,
+        calendar: Calendar = marketingCalendar
+    ) -> WeekflowDevelopmentFixture {
+        let tuesday = calendar.startOfDay(for: referenceDate)
+        let monday = calendar.date(byAdding: .day, value: -1, to: tuesday) ?? tuesday
+        let wednesday = calendar.date(byAdding: .day, value: 1, to: tuesday) ?? tuesday
+        let thursday = calendar.date(byAdding: .day, value: 2, to: tuesday) ?? tuesday
+        let sunday = calendar.date(byAdding: .day, value: 5, to: tuesday) ?? thursday
+        let businessCalendar = BusinessCalendar(calendar: calendar)
+
+        let narrativeID = fixtureUUID(1_101)
+        let recordingID = fixtureUUID(1_102)
+        let publishID = fixtureUUID(1_103)
+        let weeklyOutcomesID = fixtureUUID(1_201)
+        let deepWorkID = fixtureUUID(1_202)
+        let reflectionID = fixtureUUID(1_203)
+
+        var launchGoal = WeeklyGoal(
+            id: fixtureUUID(1_100),
+            title: "发布 Weekflow 产品演示",
+            outcome: "让第一次访问的人在三分钟内理解从周目标到每日执行的完整流程",
+            startDate: monday,
+            endDate: sunday,
+            channelID: "product",
+            subgoals: [
+                GoalSubgoal(
+                    id: narrativeID,
+                    title: "确定演示主线",
+                    detail: "聚焦周目标、每日计划、专注与复盘的闭环",
+                    channelID: "product",
+                    isCompleted: true
+                ),
+                GoalSubgoal(
+                    id: recordingID,
+                    title: "完成核心流程录制",
+                    detail: "用清晰截图和短动效展示真实操作",
+                    channelID: "content"
+                ),
+                GoalSubgoal(
+                    id: publishID,
+                    title: "上线产品介绍页",
+                    detail: "检查桌面与移动端阅读体验",
+                    channelID: "product"
+                )
+            ],
+            tasks: [
+                makeTask(
+                    1_111,
+                    "梳理演示页面的信息主线",
+                    on: tuesday,
+                    at: (9, 0),
+                    estimated: 60,
+                    actual: 65,
+                    status: .completed,
+                    channel: "product",
+                    priority: .must,
+                    subgoalID: narrativeID,
+                    subtasks: [
+                        TaskSubtask(id: fixtureUUID(1_151), title: "明确一句话定位", completed: true),
+                        TaskSubtask(id: fixtureUUID(1_152), title: "排出演示章节", completed: true)
+                    ],
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_112,
+                    "制作首页高清界面素材",
+                    on: tuesday,
+                    at: (14, 0),
+                    estimated: 90,
+                    actual: 40,
+                    status: .inProgress,
+                    channel: "content",
+                    priority: .must,
+                    subgoalID: recordingID,
+                    subtasks: [
+                        TaskSubtask(id: fixtureUUID(1_153), title: "整理演示数据", completed: true),
+                        TaskSubtask(id: fixtureUUID(1_154), title: "导出 2× 截图"),
+                        TaskSubtask(id: fixtureUUID(1_155), title: "裁切首屏重点区域")
+                    ],
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_113,
+                    "录制周目标到每日执行流程",
+                    on: wednesday,
+                    at: (10, 0),
+                    estimated: 90,
+                    channel: "content",
+                    priority: .should,
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_114,
+                    "发布演示页面并完成多尺寸检查",
+                    on: thursday,
+                    at: (15, 0),
+                    estimated: 75,
+                    channel: "product",
+                    priority: .must,
+                    subgoalID: publishID,
+                    calendar: calendar
+                )
+            ],
+            milestones: [
+                Milestone(id: fixtureUUID(1_161), title: "演示页面可公开预览", date: thursday, type: .delivery)
+            ],
+            isPinned: true,
+            sortOrder: 0
+        )
+        launchGoal.startDay = LocalDay(monday, calendar: calendar)
+        launchGoal.endDay = LocalDay(sunday, calendar: calendar)
+
+        var rhythmGoal = WeeklyGoal(
+            id: fixtureUUID(1_200),
+            title: "建立稳定的每周执行节奏",
+            outcome: "每天围绕关键结果工作，并用简短回顾为下一天留出清晰起点",
+            startDate: monday,
+            endDate: sunday,
+            channelID: "personal",
+            subgoals: [
+                GoalSubgoal(
+                    id: weeklyOutcomesID,
+                    title: "确定本周三个关键结果",
+                    detail: "目标足够具体，能直接拆成每日行动",
+                    channelID: "personal",
+                    isCompleted: true
+                ),
+                GoalSubgoal(
+                    id: deepWorkID,
+                    title: "完成两次无干扰专注",
+                    detail: "把最清醒的时间留给高价值工作",
+                    channelID: "research",
+                    isCompleted: true
+                ),
+                GoalSubgoal(
+                    id: reflectionID,
+                    title: "沉淀一份可复用的周复盘",
+                    detail: "记录有效做法和下周要调整的节奏",
+                    channelID: "personal"
+                )
+            ],
+            tasks: [
+                makeTask(
+                    1_211,
+                    "确认本周三个关键结果",
+                    on: tuesday,
+                    at: (8, 0),
+                    estimated: 45,
+                    actual: 35,
+                    status: .completed,
+                    channel: "personal",
+                    priority: .should,
+                    subgoalID: weeklyOutcomesID,
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_212,
+                    "50 分钟专注：完善核心交互",
+                    on: tuesday,
+                    at: (11, 0),
+                    estimated: 50,
+                    actual: 50,
+                    status: .completed,
+                    channel: "research",
+                    priority: .must,
+                    subgoalID: deepWorkID,
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_213,
+                    "整理访客最关心的五个问题",
+                    on: tuesday,
+                    at: (16, 30),
+                    estimated: 45,
+                    channel: "research",
+                    priority: .later,
+                    subgoalID: reflectionID,
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_214,
+                    "验证计划、专注与回顾的衔接",
+                    on: wednesday,
+                    at: (13, 30),
+                    estimated: 75,
+                    channel: "product",
+                    priority: .should,
+                    calendar: calendar
+                ),
+                makeTask(
+                    1_215,
+                    "完成本周复盘并安排下周",
+                    on: thursday,
+                    at: (17, 0),
+                    estimated: 60,
+                    channel: "personal",
+                    priority: .should,
+                    calendar: calendar
+                )
+            ],
+            milestones: [
+                Milestone(id: fixtureUUID(1_261), title: "周中节奏检查", date: wednesday, type: .checkpoint)
+            ],
+            sortOrder: 1
+        )
+        rhythmGoal.startDay = LocalDay(monday, calendar: calendar)
+        rhythmGoal.endDay = LocalDay(sunday, calendar: calendar)
+
+        return WeekflowDevelopmentFixture(
+            identifier: marketingIdentifier,
+            referenceDate: tuesday,
+            goals: [launchGoal, rhythmGoal],
+            channels: [
+                TaskChannel(id: "product", title: "产品设计", colorName: "orange", isDefault: true, iconName: "sparkles"),
+                TaskChannel(id: "content", title: "内容创作", colorName: "purple", iconName: "doc.text.image"),
+                TaskChannel(id: "research", title: "用户研究", colorName: "blue", iconName: "person.2"),
+                TaskChannel(id: "personal", title: "个人成长", colorName: "green", isPersonal: true, countsTowardWorkload: false, iconName: "leaf")
+            ],
+            calendarEvents: [
+                CalendarEvent(
+                    id: fixtureUUID(1_301),
+                    title: "演示页面设计评审",
+                    startDate: calendar.date(bySettingHour: 13, minute: 0, second: 0, of: tuesday) ?? tuesday,
+                    durationMinutes: 45,
+                    colorName: "orange"
+                ),
+                CalendarEvent(
+                    id: fixtureUUID(1_302),
+                    title: "核心流程录制",
+                    startDate: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: wednesday) ?? wednesday,
+                    durationMinutes: 90,
+                    colorName: "purple"
+                )
+            ],
+            focusRecords: [
+                FocusRecord(id: fixtureUUID(1_401), date: monday, modeID: "meditation", minutes: 15, calendar: businessCalendar),
+                FocusRecord(id: fixtureUUID(1_402), date: tuesday, modeID: "study", minutes: 50, calendar: businessCalendar)
+            ],
+            dailySummaries: [
+                DailySummary(
+                    id: fixtureUUID(1_501),
+                    date: monday,
+                    content: "## 今日进展\n确定了本周三项关键结果，也为演示页面整理好了素材清单。",
+                    updatedAt: monday,
+                    calendar: businessCalendar
+                ),
+                DailySummary(
+                    id: fixtureUUID(1_502),
+                    date: tuesday,
+                    content: "## 今日进展\n演示主线已经成形，高清素材正在制作。明天先录制核心流程，再补充常见问题。",
+                    updatedAt: tuesday,
+                    calendar: businessCalendar
+                )
+            ]
         )
     }
 
@@ -98,7 +390,9 @@ struct WeekflowDevelopmentFixture {
             referenceDate: today,
             goals: [goal],
             channels: TaskChannel.defaults,
-            calendarEvents: []
+            calendarEvents: [],
+            focusRecords: [],
+            dailySummaries: []
         )
     }
 
@@ -132,12 +426,14 @@ struct WeekflowDevelopmentFixture {
         status: TaskStatus = .planned,
         channel: String,
         priority: TaskPriority,
+        subgoalID: GoalSubgoal.ID? = nil,
+        subtasks: [TaskSubtask] = [],
         calendar: Calendar
     ) -> WeekTask {
         let startTime = time.flatMap {
             calendar.date(bySettingHour: $0.hour, minute: $0.minute, second: 0, of: date)
         }
-        return WeekTask(
+        var task = WeekTask(
             id: fixtureUUID(identifier),
             title: title,
             plannedDate: date,
@@ -146,12 +442,31 @@ struct WeekflowDevelopmentFixture {
             estimatedMinutes: estimated,
             actualMinutes: actual,
             status: status,
+            subgoalID: subgoalID,
             channelID: channel,
             priority: priority,
+            sourceType: subgoalID == nil ? .native : .weeklyObjective,
+            subtasks: subtasks,
             createdAt: date,
             updatedAt: date,
             sortOrder: identifier
         )
+        // WeekTask's compatibility initializer uses the process-wide calendar.
+        // Rewrite civil date fields from the explicit fixture calendar so the
+        // marketing data is identical on every machine and time zone.
+        let day = LocalDay(date, calendar: calendar)
+        task.plannedDay = day
+        task.dueDay = day
+        task.startLocalTime = startTime.map { LocalTime($0, calendar: calendar) }
+        task.startTimeDay = startTime == nil ? nil : day
+        return task
+    }
+
+    private static var marketingCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "zh_CN")
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
     }
 
     private static func fixtureUUID(_ value: Int) -> UUID {

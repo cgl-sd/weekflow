@@ -209,6 +209,13 @@ struct WeekflowApp: App {
         defer { isLoadingStore = false }
 #if DEBUG
         let developmentDirectory = AppDataLocation.developmentDirectory()
+        if ProcessInfo.processInfo.arguments.contains("--marketing-fixtures") {
+            store = WeekflowStore(
+                storage: .developmentFixtures(rootDirectory: developmentDirectory),
+                developmentFixture: .marketing()
+            )
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
             store = WeekflowStore(
                 storage: .developmentFixtures(rootDirectory: developmentDirectory),

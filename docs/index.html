@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f4ee" />
+    <meta
+      name="description"
+      content="Weekflow 是一款由周目标驱动的原生 macOS 个人执行系统：规划一周、安排每天、专注行动，再用回顾收拢进展。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="Weekflow — 让一周，从目标走到完成" />
+    <meta
+      property="og:description"
+      content="从本周真正重要的事出发，把目标变成每天可以执行的安排。"
+    />
+    <meta property="og:url" content="https://cgl-sd.github.io/weekflow/" />
+    <meta property="og:image" content="https://cgl-sd.github.io/weekflow/assets/og-weekflow.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Weekflow：让一周，从目标走到完成" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Weekflow — 让一周，从目标走到完成" />
+    <meta
+      name="twitter:description"
+      content="从周目标出发，安排每天、专注行动，再用回顾收拢进展。"
+    />
+    <meta name="twitter:image" content="https://cgl-sd.github.io/weekflow/assets/og-weekflow.png" />
+    <link rel="canonical" href="https://cgl-sd.github.io/weekflow/" />
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site.js" defer="defer"></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Weekflow",
+        "description": "一款由周目标驱动的原生 macOS 个人执行系统。",
+        "applicationCategory": "ProductivityApplication",
+        "operatingSystem": "macOS 14 or later",
+        "softwareVersion": "1.0.3",
+        "downloadUrl": "https://github.com/cgl-sd/weekflow/releases/latest",
+        "codeRepository": "https://github.com/cgl-sd/weekflow"
+      }
+    </script>
+    <title>Weekflow — 让一周，从目标走到完成</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="Weekflow 首页">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="assets/favicon.png" alt="" width="30" height="30" />
+          </span>
+          <span>Weekflow</span>
+        </a>
+
+        <nav class="site-nav" aria-label="主要导航">
+          <a href="#workflow">工作流</a>
+          <a href="#product">产品</a>
+          <a href="#privacy">隐私</a>
+          <a href="https://github.com/cgl-sd/weekflow">GitHub</a>
+        </nav>
+
+        <a
+          class="button button-small button-dark"
+          href="https://github.com/cgl-sd/weekflow/releases/latest"
+        >
+          下载 macOS 版
+        </a>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero shell" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span aria-hidden="true"></span> Weekflow · 原生 macOS 应用</p>
+          <h1 id="hero-title">让一周，<br />从目标走到完成。</h1>
+          <p class="hero-lede">
+            不再从一长串待办开始。先决定这一周真正要推进什么，再把它变成今天可以完成的安排。
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/cgl-sd/weekflow/releases/latest"
+            >
+              下载最新版本
+              <span aria-hidden="true">↓</span>
+            </a>
+            <a class="text-link" href="#workflow">看看它怎样工作 <span aria-hidden="true">↘</span></a>
+          </div>
+          <p class="hero-note">本地优先 · 无需账户 · macOS 14+</p>
+        </div>
+
+        <div class="product-demo" data-product-demo="">
+          <div class="window-chrome" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <p>Weekflow</p>
+          </div>
+
+          <div class="demo-viewport">
+            <article
+              class="demo-panel is-active"
+              id="panel-home"
+              role="tabpanel"
+              aria-labelledby="tab-home"
+            >
+              <figure class="product-shot" data-media-frame="">
+                <img
+                  src="assets/media/home.png"
+                  alt="Weekflow 首页，按日期并排展示每天的任务安排"
+                  width="2400"
+                  height="1560"
+                  fetchpriority="high"
+                  decoding="async"
+                />
+                <p class="media-fallback">首页预览图暂不可用</p>
+              </figure>
+            </article>
+
+            <article
+              class="demo-panel"
+              id="panel-weekly"
+              role="tabpanel"
+              aria-labelledby="tab-weekly"
+            >
+              <figure class="product-shot" data-media-frame="">
+                <img
+                  src="assets/media/weekly-planning.png"
+                  alt="Weekflow 每周计划界面，包含周目标、任务池和每日分配"
+                  width="2400"
+                  height="1560"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <p class="media-fallback">每周计划预览图暂不可用</p>
+              </figure>
+            </article>
+
+            <article
+              class="demo-panel"
+              id="panel-daily"
+              role="tabpanel"
+              aria-labelledby="tab-daily"
+            >
+              <figure class="product-shot" data-media-frame="">
+                <img
+                  src="assets/media/daily-planning.png"
+                  alt="Weekflow 每日计划界面，把任务池中的任务安排到明天"
+                  width="2400"
+                  height="1560"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <p class="media-fallback">每日计划预览图暂不可用</p>
+              </figure>
+            </article>
+
+            <article
+              class="demo-panel"
+              id="panel-focus"
+              role="tabpanel"
+              aria-labelledby="tab-focus"
+            >
+              <figure class="product-shot" data-media-frame="">
+                <img
+                  src="assets/media/focus.png"
+                  alt="Weekflow 专注模式界面，展示专注类型与计时器"
+                  width="2400"
+                  height="1560"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <p class="media-fallback">专注模式预览图暂不可用</p>
+              </figure>
+            </article>
+
+            <article
+              class="demo-panel"
+              id="panel-review"
+              role="tabpanel"
+              aria-labelledby="tab-review"
+            >
+              <figure class="product-shot" data-media-frame="">
+                <img
+                  src="assets/media/weekly-review.png"
+                  alt="Weekflow 每周回顾界面，汇总一周的任务、时间与目标进度"
+                  width="2400"
+                  height="1560"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <p class="media-fallback">每周回顾预览图暂不可用</p>
+              </figure>
+            </article>
+          </div>
+
+          <div class="demo-controls">
+            <div class="demo-tabs" role="tablist" aria-label="选择 Weekflow 界面预览">
+              <button
+                type="button"
+                role="tab"
+                id="tab-home"
+                aria-controls="panel-home"
+                aria-selected="true"
+                tabindex="0"
+                data-demo-tab="home"
+              >
+                今天
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tab-weekly"
+                aria-controls="panel-weekly"
+                aria-selected="false"
+                tabindex="-1"
+                data-demo-tab="weekly"
+              >
+                每周计划
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tab-daily"
+                aria-controls="panel-daily"
+                aria-selected="false"
+                tabindex="-1"
+                data-demo-tab="daily"
+              >
+                每日计划
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tab-focus"
+                aria-controls="panel-focus"
+                aria-selected="false"
+                tabindex="-1"
+                data-demo-tab="focus"
+              >
+                专注
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tab-review"
+                aria-controls="panel-review"
+                aria-selected="false"
+                tabindex="-1"
+                data-demo-tab="review"
+              >
+                每周回顾
+              </button>
+            </div>
+            <button
+              class="demo-toggle"
+              type="button"
+              aria-pressed="false"
+              data-demo-toggle
+            >
+              暂停轮播
+            </button>
+            <p class="demo-caption" data-demo-caption="">
+              看清今天，把注意力留给眼前的一步。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="workflow section shell" id="workflow" aria-labelledby="workflow-title">
+        <div class="section-heading section-heading-narrow">
+          <p class="eyebrow">一条清楚的执行路径</p>
+          <h2 id="workflow-title">不是更多待办。<br />是把重要的事真正推进。</h2>
+          <p>
+            Weekflow 用一周作为行动单位，让计划、执行与回顾彼此相连。你总能知道现在该做什么，也知道它为什么重要。
+          </p>
+        </div>
+
+        <ol class="workflow-grid" data-workflow="">
+          <li class="flow-card">
+            <span class="flow-index">01</span>
+            <div class="flow-symbol flow-symbol-target" aria-hidden="true"></div>
+            <h3>定下本周目标</h3>
+            <p>从少数真正重要的结果开始，给这一周一个明确方向。</p>
+          </li>
+          <li class="flow-card">
+            <span class="flow-index">02</span>
+            <div class="flow-symbol flow-symbol-stack" aria-hidden="true"></div>
+            <h3>拆成具体行动</h3>
+            <p>把目标分解为可完成的任务，并集中放进本周任务池。</p>
+          </li>
+          <li class="flow-card">
+            <span class="flow-index">03</span>
+            <div class="flow-symbol flow-symbol-calendar" aria-hidden="true"></div>
+            <h3>安排到每一天</h3>
+            <p>手动拖放或自动分配，让计划贴合每天真实可用的时间。</p>
+          </li>
+          <li class="flow-card">
+            <span class="flow-index">04</span>
+            <div class="flow-symbol flow-symbol-check" aria-hidden="true"></div>
+            <h3>专注，然后回顾</h3>
+            <p>记录实际投入，在一天与一周结束时收拢成果和经验。</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="statement section" aria-label="Weekflow 产品理念">
+        <div class="shell statement-inner">
+          <p>一周不需要塞得更满。</p>
+          <h2>只需要让重要的事，持续向前。</h2>
+        </div>
+      </section>
+
+      <section class="product section shell" id="product" aria-labelledby="product-title">
+        <div class="section-heading section-heading-split">
+          <div>
+            <p class="eyebrow">为执行而设计</p>
+            <h2 id="product-title">简单，是因为路径清楚。</h2>
+          </div>
+          <p>
+            从周视角建立方向，再进入每天的节奏。每个界面只保留当下需要的信息，不把你困在管理工具里。
+          </p>
+        </div>
+
+        <div class="media-grid">
+          <article class="media-card media-card-lilac">
+            <div class="media-card-copy">
+              <p class="card-kicker">计划一周</p>
+              <h3>目标、任务池和每天的容量，一眼看清。</h3>
+              <p>先建立周目标，再拆解、分配与调整。计划改变时，仍然能看见任务属于哪个目标。</p>
+            </div>
+            <figure class="media-card-frame" data-media-frame="">
+              <img
+                src="assets/media/weekly-planning.png"
+                alt="每周计划界面中的周目标、任务池与每日分配"
+                width="2400"
+                height="1560"
+                loading="lazy"
+                decoding="async"
+              />
+              <p class="media-fallback">每周计划预览图暂不可用</p>
+            </figure>
+          </article>
+
+          <article class="media-card media-card-lime">
+            <div class="media-card-copy">
+              <p class="card-kicker">完成今天</p>
+              <h3>让任务进入时间，也让注意力回到任务。</h3>
+              <p>把任务排进工作时段，再进入专注模式记录真实投入。今日完成，周目标也随之推进。</p>
+            </div>
+            <figure class="media-card-frame media-card-frame-focus" data-media-frame="">
+              <img
+                src="assets/media/focus.png"
+                alt="专注模式中的类型选择与计时器"
+                width="2400"
+                height="1560"
+                loading="lazy"
+                decoding="async"
+              />
+              <p class="media-fallback">专注模式预览图暂不可用</p>
+            </figure>
+          </article>
+        </div>
+
+        <div class="feature-strip" aria-label="更多功能">
+          <div>
+            <span aria-hidden="true">↕</span>
+            <p><strong>灵活调整</strong> 拖放任务，计划变化时重新安排。</p>
+          </div>
+          <div>
+            <span aria-hidden="true">◴</span>
+            <p><strong>真实投入</strong> 用专注记录补全计划之外的事实。</p>
+          </div>
+          <div>
+            <span aria-hidden="true">↺</span>
+            <p><strong>闭环回顾</strong> 从每天到每周，持续校准自己的节奏。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="privacy section" id="privacy" aria-labelledby="privacy-title">
+        <div class="shell privacy-inner">
+          <div class="privacy-copy">
+            <p class="eyebrow">你的计划，只属于你</p>
+            <h2 id="privacy-title">本地优先，安静工作。</h2>
+            <p>
+              Weekflow 当前版本不要求登录，不包含广告、分析统计或遥测 SDK。任务、计划与专注记录保存在你的 Mac 上。
+            </p>
+            <a class="text-link" href="https://github.com/cgl-sd/weekflow/blob/main/PRIVACY.md">
+              阅读隐私说明 <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <ul class="privacy-points">
+            <li><span>01</span><strong>无需账户</strong><small>打开即可开始规划</small></li>
+            <li><span>02</span><strong>本地保存</strong><small>数据留在你的设备</small></li>
+            <li><span>03</span><strong>没有遥测</strong><small>不追踪你的使用行为</small></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="final-cta shell" aria-labelledby="cta-title">
+        <div>
+          <p class="eyebrow">从下一周开始</p>
+          <h2 id="cta-title">先选择一件真正重要的事。</h2>
+        </div>
+        <div class="final-actions">
+          <a
+            class="button button-primary"
+            href="https://github.com/cgl-sd/weekflow/releases/latest"
+          >
+            下载 Weekflow <span aria-hidden="true">↓</span>
+          </a>
+          <p>原生 macOS · macOS 14 或更高版本</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <a class="brand" href="#top" aria-label="返回页面顶部">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="assets/favicon.png" alt="" width="30" height="30" />
+          </span>
+          <span>Weekflow</span>
+        </a>
+        <p>让一周，从目标走到完成。</p>
+        <div class="footer-links">
+          <a href="https://github.com/cgl-sd/weekflow">源代码</a>
+          <a href="https://github.com/cgl-sd/weekflow/releases/latest">下载</a>
+          <a href="https://github.com/cgl-sd/weekflow/blob/main/PRIVACY.md">隐私</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

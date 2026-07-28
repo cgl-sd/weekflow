@@ -1,12 +1,22 @@
 # Weekflow
 
-**把一周真正想完成的事，变成每天可以执行的安排。**
+**让一周，从目标走到完成。**
 
-Weekflow 是一款原生 macOS 周计划与执行应用。它从本周目标出发，把目标拆成任务、安排到每天，再用专注计时和回顾形成完整闭环。
+Weekflow 是一款由周目标驱动的原生 macOS 个人执行系统。它从本周真正重要的结果出发，把目标拆成任务、安排到每天，再用专注计时与每日、每周回顾形成完整闭环。
+
+[在线演示](https://cgl-sd.github.io/weekflow/) · [下载最新版](https://github.com/cgl-sd/weekflow/releases/latest) · [隐私说明](PRIVACY.md)
+
+`macOS 14+` · `Apple Silicon / Intel` · `本地优先` · `无需账号`
 
 <p align="center">
-  <img src="assets/readme/home.png" alt="Weekflow 首页" width="720" />
+  <img src="docs/assets/media/home.png" alt="Weekflow 首页，以三天视图展示任务安排" width="900" />
 </p>
+
+## 一条完整的执行路径
+
+**定下本周目标 → 拆成具体行动 → 安排到每一天 → 专注执行 → 每日与每周回顾**
+
+Weekflow 不是把待办事项越列越长，而是让你始终看见：眼前这一步属于哪个周目标、今天实际投入了多少，以及这一周最终推进了什么。
 
 ## 主要功能
 
@@ -20,10 +30,10 @@ Weekflow 是一款原生 macOS 周计划与执行应用。它从本周目标出�
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/readme/weekly-planning.png" alt="周目标规划" width="440" />
+      <img src="docs/assets/media/weekly-planning.png" alt="周目标、任务池与每日分配" width="560" />
     </td>
     <td width="50%" align="center">
-      <img src="assets/readme/daily-planning.png" alt="每日计划" width="440" />
+      <img src="docs/assets/media/daily-planning.png" alt="每日计划与工作时间安排" width="560" />
     </td>
   </tr>
   <tr>
@@ -33,7 +43,11 @@ Weekflow 是一款原生 macOS 周计划与执行应用。它从本周目标出�
 </table>
 
 <p align="center">
-  <img src="assets/readme/focus-mode.png" alt="Weekflow 专注模式" width="600" />
+  <img src="docs/assets/media/focus.png" alt="Weekflow 专注模式" width="760" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/media/weekly-review.png" alt="Weekflow 每周回顾，汇总任务完成、时间投入与目标进度" width="900" />
 </p>
 
 ## 系统要求
@@ -93,4 +107,4 @@ WEEKFLOW_NOTARY_PROFILE=weekflow-local \
 
 ## 版本
 
-当前产品基线为 **Weekflow 1.0.0**。后续版本从此基线继续迭代；每版变化记录在 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+当前发布版本为 **Weekflow 1.0.3**，稳定产品基线从 **1.0.0** 开始递增；每版变化记录在 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
