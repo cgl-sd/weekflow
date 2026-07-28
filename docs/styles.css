@@ -15,7 +15,7 @@
   --radius-medium: 24px;
   --radius-large: 36px;
   --shadow: 0 28px 70px rgba(37, 31, 18, 0.12), 0 2px 12px rgba(37, 31, 18, 0.08);
-  --shell: min(1180px, calc(100vw - 48px));
+  --shell: min(1140px, calc(100vw - 48px));
 }
 
 * {
@@ -198,14 +198,18 @@ button {
 }
 
 .hero {
-  padding-top: clamp(72px, 10vw, 126px);
-  padding-bottom: clamp(92px, 12vw, 148px);
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+  align-items: center;
+  gap: clamp(38px, 6vw, 82px);
+  padding-top: clamp(64px, 8vw, 96px);
+  padding-bottom: clamp(72px, 9vw, 112px);
 }
 
 .hero-copy {
-  width: min(760px, 100%);
-  margin-inline: auto;
-  text-align: center;
+  width: auto;
+  margin: 0;
+  text-align: left;
 }
 
 .eyebrow {
@@ -221,7 +225,7 @@ button {
 .hero-copy .eyebrow {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 9px;
 }
 
@@ -245,23 +249,23 @@ button {
 }
 
 .hero h1 {
-  font-size: clamp(50px, 7.5vw, 92px);
+  font-size: clamp(46px, 5.5vw, 76px);
 }
 
 .hero-lede {
-  max-width: 620px;
-  margin: 26px auto 0;
+  max-width: 500px;
+  margin: 22px 0 0;
   color: var(--muted);
-  font-size: clamp(17px, 2vw, 20px);
+  font-size: clamp(16px, 1.55vw, 19px);
   line-height: 1.7;
 }
 
 .hero-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 24px;
-  margin-top: 34px;
+  margin-top: 28px;
 }
 
 .hero-note {
@@ -273,7 +277,9 @@ button {
 
 .product-demo {
   position: relative;
-  margin-top: clamp(58px, 8vw, 94px);
+  width: min(100%, 680px);
+  justify-self: end;
+  margin-top: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-medium);
   background: #e9e8e3;
@@ -294,7 +300,7 @@ button {
 }
 
 .window-chrome {
-  height: 42px;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -304,8 +310,8 @@ button {
 }
 
 .window-chrome span {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border: 1px solid rgba(23, 24, 19, 0.14);
   border-radius: 50%;
   background: #d7d5ce;
@@ -322,6 +328,8 @@ button {
 }
 
 .demo-viewport {
+  position: relative;
+  padding: 16px 16px 0;
   background: #e7e8e8;
 }
 
@@ -347,6 +355,9 @@ button {
 
 .product-shot {
   aspect-ratio: 20 / 13;
+  border: 1px solid rgba(23, 24, 19, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 14px 30px rgba(24, 20, 12, 0.12);
 }
 
 .product-shot img {
@@ -370,6 +381,27 @@ button {
   text-align: center;
 }
 
+.demo-focus-note {
+  position: absolute;
+  right: 28px;
+  bottom: 14px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(23, 24, 19, 0.14);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 254, 249, 0.9);
+  box-shadow: 0 8px 22px rgba(24, 20, 12, 0.12);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.demo-focus-note span {
+  margin-right: 5px;
+  color: var(--purple-dark);
+}
+
 [data-media-frame].is-missing .media-fallback {
   display: grid;
 }
@@ -378,9 +410,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  min-height: 72px;
-  padding: 12px 16px 12px 18px;
+  gap: 12px;
+  min-height: 62px;
+  padding: 10px 14px 10px 16px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.9);
 }
@@ -396,8 +428,8 @@ button {
 }
 
 .demo-tabs button {
-  min-height: 36px;
-  padding: 0 13px;
+  min-height: 32px;
+  padding: 0 10px;
   border: 0;
   border-radius: 999px;
   color: var(--muted);
@@ -415,12 +447,12 @@ button {
 .demo-caption {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   text-align: right;
 }
 
 .demo-toggle {
-  min-height: 36px;
+  min-height: 32px;
   margin-left: auto;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -443,8 +475,8 @@ button {
 }
 
 .section {
-  padding-top: clamp(92px, 12vw, 156px);
-  padding-bottom: clamp(92px, 12vw, 156px);
+  padding-top: clamp(76px, 9vw, 112px);
+  padding-bottom: clamp(76px, 9vw, 112px);
 }
 
 .section-heading-narrow {
@@ -479,7 +511,7 @@ button {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 70px 0 0;
+  margin: 48px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -502,7 +534,7 @@ button {
 }
 
 .flow-card {
-  min-height: 308px;
+  min-height: 264px;
   display: flex;
   flex-direction: column;
   padding: 24px;
@@ -522,7 +554,7 @@ button {
   position: relative;
   width: 52px;
   height: 52px;
-  margin-top: 42px;
+  margin-top: 30px;
   border: 1px solid var(--line-strong);
   border-radius: 15px;
   background: var(--purple-pale);
@@ -640,7 +672,7 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  margin-top: 68px;
+  margin-top: 48px;
 }
 
 .media-card {
@@ -660,12 +692,12 @@ button {
 }
 
 .media-card-copy {
-  min-height: 325px;
-  padding: clamp(30px, 5vw, 54px);
+  min-height: 252px;
+  padding: clamp(28px, 3.8vw, 42px);
 }
 
 .card-kicker {
-  margin: 0 0 44px;
+  margin: 0 0 28px;
   font-size: 12px;
   font-weight: 760;
   letter-spacing: 0.12em;
@@ -675,7 +707,7 @@ button {
 .media-card h3 {
   max-width: 470px;
   margin: 0;
-  font-size: clamp(28px, 3.6vw, 43px);
+  font-size: clamp(25px, 3vw, 36px);
   letter-spacing: -0.045em;
   line-height: 1.12;
 }
@@ -689,7 +721,7 @@ button {
 
 .media-card-frame {
   aspect-ratio: 1.2 / 1;
-  margin: 0 28px 28px;
+  margin: 0 22px 22px;
   border: 1px solid rgba(23, 24, 19, 0.16);
   border-radius: 16px;
   background: #e8e9e9;
@@ -799,7 +831,7 @@ button {
 }
 
 .final-cta {
-  min-height: 430px;
+  min-height: 320px;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -863,6 +895,31 @@ button {
 }
 
 @media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 44px;
+  }
+
+  .hero-copy {
+    text-align: center;
+  }
+
+  .hero-copy .eyebrow {
+    justify-content: center;
+  }
+
+  .hero-lede {
+    margin-inline: auto;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .product-demo {
+    justify-self: center;
+  }
+
   .header-inner {
     grid-template-columns: 1fr auto;
   }
@@ -945,6 +1002,10 @@ button {
     border-radius: 18px;
   }
 
+  .demo-viewport {
+    padding: 10px 10px 0;
+  }
+
   .product-shot {
     aspect-ratio: 1.2 / 1;
   }
@@ -975,6 +1036,13 @@ button {
   .demo-caption {
     margin: 8px 7px 0;
     text-align: left;
+  }
+
+  .demo-focus-note {
+    right: 18px;
+    bottom: 12px;
+    padding: 6px 8px;
+    font-size: 10px;
   }
 
   .demo-toggle {
